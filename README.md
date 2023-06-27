@@ -7,7 +7,7 @@ Part of [gpt-rag](https://github.com/Azure/gpt-rag)
 - Cognitive Search Service
 - Form Recognizer Service
 - Azure Storage Account
-- Python and PIP 3
+- Python 3.10 and PIP
 - Input data in pdf or png format
 
 ## Quick start
