@@ -6,4 +6,4 @@ azure-storage-blob==12.14.1
 azure-ai-formrecognizer==3.2.1
 python-dotenv==1.0.0
 openai
-pypdf==3.5.0
+pypdf==3.9.0
