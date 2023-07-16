@@ -1,0 +1,18 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "AzureWebJobsFeatureFlags": "EnableWorkerIndexing",
+    "SEARCH_SERVICE": "",
+    "SEARCH_API_KEY": "",
+    "SEARCH_ANALYZER_NAME": "es.microsoft",
+    "STORAGE_CONNECTION_STRING": "",
+    "AZURE_OPENAI_API_KEY": "",
+    "AZURE_OPENAI_API_VERSION": "",
+    "AZURE_OPENAI_SERVICE_NAME": "",
+    "AZURE_OPENAI_EMBEDDING_DEPLOYMENT": ""
+  }
+}
+
+
