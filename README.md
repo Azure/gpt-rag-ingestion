@@ -24,9 +24,9 @@ pip3 install -r requirements.txt
 python3 setup.py
 ```
 
-**2) Set Application Settings**
+**2) Set Azure Function Application Settings**
 
-Uptade the following variables with you project settings:
+Update the following variables with you project settings:
 ```
 SEARCH_SERVICE
 SEARCH_API_KEY
@@ -41,7 +41,7 @@ Update in Azure Portal: Go to ```Azure Portal > Function App > Configuration > A
 
 Update locally if you want to test the function locally: Rename [local.settings.json.template](local.settings.json.template) to ```local.settings.json``` and update environment variables.
 
-**3) Deploy to Azure** 
+**3) Deploy Function to Azure** 
 
 In VSCode with [Azure Function App Extension](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-azurefunctions) go to the ```Azure``` Window, reveal your Function App in the resource explorer, right-click it then select ```Deploy To Function App...```.
 

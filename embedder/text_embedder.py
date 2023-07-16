@@ -27,5 +27,5 @@ class TextEmbedder():
         if clean_text:
             text = self.clean_text(text)
         response = openai.Embedding.create(input=text, engine=self.AZURE_OPENAI_EMBEDDING_DEPLOYMENT)
-        embedding = [round(x, embedding_precision) for x in response['data'][0]['embedding']]
+        embedding = [round(x, embedding_precision) for x in response['data'][0]['embedding']] # type: ignore
         return embedding
