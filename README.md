@@ -6,9 +6,9 @@ Part of [gpt-rag](https://github.com/Azure/gpt-rag)
 
 - VS Code with Azure Function App Extension 
 
-## Quick start
+## Deploy (quickstart)
 
-**1) Deploy to Azure** 
+**1) Deploy function to Azure** 
 
 In VSCode with [Azure Function App Extension](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-azurefunctions) go to the *Azure* Window, reveal your Function App **(fning0...)** in the resource explorer, right-click it then select *Deploy*.
 
