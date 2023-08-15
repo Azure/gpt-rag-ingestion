@@ -3,10 +3,21 @@ import os
 import re
 import logging
 from tenacity import retry, wait_random_exponential, stop_after_attempt  
+from azure.keyvault.secrets import SecretClient
+from azure.identity import DefaultAzureCredential
+
+def get_secret(secretName):
+    keyVaultName = os.environ["AZURE_KEY_VAULT_NAME"]
+    KVUri = f"https://{keyVaultName}.vault.azure.net"
+    credential = DefaultAzureCredential()
+    client = SecretClient(vault_url=KVUri, credential=credential)
+    logging.info(f"Retrieving {secretName} secret from {keyVaultName}.")   
+    retrieved_secret = client.get_secret(secretName)
+    return retrieved_secret.value
 
 class TextEmbedder():
     openai.api_type = "azure"    
-    openai.api_key = os.getenv("AZURE_OPENAI_API_KEY")
+    openai.api_key = get_secret('azureOpenAIKey')
     openai.api_base = f"https://{os.getenv('AZURE_OPENAI_SERVICE_NAME')}.openai.azure.com/"
     openai.api_version = os.getenv("AZURE_OPENAI_API_VERSION")
     AZURE_OPENAI_EMBEDDING_DEPLOYMENT = os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT")

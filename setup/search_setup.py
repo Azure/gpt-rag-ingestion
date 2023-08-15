@@ -1,30 +1,38 @@
-import json
 import logging
 import os
 import time
 import requests
 from azure.storage.blob import BlobServiceClient
-from dotenv import load_dotenv
-load_dotenv()
+from azure.keyvault.secrets import SecretClient
+from azure.identity import DefaultAzureCredential
 
-FUNCTION_ENDPOINT = os.environ.get("FUNCTION_ENDPOINT")
-FUNCTION_KEY = os.environ.get("FUNCTION_KEY")
-
+FUNCTION_APP_NAME = os.environ.get("FUNCTION_APP_NAME")
+FUNCTION_ENDPOINT = f"https://{FUNCTION_APP_NAME}.azurewebsites.net"
 SEARCH_SERVICE = os.environ.get("SEARCH_SERVICE")
-SEARCH_API_KEY = os.environ.get("SEARCH_API_KEY")
-SEARCH_API_VERSION = os.environ.get("SEARCH_API_VERSION") or "2023-07-01-Preview"
-SEARCH_INDEX_INTERVAL= os.environ.get("SEARCH_INDEX_INTERVAL") or "PT1H" # default is to run every hour: "PT5M"5min, "PT1H"1h, "P1D"1d.
+SEARCH_ANALYZER_NAME=os.environ.get('SEARCH_ANALYZER_NAME')
+SEARCH_API_VERSION = os.environ.get("SEARCH_API_VERSION")
+SEARCH_INDEX_INTERVAL= os.environ.get("SEARCH_INDEX_INTERVAL")
+SEARCH_INDEX_NAME = os.environ.get("SEARCH_INDEX_NAME")
+STORAGE_CONTAINER = os.environ.get("STORAGE_CONTAINER")
+STORAGE_CONTAINER_CHUNKS = os.environ.get("STORAGE_CONTAINER_CHUNKS")
 
-SEARCH_ANALYZER_NAME=os.environ.get('SEARCH_ANALYZER_NAME') or "en.microsoft"
-SEARCH_INDEX_NAME = os.environ.get("SEARCH_INDEX_NAME") or "ragindex"
-STORAGE_CONNECTION_STRING = os.environ.get("STORAGE_CONNECTION_STRING")
-STORAGE_CONTAINER = os.environ.get("STORAGE_CONTAINER") or "documents"
+def get_secret(secretName):
+    keyVaultName = os.environ["AZURE_KEY_VAULT_NAME"]
+    KVUri = f"https://{keyVaultName}.vault.azure.net"
+    credential = DefaultAzureCredential()
+    client = SecretClient(vault_url=KVUri, credential=credential)
+    logging.info(f"Retrieving {secretName} secret from {keyVaultName}.")   
+    retrieved_secret = client.get_secret(secretName)
+    return retrieved_secret.value
 
+FUNCTION_KEY = get_secret('ingestionKey')
+STORAGE_CONNECTION_STRING = get_secret('storageConnectionString')
 
 def call_search_api(resource_type, resource_name, method, body=None):
+    azureSearchKey = get_secret('azureSearchKey')
     headers = {
         'Content-Type': 'application/json',
-        'api-key': SEARCH_API_KEY
+        'api-key': azureSearchKey
     }
     search_endpoint = f"https://{SEARCH_SERVICE}.search.windows.net/{resource_type}/{resource_name}?api-version={SEARCH_API_VERSION}"
     response = None
@@ -66,13 +74,13 @@ def execute_setup():
     else:
         logging.info(f"Container '{STORAGE_CONTAINER}' already exists.")
     # Create chunks container
-    container_client = blob_service_client.get_container_client(STORAGE_CONTAINER+"-chunks")
+    container_client = blob_service_client.get_container_client(STORAGE_CONTAINER_CHUNKS)
     if not container_client.exists():
         # Create the container
         container_client.create_container()
-        logging.info(f"Container '{STORAGE_CONTAINER}-chunks' created successfully.")
+        logging.info(f"Container '{STORAGE_CONTAINER_CHUNKS}' created successfully.")
     else:
-        logging.info(f"Container '{STORAGE_CONTAINER}-chunks' already exists.")        
+        logging.info(f"Container '{STORAGE_CONTAINER_CHUNKS}' already exists.")        
     response_time = time.time() - start_time
     logging.info(f"01 Create containers step. {round(response_time,2)} seconds")
 
@@ -101,7 +109,7 @@ def execute_setup():
             "connectionString": STORAGE_CONNECTION_STRING
         },
         "container": {
-            "name": f"{STORAGE_CONTAINER}-chunks"
+            "name": f"{STORAGE_CONTAINER_CHUNKS}"
         }   
     }
     call_search_api("datasources", f"{SEARCH_INDEX_NAME}-datasource-chunks", "put", body)
@@ -165,7 +173,7 @@ def execute_setup():
                     "tables": [],
                     "objects": [
                         {
-                                "storageContainer": f"{STORAGE_CONTAINER}-chunks",
+                                "storageContainer": f"{STORAGE_CONTAINER_CHUNKS}",
                                 "generatedKeyName": "chunk_id",
                                 "source": "/document/chunks/*"
                         }
@@ -448,14 +456,3 @@ def execute_setup():
     logging.info(f"04 Create indexers step. {round(response_time,2)} seconds")
 
     logging.info(f"DONE")
-
-
-
-def main():
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-    # Call your functions here
-    execute_setup()
-
-if __name__ == '__main__':
-    main()

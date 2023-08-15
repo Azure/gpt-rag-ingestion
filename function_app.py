@@ -5,6 +5,7 @@ import logging
 import datetime
 from json import JSONEncoder
 from chunker.chunk_documents import chunk_document
+from setup.search_setup import execute_setup
 
 app = func.FunctionApp()
 
@@ -37,6 +38,21 @@ def document_chunking(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse(
             "Invalid request: {0}".format(e), 
             status_code=400
+        )
+
+@app.route(route="search-setup", auth_level=func.AuthLevel.FUNCTION)
+def setup(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info('Invoking setup operation.')
+    try:
+        execute_setup()
+        return func.HttpResponse(
+             f"Finished setup operation.",
+             status_code=200
+        )
+    except Exception as e:
+        return func.HttpResponse(
+             f"Error invoking setup operation. Error: {e}",
+             status_code=400
         )
 
 def process_documents(body):

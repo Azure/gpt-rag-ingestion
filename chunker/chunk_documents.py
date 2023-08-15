@@ -13,7 +13,7 @@ def chunk_document(data):
     num_tokens = int(os.getenv("NUM_TOKENS", "2048"))
     min_chunk_size = int(os.getenv("MIN_CHUNK_SIZE", "100"))
     token_overlap = int(os.getenv("TOKEN_OVERLAP", "100"))
-    sleep_interval_seconds = int(os.getenv("TOKEN_OVERLAP", "1"))
+    sleep_interval_seconds = int(os.getenv("SLEEP_INTERVAL", "1"))
 
     chunking_result = TextChunker().chunk_content(data['documentContent'], file_path=data['documentUrl'].split('/')[-1], num_tokens=num_tokens, min_chunk_size=min_chunk_size, token_overlap=token_overlap)
     content_chunk_metadata = ChunkEmbeddingHelper().generate_chunks_with_embedding(data['documentUrlencoded'], [c.content for c in chunking_result.chunks], 'content', sleep_interval_seconds)

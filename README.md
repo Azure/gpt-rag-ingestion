@@ -4,47 +4,34 @@ Part of [gpt-rag](https://github.com/Azure/gpt-rag)
 
 ## Pre-reqs
 
-- Cognitive Search Service
-- Azure Function with Python 3.10 runtime.
-- Azure OpenAI Service with **text-embedding-ada-002** deployment
-- Azure Storage Account with **documents** container
-- Form Recognizer Service
-- Python 3.10 and PIP
+- VS Code with Azure Function App Extension 
 
 ## Quick start
 
-**1) Azure Cognitive Search Setup**
+**1) Deploy to Azure** 
 
-After having provisioned the pre-req resources rename .env.template to .env and fill endpoints and keys variables.
+In VSCode with [Azure Function App Extension](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-azurefunctions) go to the *Azure* Window, reveal your Function App **(fning0...)** in the resource explorer, right-click it then select *Deploy*.
 
-Then run setup.py to configure Cognitive Search elements (datasource, index, skillset and indexer) running the following commands in terminal:
+**2) Important: Set function key as a secret in Key Vault**
 
-```
-pip3 install -r requirements.txt
-python3 setup.py
-```
+**2.1)** Get the function's **default** key in Azure Portal > Function App (fning0...) > App keys > Host keys > default.
 
-**2) Set Azure Function Application Settings**
+![alt text](media/getkey.png)
 
-Update the following variables with you project settings:
-```
-SEARCH_SERVICE
-SEARCH_API_KEY
-SEARCH_ANALYZER_NAME
-STORAGE_CONNECTION_STRING
-AZURE_OPENAI_API_KEY
-AZURE_OPENAI_API_VERSION
-AZURE_OPENAI_SERVICE_NAME
-AZURE_OPENAI_EMBEDDING_DEPLOYMENT
-```
-Update in Azure Portal: Go to ```Azure Portal > Function App > Configuration > Application Settings```.
+**2.2)** Set the key as a secret with **ingestionKey** name in the key vault via Azure Portal > Key Vault (kv0m...) > App keys > Secrets > Generate/Import.
 
-Update locally if you want to test the function locally: Rename [local.settings.json.template](local.settings.json.template) to ```local.settings.json``` and update environment variables.
+![alt text](media/setsecret.png)
 
-**3) Deploy Function to Azure** 
+*Note: If you do not have authorization to set secrets, add a Set secret permission for your user.*
+<br>*You can do that in Secret permissions in the Access policies option of the Key vault service.*
 
-In VSCode with [Azure Function App Extension](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-azurefunctions) go to the ```Azure``` Window, reveal your Function App in the resource explorer, right-click it then select ```Deploy To Function App...```.
+**3) Azure Cognitive Search Setup**
 
+After you have completed the deployment of the function, run the setup operation to create the elements in Cognitive Search. You can do via Azure Portal > Function App (fning0...) > Test it and call search-setup operation in the Function App.
+
+**4) Add source documents to object storage** 
+
+Upload your documents to the *documents* folder in the storage account which name starts with *strag*.
 
 ## References
 
