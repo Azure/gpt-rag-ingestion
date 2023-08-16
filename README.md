@@ -17,7 +17,9 @@ In VSCode with [Azure Function App Extension](https://marketplace.visualstudio.c
 
 **2) Azure Cognitive Search Setup**
 
-After you have completed the deployment of the function, run the setup operation in terminal to create the elements in Cognitive Search executing the following commands:
+After you have completed the deployment of the function (Wait 7 Minutes before proceed) and then, run the setup operation in terminal to create the elements in Cognitive Search executing the following commands:
+
+Not run the command before 7 minutes after deploy the function.
 
 ```
 az login
