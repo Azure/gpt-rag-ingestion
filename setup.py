@@ -1,40 +1,26 @@
+import json
 import logging
 import os
 import time
 import requests
+import argparse
 from azure.storage.blob import BlobServiceClient
-from azure.keyvault.secrets import SecretClient
 from azure.identity import DefaultAzureCredential
+from azure.mgmt.web import WebSiteManagementClient
+from azure.mgmt.storage import StorageManagementClient
+logging.getLogger('azure').setLevel(logging.WARNING)
 
-FUNCTION_APP_NAME = os.environ.get("FUNCTION_APP_NAME")
-FUNCTION_ENDPOINT = f"https://{FUNCTION_APP_NAME}.azurewebsites.net"
-SEARCH_SERVICE = os.environ.get("SEARCH_SERVICE")
-SEARCH_ANALYZER_NAME=os.environ.get('SEARCH_ANALYZER_NAME')
-SEARCH_API_VERSION = os.environ.get("SEARCH_API_VERSION")
-SEARCH_INDEX_INTERVAL= os.environ.get("SEARCH_INDEX_INTERVAL")
-SEARCH_INDEX_NAME = os.environ.get("SEARCH_INDEX_NAME")
-STORAGE_CONTAINER = os.environ.get("STORAGE_CONTAINER")
-STORAGE_CONTAINER_CHUNKS = os.environ.get("STORAGE_CONTAINER_CHUNKS")
+def call_search_api(search_service, search_api_version, resource_type, resource_name, method, credential, body=None):
 
-def get_secret(secretName):
-    keyVaultName = os.environ["AZURE_KEY_VAULT_NAME"]
-    KVUri = f"https://{keyVaultName}.vault.azure.net"
-    credential = DefaultAzureCredential()
-    client = SecretClient(vault_url=KVUri, credential=credential)
-    logging.info(f"Retrieving {secretName} secret from {keyVaultName}.")   
-    retrieved_secret = client.get_secret(secretName)
-    return retrieved_secret.value
+    # get the token
+    token = credential.get_token("https://search.azure.com/.default").token
 
-FUNCTION_KEY = get_secret('ingestionKey')
-STORAGE_CONNECTION_STRING = get_secret('storageConnectionString')
-
-def call_search_api(resource_type, resource_name, method, body=None):
-    azureSearchKey = get_secret('azureSearchKey')
     headers = {
-        'Content-Type': 'application/json',
-        'api-key': azureSearchKey
+        "Authorization": f"Bearer {token}",
+        'Content-Type': 'application/json'
+        # 'api-key': SEARCH_API_KEY
     }
-    search_endpoint = f"https://{SEARCH_SERVICE}.search.windows.net/{resource_type}/{resource_name}?api-version={SEARCH_API_VERSION}"
+    search_endpoint = f"https://{search_service}.search.windows.net/{resource_type}/{resource_name}?api-version={search_api_version}"
     response = None
     try:
         if method not in ["get", "put"]:
@@ -54,33 +40,54 @@ def call_search_api(resource_type, resource_name, method, body=None):
         logging.error(f"Error when calling search API {method} {resource_type} {resource_name}. Error: {error_message}")
     return response
 
+def execute_setup(subscription_id, resource_group, function_app_name):
+    
+    logging.info(f"Getting function app {function_app_name} properties.") 
+    credential = DefaultAzureCredential()
+    web_mgmt_client = WebSiteManagementClient(credential, subscription_id)
+    function_app_settings = web_mgmt_client.web_apps.list_application_settings(resource_group, function_app_name)
+    function_endpoint = f"https://{function_app_name}.azurewebsites.net"
+    search_service = function_app_settings.properties["SEARCH_SERVICE"]
+    search_analyzer_name= function_app_settings.properties["SEARCH_ANALYZER_NAME"]
+    search_api_version = function_app_settings.properties["SEARCH_API_VERSION"]
+    search_index_interval = function_app_settings.properties["SEARCH_INDEX_INTERVAL"]
+    search_index_name = function_app_settings.properties["SEARCH_INDEX_NAME"]
+    storage_container = function_app_settings.properties["STORAGE_CONTAINER"]
+    storage_container_chunks = function_app_settings.properties["STORAGE_CONTAINER_CHUNKS"]
+    storage_account_name = function_app_settings.properties["STORAGE_ACCOUNT_NAME"]
 
-def execute_setup():
-    logging.info("Setting up search.")
+    logging.info(f"Getting function app {function_app_name} key.") 
+    keys = web_mgmt_client.web_apps.list_function_keys(resource_group, function_app_name, 'document_chunking')
+    function_ley = keys.additional_properties["default"]
 
+    logging.info(f"Getting {function_app_name} storage connection string.")
+    storage_client = StorageManagementClient(credential, subscription_id)
+    keys = storage_client.storage_accounts.list_keys(resource_group, storage_account_name)
+    storage_connection_string = f"DefaultEndpointsProtocol=https;EndpointSuffix=core.windows.net;AccountName={storage_account_name};AccountKey={keys.keys[0].value}"
+    
     ###########################################################################
     # 00 Creating blob containers (if needed)
     ###########################################################################
     logging.info("01 Creating containers step.")    
     start_time = time.time()
     # Create the BlobServiceClient object
-    blob_service_client = BlobServiceClient.from_connection_string(STORAGE_CONNECTION_STRING)
+    blob_service_client = BlobServiceClient.from_connection_string(storage_connection_string)
     # Create documents container
-    container_client = blob_service_client.get_container_client(STORAGE_CONTAINER)
+    container_client = blob_service_client.get_container_client(storage_container)
     if not container_client.exists():
         # Create the container
         container_client.create_container()
-        logging.info(f"Container '{STORAGE_CONTAINER}' created successfully.")
+        logging.info(f"Container '{storage_container}' created successfully.")
     else:
-        logging.info(f"Container '{STORAGE_CONTAINER}' already exists.")
+        logging.info(f"Container '{storage_container}' already exists.")
     # Create chunks container
-    container_client = blob_service_client.get_container_client(STORAGE_CONTAINER_CHUNKS)
+    container_client = blob_service_client.get_container_client(storage_container_chunks)
     if not container_client.exists():
         # Create the container
         container_client.create_container()
-        logging.info(f"Container '{STORAGE_CONTAINER_CHUNKS}' created successfully.")
+        logging.info(f"Container '{storage_container_chunks}' created successfully.")
     else:
-        logging.info(f"Container '{STORAGE_CONTAINER_CHUNKS}' already exists.")        
+        logging.info(f"Container '{storage_container_chunks}' already exists.")        
     response_time = time.time() - start_time
     logging.info(f"01 Create containers step. {round(response_time,2)} seconds")
 
@@ -94,25 +101,25 @@ def execute_setup():
         "description": "Input documents",
         "type": "azureblob",
         "credentials": {
-            "connectionString": STORAGE_CONNECTION_STRING
+            "connectionString": storage_connection_string
         },
         "container": {
-            "name": STORAGE_CONTAINER
+            "name": storage_container
         }
     }
-    call_search_api("datasources", f"{SEARCH_INDEX_NAME}-datasource", "put", body)
+    call_search_api(search_service, search_api_version, "datasources", f"{search_index_name}-datasource", "put", credential, body)
     
     body = {
         "description": "Document chunks",
         "type": "azureblob",
         "credentials": {
-            "connectionString": STORAGE_CONNECTION_STRING
+            "connectionString": storage_connection_string
         },
         "container": {
-            "name": f"{STORAGE_CONTAINER_CHUNKS}"
+            "name": f"{storage_container_chunks}"
         }   
     }
-    call_search_api("datasources", f"{SEARCH_INDEX_NAME}-datasource-chunks", "put", body)
+    call_search_api(search_service, search_api_version, "datasources", f"{search_index_name}-datasource-chunks", "put", credential, body)
 
     response_time = time.time() - start_time
     logging.info(f"02 Create datastores step. {round(response_time,2)} seconds")
@@ -124,14 +131,14 @@ def execute_setup():
     start_time = time.time()
 
     body = { 
-        "name": f"{SEARCH_INDEX_NAME}-skillset-chunking",
+        "name": f"{search_index_name}-skillset-chunking",
         "description":"SKillset to do document chunking",
         "skills":[ 
             { 
                 "@odata.type":"#Microsoft.Skills.Custom.WebApiSkill",
                 "name":"document-chunking",
                 "description":"Extract chunks from documents.",
-                "uri":f"{FUNCTION_ENDPOINT}/api/document-chunking?code={FUNCTION_KEY}",
+                "uri":f"{function_endpoint}/api/document-chunking?code={function_ley}",
                 "httpMethod":"POST",
                 "timeout":"PT230S",
                 "context":"/document",
@@ -167,13 +174,13 @@ def execute_setup():
             }
         ],
         "knowledgeStore" : {
-            "storageConnectionString": STORAGE_CONNECTION_STRING,
+            "storageConnectionString": storage_connection_string,
             "projections": [
                 {
                     "tables": [],
                     "objects": [
                         {
-                                "storageContainer": f"{STORAGE_CONTAINER_CHUNKS}",
+                                "storageContainer": f"{storage_container_chunks}",
                                 "generatedKeyName": "chunk_id",
                                 "source": "/document/chunks/*"
                         }
@@ -183,7 +190,7 @@ def execute_setup():
             ]
         }
     }
-    call_search_api("skillsets", f"{SEARCH_INDEX_NAME}-skillset-chunking", "put", body)
+    call_search_api(search_service, search_api_version, "skillsets", f"{search_index_name}-skillset-chunking", "put", credential,body)
     response_time = time.time() - start_time
     logging.info(f"02 Create skillset step. {round(response_time,2)} seconds")
 
@@ -194,7 +201,7 @@ def execute_setup():
     start_time = time.time()
 
     body = {
-        "name": f"{SEARCH_INDEX_NAME}-source-documents",
+        "name": f"{search_index_name}-source-documents",
         "fields": [
             {
                 "name": "metadata_storage_path_encoded",
@@ -254,10 +261,10 @@ def execute_setup():
             "maxAgeInSeconds": 60
         }
     }
-    response = call_search_api("indexes", f"{SEARCH_INDEX_NAME}-source-documents", "put", body)
+    response = call_search_api(search_service, search_api_version, "indexes", f"{search_index_name}-source-documents", "put", credential, body)
 
     body = {
-        "name":  f"{SEARCH_INDEX_NAME}",
+        "name":  f"{search_index_name}",
         "fields": [
             {
                 "name": "metadata_storage_path_encoded",
@@ -295,7 +302,7 @@ def execute_setup():
                 "type": "Edm.String",
                 "searchable": True,
                 "retrievable": True,
-                "analyzer": SEARCH_ANALYZER_NAME
+                "analyzer": search_analyzer_name
             },
             {
                 "name": "offset",
@@ -317,7 +324,7 @@ def execute_setup():
                 "filterable": True,
                 "searchable": True,
                 "retrievable": True,
-                "analyzer": SEARCH_ANALYZER_NAME
+                "analyzer": search_analyzer_name
             },
             {
                 "name": "category",
@@ -325,7 +332,7 @@ def execute_setup():
                 "filterable": True,
                 "searchable": True,
                 "retrievable": True,
-                "analyzer": SEARCH_ANALYZER_NAME
+                "analyzer": search_analyzer_name
             },
             {
                 "name": "filepath",
@@ -390,7 +397,7 @@ def execute_setup():
             ]
         }
     }
-    response = call_search_api("indexes", f"{SEARCH_INDEX_NAME}", "put", body)
+    response = call_search_api(search_service, search_api_version, "indexes", f"{search_index_name}", "put", credential, body)
 
     response_time = time.time() - start_time
     logging.info(f"03 Create indexes step. {round(response_time,2)} seconds")
@@ -401,10 +408,10 @@ def execute_setup():
     logging.info("04 Creating indexer step.")
     start_time = time.time()
     body = {
-        "dataSourceName" : f"{SEARCH_INDEX_NAME}-datasource",
-        "targetIndexName" : f"{SEARCH_INDEX_NAME}-source-documents",
-        "skillsetName" : f"{SEARCH_INDEX_NAME}-skillset-chunking",
-        "schedule" : { "interval" : f"{SEARCH_INDEX_INTERVAL}"},
+        "dataSourceName" : f"{search_index_name}-datasource",
+        "targetIndexName" : f"{search_index_name}-source-documents",
+        "skillsetName" : f"{search_index_name}-skillset-chunking",
+        "schedule" : { "interval" : f"{search_index_interval}"},
         "fieldMappings" : [
             {
             "sourceFieldName" : "metadata_storage_path",
@@ -425,12 +432,12 @@ def execute_setup():
             }
         }
         }    
-    call_search_api("indexers", f"{SEARCH_INDEX_NAME}-indexer-chunk-documents", "put", body)
+    call_search_api(search_service, search_api_version, "indexers", f"{search_index_name}-indexer-chunk-documents", "put", credential, body)
 
     body = {
-        "dataSourceName" : f"{SEARCH_INDEX_NAME}-datasource-chunks",
-        "targetIndexName" : f"{SEARCH_INDEX_NAME}",
-        "schedule" : { "interval" : f"{SEARCH_INDEX_INTERVAL}"},
+        "dataSourceName" : f"{search_index_name}-datasource-chunks",
+        "targetIndexName" : f"{search_index_name}",
+        "schedule" : { "interval" : f"{search_index_interval}"},
         "fieldMappings" : [
             {
             "sourceFieldName" : "metadata_storage_path",
@@ -450,9 +457,37 @@ def execute_setup():
             }
         }
         }
-    call_search_api("indexers", f"{SEARCH_INDEX_NAME}-indexer-chunks", "put", body)
+    call_search_api(search_service, search_api_version, "indexers", f"{search_index_name}-indexer-chunks", "put", credential, body)
 
     response_time = time.time() - start_time
     logging.info(f"04 Create indexers step. {round(response_time,2)} seconds")
 
-    logging.info(f"DONE")
+
+
+def main(subscription_id=None, resource_group=None, function_app_name=None):
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    logging.info(f"Starting setup.")
+
+    if subscription_id is None:
+        subscription_id = input("Enter subscription ID: ")
+    if resource_group is None:
+        resource_group = input("Enter resource group: ")
+    if function_app_name is None:
+        function_app_name = input("Enter chunking function app name: ")
+
+    start_time = time.time()
+
+    execute_setup(subscription_id, resource_group, function_app_name)
+
+    response_time = time.time() - start_time
+    logging.info(f"Finished setup. {round(response_time,2)} seconds")
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Script to do the data ingestion setup for Azure Cognitive Search.')
+    parser.add_argument('-s', '--subscription_id', help='Subscription ID')
+    parser.add_argument('-r', '--resource_group', help='Resource group')
+    parser.add_argument('-f', '--function_app_name', help='Chunking function app name')
+    args = parser.parse_args()
+
+    main(subscription_id=args.subscription_id, resource_group=args.resource_group, function_app_name=args.function_app_name)    

@@ -4,32 +4,29 @@ Part of [gpt-rag](https://github.com/Azure/gpt-rag)
 
 ## Pre-reqs
 
-- VS Code with Azure Function App Extension 
+- VS Code with Azure Function App Extension
+- [AZ CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)
+- Python 3.10
+- Contributor role in the *Function App*, *Storage Account* and *Search Service*.
 
 ## Deploy (quickstart)
 
 **1) Deploy function to Azure** 
 
-In VSCode with [Azure Function App Extension](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-azurefunctions) go to the *Azure* Window, reveal your Function App **(fning0...)** in the resource explorer, right-click it then select *Deploy*.
+In VSCode with [Azure Function App Extension](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-azurefunctions) go to the *Azure* Window, reveal your Function App (Data Ingestion Function) in the resource explorer, right-click it then select *Deploy*.
 
-**2) Important: Set function key as a secret in Key Vault**
+**2) Azure Cognitive Search Setup**
 
-**2.1)** Get the function's **default** key in Azure Portal > Function App (fning0...) > App keys > Host keys > default.
+After you have completed the deployment of the function, run the setup operation in terminal to create the elements in Cognitive Search executing the following commands:
 
-![alt text](media/getkey.png)
+```
+az login
+pip3 install -r requirements.txt
+python3 setup.py -s SUBSCRIPTION_ID -r RESOURCE_GROUP -f FUNCTION_APP_NAME
+```
+OBS: replace SUBSCRIPTION_ID, RESOURCE_GROUP and FUNCTION_APP_NAME by the names applicable to your deployment.
 
-**2.2)** Set the key as a secret with **ingestionKey** name in the key vault via Azure Portal > Key Vault (kv0m...) > App keys > Secrets > Generate/Import.
-
-![alt text](media/setsecret.png)
-
-*Note: If you do not have authorization to set secrets, add a Set secret permission for your user.*
-<br>*You can do that in Secret permissions in the Access policies option of the Key vault service.*
-
-**3) Azure Cognitive Search Setup**
-
-After you have completed the deployment of the function, run the setup operation to create the elements in Cognitive Search. You can do via Azure Portal > Function App (fning0...) > Test it and call search-setup operation in the Function App.
-
-**4) Add source documents to object storage** 
+**3) Add source documents to object storage** 
 
 Upload your documents to the *documents* folder in the storage account which name starts with *strag*.
 

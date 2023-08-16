@@ -4,6 +4,8 @@
 
 azure-functions
 azure-storage-blob
+azure-mgmt-web
+azure-mgmt-storage
 jsonschema
 python-dotenv
 requests
