@@ -4,6 +4,7 @@ import os
 import time
 import requests
 import argparse
+from tenacity import retry, wait_fixed, stop_after_delay
 from azure.storage.blob import BlobServiceClient
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.web import WebSiteManagementClient
@@ -11,7 +12,6 @@ from azure.mgmt.storage import StorageManagementClient
 logging.getLogger('azure').setLevel(logging.WARNING)
 
 def call_search_api(search_service, search_api_version, resource_type, resource_name, method, credential, body=None):
-
     # get the token
     token = credential.get_token("https://search.azure.com/.default").token
 
@@ -40,6 +40,13 @@ def call_search_api(search_service, search_api_version, resource_type, resource_
         logging.error(f"Error when calling search API {method} {resource_type} {resource_name}. Error: {error_message}")
     return response
 
+@retry(stop=stop_after_delay(10*60), wait=wait_fixed(60), before_sleep=lambda _: logging.info('Will attempt again in a minute as the function may not yet be available for use. Appreciate your patience....'))
+def get_function_key(subscription_id, resource_group, function_app_name):
+    credential = DefaultAzureCredential()
+    web_mgmt_client = WebSiteManagementClient(credential, subscription_id)    
+    keys = web_mgmt_client.web_apps.list_function_keys(resource_group, function_app_name, 'document_chunkings')
+    function_ley = keys.additional_properties["default"]
+
 def execute_setup(subscription_id, resource_group, function_app_name):
     
     logging.info(f"Getting function app {function_app_name} properties.") 
@@ -56,9 +63,8 @@ def execute_setup(subscription_id, resource_group, function_app_name):
     storage_container_chunks = function_app_settings.properties["STORAGE_CONTAINER_CHUNKS"]
     storage_account_name = function_app_settings.properties["STORAGE_ACCOUNT_NAME"]
 
-    logging.info(f"Getting function app {function_app_name} key.") 
-    keys = web_mgmt_client.web_apps.list_function_keys(resource_group, function_app_name, 'document_chunking')
-    function_ley = keys.additional_properties["default"]
+    logging.info(f"Getting function app {function_app_name} key.")
+    function_ley = get_function_key(subscription_id, resource_group, function_app_name)
 
     logging.info(f"Getting {function_app_name} storage connection string.")
     storage_client = StorageManagementClient(credential, subscription_id)
