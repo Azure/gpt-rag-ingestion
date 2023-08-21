@@ -45,7 +45,8 @@ def get_function_key(subscription_id, resource_group, function_app_name):
     credential = DefaultAzureCredential()
     web_mgmt_client = WebSiteManagementClient(credential, subscription_id)    
     keys = web_mgmt_client.web_apps.list_function_keys(resource_group, function_app_name, 'document_chunkings')
-    function_ley = keys.additional_properties["default"]
+    function_key = keys.additional_properties["default"]
+    return function_key
 
 def execute_setup(subscription_id, resource_group, function_app_name):
     
@@ -64,7 +65,7 @@ def execute_setup(subscription_id, resource_group, function_app_name):
     storage_account_name = function_app_settings.properties["STORAGE_ACCOUNT_NAME"]
 
     logging.info(f"Getting function app {function_app_name} key.")
-    function_ley = get_function_key(subscription_id, resource_group, function_app_name)
+    function_key = get_function_key(subscription_id, resource_group, function_app_name)
 
     logging.info(f"Getting {function_app_name} storage connection string.")
     storage_client = StorageManagementClient(credential, subscription_id)
@@ -144,7 +145,7 @@ def execute_setup(subscription_id, resource_group, function_app_name):
                 "@odata.type":"#Microsoft.Skills.Custom.WebApiSkill",
                 "name":"document-chunking",
                 "description":"Extract chunks from documents.",
-                "uri":f"{function_endpoint}/api/document-chunking?code={function_ley}",
+                "uri":f"{function_endpoint}/api/document-chunking?code={function_key}",
                 "httpMethod":"POST",
                 "timeout":"PT230S",
                 "context":"/document",
