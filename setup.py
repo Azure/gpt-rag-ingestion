@@ -40,7 +40,7 @@ def call_search_api(search_service, search_api_version, resource_type, resource_
         logging.error(f"Error when calling search API {method} {resource_type} {resource_name}. Error: {error_message}")
     return response
 
-@retry(stop=stop_after_delay(10*60), wait=wait_fixed(60), before_sleep=lambda _: logging.info('Will attempt again in a minute as the function may not yet be available for use. Appreciate your patience....'))
+@retry(stop=stop_after_delay(20*60), wait=wait_fixed(60), before_sleep=lambda _: logging.info('Will attempt again in a minute as the function may not yet be available for use...'))
 def get_function_key(subscription_id, resource_group, function_app_name):
     credential = DefaultAzureCredential()
     web_mgmt_client = WebSiteManagementClient(credential, subscription_id)    
