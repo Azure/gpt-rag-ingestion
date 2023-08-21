@@ -44,7 +44,7 @@ def call_search_api(search_service, search_api_version, resource_type, resource_
 def get_function_key(subscription_id, resource_group, function_app_name):
     credential = DefaultAzureCredential()
     web_mgmt_client = WebSiteManagementClient(credential, subscription_id)    
-    keys = web_mgmt_client.web_apps.list_function_keys(resource_group, function_app_name, 'document_chunkings')
+    keys = web_mgmt_client.web_apps.list_function_keys(resource_group, function_app_name, 'document_chunking')
     function_key = keys.additional_properties["default"]
     return function_key
 
