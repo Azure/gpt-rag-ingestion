@@ -4,8 +4,9 @@ import jsonschema
 import logging
 import datetime
 from json import JSONEncoder
-from chunker.chunk_documents import chunk_document
-
+from chunker.chunk_documents_formrec import chunk_document
+from azure.keyvault.secrets import SecretClient
+from azure.identity import DefaultAzureCredential
 app = func.FunctionApp()
 
 class DateTimeEncoder(JSONEncoder):
@@ -19,25 +20,24 @@ def document_chunking(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Invoked document_chunking skill.')
     try:
         body = req.get_json()
+        logging.debug(f'REQUEST BODY: {body}')
         jsonschema.validate(body, schema=get_request_schema())
+
         if body:
             result = process_documents(body)
             return func.HttpResponse(result, mimetype="application/json")
         else:
-            return func.HttpResponse(
-                "Invalid body",
-                status_code=400
-            )
-    except ValueError:
-        return func.HttpResponse(
-             "Invalid body",
-             status_code=400
-        )
+            error_message = "Invalid body."
+            logging.error(error_message)
+            return func.HttpResponse(error_message, status_code=400)
+    except ValueError as e:
+        error_message = "Invalid body: {0}".format(e)
+        logging.error(error_message)
+        return func.HttpResponse(error_message, status_code=400)
     except jsonschema.exceptions.ValidationError as e:
-        return func.HttpResponse(
-            "Invalid request: {0}".format(e), 
-            status_code=400
-        )
+        error_message = "Invalid request: {0}".format(e)
+        logging.error(error_message)
+        return func.HttpResponse(error_message, status_code=400)
 
 def process_documents(body):
     values = body['values']
@@ -47,7 +47,36 @@ def process_documents(body):
         # perform operation on each record (document)
         data = value['data']
         logging.info(f"Chunking {data['documentUrl'].split('/')[-1]}.")
+        
         chunks, errors, warnings = chunk_document(data)
+
+        # errors = []
+        # warnings = []
+        # chunks = [{
+        #             "filepath": '123',
+        #             "chunk_id": 0,
+        #             "offset": 0,
+        #             "length": 0,
+        #             "page": 1,                    
+        #             "title": "default",
+        #             "category": "default",
+        #             "url": '123',
+        #             "content": data['documentUrl'],
+        #             "contentVector": [0.1] * 1536,                    
+        #             },
+        #             {
+        #                 "filepath": '123',
+        #                 "chunk_id": 2,
+        #                 "offset": 0,
+        #                 "length": 0,
+        #                 "page": 1,                           
+        #                 "title": "default",
+        #                 "category": "default",
+        #                 "url": '123',
+        #                 "content": data['documentUrl'],
+        #                 "contentVector": [0.1] * 1536,
+        #             }]
+
         output_record = {
             "recordId": value['recordId'],
             "data": {
@@ -56,6 +85,7 @@ def process_documents(body):
             "errors": errors,  
             "warnings": warnings
         }
+
         if output_record != None:
             results["values"].append(output_record)
 
@@ -76,13 +106,12 @@ def get_request_schema():
                         "data": {
                             "type": "object",
                             "properties": {
-                                "documentContent": {"type": "string", "minLength": 1},
-                                "documentUrl": {"type": "string", "minLength": 1},
-                                "documentUrlencoded": {"type": "string", "minLength": 1},                                
+                                "documentUrl": {"type": "string", "minLength": 1}, 
+                                "documentContent": {"type": "string"},                                                                
                                 "documentSasToken": {"type": "string", "minLength": 1},
                                 "documentContentType": {"type": "string", "minLength": 1}
                             },
-                            "required": ["documentContent", "documentUrl", "documentUrlencoded", "documentSasToken", "documentContentType"],
+                            "required": ["documentContent", "documentUrl", "documentSasToken", "documentContentType"],
                         },
                     },
                     "required": ["recordId", "data"],

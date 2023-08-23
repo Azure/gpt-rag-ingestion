@@ -34,7 +34,6 @@ def chunk_document(data):
             "contentVector": chunk.embedding_metadata['embedding'] # type: ignore
         })
 
-      
     # chunks = [{
     #                     "filepath": data['documentUrl'].split('/')[-1],
     #                     "chunk_id": 0,

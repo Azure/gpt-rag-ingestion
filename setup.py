@@ -5,6 +5,7 @@ import time
 import requests
 import argparse
 from tenacity import retry, wait_fixed, stop_after_delay
+import azure.core.exceptions
 from azure.storage.blob import BlobServiceClient
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.web import WebSiteManagementClient
@@ -64,6 +65,17 @@ def execute_setup(subscription_id, resource_group, function_app_name):
     storage_container_chunks = function_app_settings.properties["STORAGE_CONTAINER_CHUNKS"]
     storage_account_name = function_app_settings.properties["STORAGE_ACCOUNT_NAME"]
 
+    # create a code to print all variables above
+    logging.info(f"Function endpoint: {function_endpoint}")
+    logging.info(f"Search service: {search_service}")
+    logging.info(f"Search analyzer name: {search_analyzer_name}")
+    logging.info(f"Search API version: {search_api_version}")
+    logging.info(f"Search index interval: {search_index_interval}")
+    logging.info(f"Search index name: {search_index_name}")
+    logging.info(f"Storage container: {storage_container}")
+    logging.info(f"Storage container chunks: {storage_container_chunks}")
+    logging.info(f"Storage account name: {storage_account_name}")
+
     logging.info(f"Getting function app {function_app_name} key.")
     function_key = get_function_key(subscription_id, resource_group, function_app_name)
 
@@ -71,7 +83,8 @@ def execute_setup(subscription_id, resource_group, function_app_name):
     storage_client = StorageManagementClient(credential, subscription_id)
     keys = storage_client.storage_accounts.list_keys(resource_group, storage_account_name)
     storage_connection_string = f"DefaultEndpointsProtocol=https;EndpointSuffix=core.windows.net;AccountName={storage_account_name};AccountKey={keys.keys[0].value}"
-    
+    # logging.info(f"Storage account connection string: {storage_connection_string}")
+
     ###########################################################################
     # 00 Creating blob containers (if needed)
     ###########################################################################
@@ -81,12 +94,18 @@ def execute_setup(subscription_id, resource_group, function_app_name):
     blob_service_client = BlobServiceClient.from_connection_string(storage_connection_string)
     # Create documents container
     container_client = blob_service_client.get_container_client(storage_container)
-    if not container_client.exists():
-        # Create the container
-        container_client.create_container()
-        logging.info(f"Container '{storage_container}' created successfully.")
-    else:
-        logging.info(f"Container '{storage_container}' already exists.")
+    try:
+        if not container_client.exists():
+            # Create the container
+            container_client.create_container()
+            logging.info(f"Container '{storage_container}' created successfully.")
+        else:
+            logging.info(f"Container '{storage_container}' already exists.")
+    except azure.core.exceptions.ClientAuthenticationError as e:
+        error_message = str(e)
+        logging.error(f"Error connecting with storage account, you may need to restart the computer. Error: {error_message}")
+        exit()
+
     # Create chunks container
     container_client = blob_service_client.get_container_client(storage_container_chunks)
     if not container_client.exists():
@@ -151,18 +170,14 @@ def execute_setup(subscription_id, resource_group, function_app_name):
                 "context":"/document",
                 "batchSize":1,
                 "inputs":[ 
-                    { 
-                        "name":"documentContent",
-                        "source":"/document/content"
-                    },
                     {
                         "name":"documentUrl",
                         "source":"/document/metadata_storage_path"
                     },
                     {
-                        "name":"documentUrlencoded",
-                        "source":"/document/metadata_storage_path_encoded"
-                    },
+                        "name":"documentContent",
+                        "source":"/document/content"
+                    },                    
                     { 
                         "name":"documentSasToken",
                         "source":"/document/metadata_storage_sas_token"
@@ -211,26 +226,19 @@ def execute_setup(subscription_id, resource_group, function_app_name):
         "name": f"{search_index_name}-source-documents",
         "fields": [
             {
-                "name": "metadata_storage_path_encoded",
+                "name": "id",
                 "type": "Edm.String",
                 "searchable": False,
                 "sortable": False,
                 "key": True,                               
                 "filterable": False,
                 "facetable": False
-            },            {
+            },
+            {
                 "name": "metadata_storage_path",
                 "type": "Edm.String",
                 "searchable": False,
                 "sortable": False,     
-                "filterable": False,
-                "facetable": False
-            },
-            {
-                "name": "metadata_storage_name",
-                "type": "Edm.String",
-                "searchable": False,
-                "sortable": False,
                 "filterable": False,
                 "facetable": False
             },
@@ -274,7 +282,7 @@ def execute_setup(subscription_id, resource_group, function_app_name):
         "name":  f"{search_index_name}",
         "fields": [
             {
-                "name": "metadata_storage_path_encoded",
+                "name": "id",
                 "type": "Edm.String",
                 "searchable": False,
                 "sortable": False,
@@ -311,6 +319,12 @@ def execute_setup(subscription_id, resource_group, function_app_name):
                 "retrievable": True,
                 "analyzer": search_analyzer_name
             },
+            {
+                "name": "page",
+                "type": "Edm.Int32",
+                "searchable": False,
+                "retrievable": True
+            },            
             {
                 "name": "offset",
                 "type": "Edm.Int64",
@@ -422,8 +436,7 @@ def execute_setup(subscription_id, resource_group, function_app_name):
         "fieldMappings" : [
             {
             "sourceFieldName" : "metadata_storage_path",
-            "targetFieldName" : "metadata_storage_path_encoded",
-            "mappingFunction" : { "name" : "base64Encode" }
+            "targetFieldName" : "id"
             }
         ],
         "outputFieldMappings" : [
@@ -433,9 +446,10 @@ def execute_setup(subscription_id, resource_group, function_app_name):
             "batchSize": 1,
             "maxFailedItems":-1,
             "maxFailedItemsPerBatch":-1,
+            "base64EncodeKeys": True,
             "configuration": 
             {
-                "dataToExtract": "contentAndMetadata"    
+                "dataToExtract": "contentAndMetadata"
             }
         }
         }    
@@ -448,8 +462,7 @@ def execute_setup(subscription_id, resource_group, function_app_name):
         "fieldMappings" : [
             {
             "sourceFieldName" : "metadata_storage_path",
-            "targetFieldName" : "metadata_storage_path_encoded",
-            "mappingFunction" : { "name" : "base64Encode" }
+            "targetFieldName" : "id"
             }
         ],        
         "parameters":
@@ -457,6 +470,7 @@ def execute_setup(subscription_id, resource_group, function_app_name):
             "batchSize": 1,
             "maxFailedItems":-1,
             "maxFailedItemsPerBatch":-1,
+            "base64EncodeKeys": True,            
             "configuration": 
             {
                 "dataToExtract": "contentAndMetadata",

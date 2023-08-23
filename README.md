@@ -17,9 +17,9 @@ In VSCode with [Azure Function App Extension](https://marketplace.visualstudio.c
 
 **2) Azure Cognitive Search Setup**
 
-After you have completed the deployment of the function (Wait 7 Minutes before proceed) and then, run the setup operation in terminal to create the elements in Cognitive Search executing the following commands:
+After you have completed the deployment of the function, wait about 7 Minutes so the Function App can generate the function and its keys.
 
-Not run the command before 7 minutes after deploy the function.
+Then run the setup operation in terminal to create the elements in Cognitive Search executing the following commands:
 
 ```
 az login
@@ -27,6 +27,8 @@ pip3 install -r requirements.txt
 python3 setup.py -s SUBSCRIPTION_ID -r RESOURCE_GROUP -f FUNCTION_APP_NAME
 ```
 OBS: replace SUBSCRIPTION_ID, RESOURCE_GROUP and FUNCTION_APP_NAME by the names applicable to your deployment.
+
+If Function app is taking too long to generate the function and its keys, you could do another deployment of the function (step 1) and then try the commands above again.
 
 **3) Add source documents to object storage** 
 
