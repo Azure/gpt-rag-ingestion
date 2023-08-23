@@ -1,22 +1,19 @@
 import azure.functions as func
-import json
-import jsonschema
-import logging
-import datetime
-from json import JSONEncoder
-from chunker.chunk_documents_formrec import chunk_document
-from azure.keyvault.secrets import SecretClient
-from azure.identity import DefaultAzureCredential
-app = func.FunctionApp()
 
+app = func.FunctionApp()
+from json import JSONEncoder
 class DateTimeEncoder(JSONEncoder):
-        #Override the default method
-        def default(self, obj):
-            if isinstance(obj, (datetime.date, datetime.datetime)):
-                return obj.isoformat()
+    #Override the default method
+    def default(self, obj):
+        import datetime
+        if isinstance(obj, (datetime.date, datetime.datetime)):
+            return obj.isoformat()
 
 @app.route(route="document-chunking", auth_level=func.AuthLevel.FUNCTION)
 def document_chunking(req: func.HttpRequest) -> func.HttpResponse:
+    import jsonschema
+    import logging
+    
     logging.info('Invoked document_chunking skill.')
     try:
         body = req.get_json()
@@ -40,6 +37,10 @@ def document_chunking(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse(error_message, status_code=400)
 
 def process_documents(body):
+    import json
+    import logging
+    from chunker.chunk_documents_formrec import chunk_document
+
     values = body['values']
     results = {}
     results["values"] = []

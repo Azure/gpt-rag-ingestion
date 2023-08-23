@@ -43,8 +43,8 @@ def call_search_api(search_service, search_api_version, resource_type, resource_
 
 @retry(stop=stop_after_delay(20*60), wait=wait_fixed(60), before_sleep=lambda _: logging.info('Will attempt again in a minute as the function may not yet be available for use...'))
 def get_function_key(subscription_id, resource_group, function_app_name):
-    credential = DefaultAzureCredential()
-    web_mgmt_client = WebSiteManagementClient(credential, subscription_id)    
+    credential = DefaultAzureCredential(logging_enable=True)
+    web_mgmt_client = WebSiteManagementClient(credential, subscription_id, logging_enable=True)    
     keys = web_mgmt_client.web_apps.list_function_keys(resource_group, function_app_name, 'document_chunking')
     function_key = keys.additional_properties["default"]
     return function_key
