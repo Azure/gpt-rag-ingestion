@@ -80,7 +80,7 @@ def analyze_document_rest(filepath, model):
         time.sleep(2)
 
     return result
-
+: KeyError: 'columnSpan' 
 def table_to_html(table):
     table_html = "<table>"
     rows = [sorted([cell for cell in table['cells'] if cell['rowIndex'] == i], key=lambda cell: cell['columnIndex']) for i in range(table['rowCount'])]
@@ -89,8 +89,13 @@ def table_to_html(table):
         for cell in row_cells:
             tag = "th" if (cell['kind'] == "columnHeader" or cell['kind'] == "rowHeader") else "td"
             cell_spans = ""
-            if cell['columnSpan'] > 1: cell_spans += f" colSpan={cell['columnSpan']}"
-            if cell['rowSpan'] > 1: cell_spans += f" rowSpan={cell['rowSpan']}"
+            
+            if 'columnSpan' in cell:
+                if cell['columnSpan'] > 1: cell_spans += f" colSpan={cell['columnSpan']}"
+            
+            if 'rowSpan' in cell:
+                if cell['rowSpan'] > 1: cell_spans += f" rowSpan={cell['rowSpan']}"
+
             table_html += f"<{tag}{cell_spans}>{html.escape(cell['content'])}</{tag}>"
         table_html +="</tr>"
     table_html += "</table>"
