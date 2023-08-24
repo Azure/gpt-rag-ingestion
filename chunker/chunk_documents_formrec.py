@@ -110,9 +110,9 @@ def in_a_table(paragraph, tables):
                 return True
     return False
 
-def get_chunk(content, url, page, chunk_id, data, text_embedder):
+def get_chunk(content, url, page, chunk_id, text_embedder):
+    filepath = url.split('/')[-1]
     chunk =  {
-            "filepath": {url.split('/')[-1]},
             "chunk_id": chunk_id,
             "offset": 0,
             "length": 0,
@@ -120,6 +120,7 @@ def get_chunk(content, url, page, chunk_id, data, text_embedder):
             "title": "default",
             "category": "default",
             "url": url,
+            "filepath": filepath,            
             "content": content,
             "contentVector": text_embedder.embed_content(content)                   
     }
@@ -145,7 +146,7 @@ def chunk_document(data):
         table_content = table_to_html(table)
         chunk_id += 1
         page = table['cells'][0]['boundingRegions'][0]['pageNumber']
-        chunk = get_chunk(table_content, data['documentUrl'], page, chunk_id, data, text_embedder)
+        chunk = get_chunk(table_content, data['documentUrl'], page, chunk_id, text_embedder)
         chunks.append(chunk)
 
     # paragraphs
@@ -158,7 +159,7 @@ def chunk_document(data):
                 paragraph_content = paragraph_content + "\n" + paragraph['content']
             else:
                 chunk_id += 1
-                chunk = get_chunk(paragraph_content, data['documentUrl'], page, chunk_id, data, text_embedder)
+                chunk = get_chunk(paragraph_content, data['documentUrl'], page, chunk_id, text_embedder)
                 chunks.append(chunk)
                 # overlap logic
                 overlapped_text = paragraph_content
@@ -170,7 +171,7 @@ def chunk_document(data):
     # last section
     chunk_size = TOKEN_ESTIMATOR.estimate_tokens(paragraph_content)
     if chunk_size > MIN_CHUNK_SIZE: 
-        chunk = get_chunk(paragraph_content, data['documentUrl'], page, chunk_id, data, text_embedder)
+        chunk = get_chunk(paragraph_content, data['documentUrl'], page, chunk_id, text_embedder)
         chunks.append(chunk)
 
     return chunks, errors, warnings
