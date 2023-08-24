@@ -1,6 +1,4 @@
-import json
 import logging
-import os
 import time
 import requests
 import argparse
@@ -249,16 +247,57 @@ def execute_setup(subscription_id, resource_group, function_app_name):
                     {
                         "name": "content",
                         "type": "Edm.String",
-                        "searchable": True,
+                        "searchable": False,
                         "retrievable": True
                     },
                     {
                         "name": "category",
                         "type": "Edm.String",
-                        "filterable": False,
                         "searchable": False,
                         "retrievable": True
                     },
+                    {
+                        "name": "filepath",
+                        "type": "Edm.String",
+                        "searchable": False,
+                        "retrievable": True
+                    },
+                    {
+                        "name": "chunk_id",
+                        "type": "Edm.Int32",
+                        "searchable": False,
+                        "retrievable": True
+                    },
+                    {
+                        "name": "page",
+                        "type": "Edm.Int32",
+                        "searchable": False,
+                        "retrievable": True
+                    },
+                    {
+                        "name": "offset",
+                        "type": "Edm.Int32",
+                        "searchable": False,
+                        "retrievable": True
+                    },
+                    {
+                        "name": "length",
+                        "type": "Edm.Int32",
+                        "searchable": False,
+                        "retrievable": True
+                    },
+                    {
+                        "name": "title",
+                        "type": "Edm.String",
+                        "searchable": False,
+                        "retrievable": True
+                    },
+                    {
+                        "name": "url",
+                        "type": "Edm.String",
+                        "searchable": False,
+                        "retrievable": True
+                    },                
                     {
                         "name": "contentVector",
                         "type": "Collection(Edm.Double)",

@@ -17,7 +17,6 @@ FORM_REC_API_VERSION = "2023-07-31"
 
 TOKEN_ESTIMATOR = TokenEstimator()
 
-
 def get_secret(secretName):
     keyVaultName = os.environ["AZURE_KEY_VAULT_NAME"]
     KVUri = f"https://{keyVaultName}.vault.azure.net"
@@ -79,15 +78,18 @@ def analyze_document_rest(filepath, model):
         # Request still processing, wait and try again
         time.sleep(2)
 
-    return result
-: KeyError: 'columnSpan' 
+    return result 
+
 def table_to_html(table):
     table_html = "<table>"
     rows = [sorted([cell for cell in table['cells'] if cell['rowIndex'] == i], key=lambda cell: cell['columnIndex']) for i in range(table['rowCount'])]
     for row_cells in rows:
         table_html += "<tr>"
         for cell in row_cells:
-            tag = "th" if (cell['kind'] == "columnHeader" or cell['kind'] == "rowHeader") else "td"
+            tag =  "td"
+            if 'kind' in cell:
+                if (cell['kind'] == "columnHeader" or cell['kind'] == "rowHeader"): tag = "th"
+            
             cell_spans = ""
             
             if 'columnSpan' in cell:

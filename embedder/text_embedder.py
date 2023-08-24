@@ -34,9 +34,16 @@ class TextEmbedder():
 
     @retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(6))
     def embed_content(self, text, clean_text=True, use_single_precision=True):
+        import time
         embedding_precision = 9 if use_single_precision else 18
         if clean_text:
             text = self.clean_text(text)
-        response = openai.Embedding.create(input=text, engine=self.AZURE_OPENAI_EMBEDDING_DEPLOYMENT)
+        try:
+            response = openai.Embedding.create(input=text, engine=self.AZURE_OPENAI_EMBEDDING_DEPLOYMENT)
+        except Exception as e:
+            wait = int(e.headers['Retry-After'])
+            time.sleep(wait+1)
+            response = openai.Embedding.create(input=text, engine=self.AZURE_OPENAI_EMBEDDING_DEPLOYMENT)
+
         embedding = [round(x, embedding_precision) for x in response['data'][0]['embedding']] # type: ignore
         return embedding

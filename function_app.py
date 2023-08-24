@@ -22,6 +22,7 @@ def document_chunking(req: func.HttpRequest) -> func.HttpResponse:
 
         if body:
             result = process_documents(body)
+            logging.info('Finished document_chunking skill.')
             return func.HttpResponse(result, mimetype="application/json")
         else:
             error_message = "Invalid body."
@@ -89,8 +90,9 @@ def process_documents(body):
 
         if output_record != None:
             results["values"].append(output_record)
-
-        return json.dumps(results, ensure_ascii=False, cls=DateTimeEncoder)
+            
+    logging.info('Finished process_documents.')
+    return json.dumps(results, ensure_ascii=False, cls=DateTimeEncoder)
 
 def get_request_schema():
     return {
