@@ -26,7 +26,11 @@ az login
 pip3 install -r requirements.txt
 python3 setup.py -s SUBSCRIPTION_ID -r RESOURCE_GROUP -f FUNCTION_APP_NAME
 ```
-OBS: replace SUBSCRIPTION_ID, RESOURCE_GROUP and FUNCTION_APP_NAME by the names applicable to your deployment.
+OBS: 
+
+- Replace SUBSCRIPTION_ID, RESOURCE_GROUP and FUNCTION_APP_NAME by the names applicable to your deployment.
+
+- Add -m or -e when executing setup.py if you want to enable managed identities or environment credentials authentication.
 
 If Function app is taking too long to generate the function and its keys, you could do another deployment of the function (step 1) and then try the commands above again.
 

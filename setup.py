@@ -40,17 +40,17 @@ def call_search_api(search_service, search_api_version, resource_type, resource_
     return response
 
 @retry(stop=stop_after_delay(20*60), wait=wait_fixed(60), before_sleep=lambda _: logging.info('Will attempt again in a minute as the function may not yet be available for use...'))
-def get_function_key(subscription_id, resource_group, function_app_name):
-    credential = DefaultAzureCredential(logging_enable=True)
+def get_function_key(subscription_id, resource_group, function_app_name, enable_managed_identities, enable_env_credentials):
+    credential = DefaultAzureCredential(logging_enable=True, exclude_managed_identity_credential=not enable_managed_identities, exclude_environment_credential=not enable_env_credentials)
     web_mgmt_client = WebSiteManagementClient(credential, subscription_id, logging_enable=True)    
     keys = web_mgmt_client.web_apps.list_function_keys(resource_group, function_app_name, 'document_chunking')
     function_key = keys.additional_properties["default"]
     return function_key
 
-def execute_setup(subscription_id, resource_group, function_app_name):
+def execute_setup(subscription_id, resource_group, function_app_name, enable_managed_identities, enable_env_credentials):
     
     logging.info(f"Getting function app {function_app_name} properties.") 
-    credential = DefaultAzureCredential()
+    credential = DefaultAzureCredential(logging_enable=True, exclude_managed_identity_credential=not enable_managed_identities, exclude_environment_credential=not enable_env_credentials)
     web_mgmt_client = WebSiteManagementClient(credential, subscription_id)
     function_app_settings = web_mgmt_client.web_apps.list_application_settings(resource_group, function_app_name)
     function_endpoint = f"https://{function_app_name}.azurewebsites.net"
@@ -524,7 +524,7 @@ def execute_setup(subscription_id, resource_group, function_app_name):
 
 
 
-def main(subscription_id=None, resource_group=None, function_app_name=None):
+def main(subscription_id=None, resource_group=None, function_app_name=None, enable_managed_identities=False, enable_env_credentials=False):
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     logging.info(f"Starting setup.")
 
@@ -537,7 +537,7 @@ def main(subscription_id=None, resource_group=None, function_app_name=None):
 
     start_time = time.time()
 
-    execute_setup(subscription_id, resource_group, function_app_name)
+    execute_setup(subscription_id, resource_group, function_app_name, enable_managed_identities, enable_env_credentials)
 
     response_time = time.time() - start_time
     logging.info(f"Finished setup. {round(response_time,2)} seconds")
@@ -548,6 +548,8 @@ if __name__ == '__main__':
     parser.add_argument('-s', '--subscription_id', help='Subscription ID')
     parser.add_argument('-r', '--resource_group', help='Resource group')
     parser.add_argument('-f', '--function_app_name', help='Chunking function app name')
+    parser.add_argument('-m', '--enable_managed_identities', action='store_true', default=False, help='Enable managed identities')
+    parser.add_argument('-e', '--enable_env_credentials', action='store_true', default=False, help='Enable environment credentials')    
     args = parser.parse_args()
 
-    main(subscription_id=args.subscription_id, resource_group=args.resource_group, function_app_name=args.function_app_name)    
+    main(subscription_id=args.subscription_id, resource_group=args.resource_group, function_app_name=args.function_app_name, enable_managed_identities=args.enable_managed_identities, enable_env_credentials=args.enable_env_credentials)    
