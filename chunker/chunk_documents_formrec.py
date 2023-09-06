@@ -36,7 +36,7 @@ def analyze_document_rest(filepath, model):
     body = {
         "urlSource": filepath
     }
-    request_endpoint = f"https://{os.environ['AZURE_FORMREC_SERVICE']}.cognitiveservices.azure.com/formrecognizer/documentModels/{model}:analyze?api-version={FORM_REC_API_VERSION}"
+    request_endpoint = f"https://{os.environ['AZURE_FORMREC_SERVICE']}.cognitiveservices.azure.com/formrecognizer/documentModels/{model}:analyze?api-version={FORM_REC_API_VERSION}&features=ocr.highResolution"
     try:
         # Send request
         response = requests.post(request_endpoint, headers=headers, json=body)

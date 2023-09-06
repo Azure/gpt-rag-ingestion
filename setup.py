@@ -358,7 +358,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, enable_man
                 "type": "Edm.Int32",
                 "searchable": False,
                 "retrievable": True
-            }            
+            },            
             {
                 "name": "content",
                 "type": "Edm.String",
