@@ -326,8 +326,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, enable_man
                 "name": "id",
                 "type": "Edm.String",
                 "searchable": False,
-                "sortable": False,
-                "key": True,                               
+                "sortable": False,                      
                 "filterable": False,
                 "facetable": False
             },
@@ -356,6 +355,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, enable_man
             {
                 "name": "unique_id",
                 "type": "Edm.Int32",
+                "key": True,                         
                 "searchable": False,
                 "retrievable": True
             },            
@@ -506,12 +506,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, enable_man
         "dataSourceName" : f"{search_index_name}-datasource-chunks",
         "targetIndexName" : f"{search_index_name}",
         "schedule" : { "interval" : f"{search_index_interval}"},
-        "fieldMappings" : [
-            {
-            "sourceFieldName" : "unique_id",
-            "targetFieldName" : "id"
-            }
-        ],        
+        "fieldMappings" : [],        
         "parameters":
         {
             "batchSize": 1,
