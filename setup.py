@@ -354,7 +354,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, enable_man
             },
             {
                 "name": "unique_id",
-                "type": "Edm.Int32",
+                "type": "Edm.String",
                 "key": True,                         
                 "searchable": False,
                 "retrievable": True
