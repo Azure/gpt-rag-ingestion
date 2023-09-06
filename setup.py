@@ -39,13 +39,13 @@ def call_search_api(search_service, search_api_version, resource_type, resource_
         logging.error(f"Error when calling search API {method} {resource_type} {resource_name}. Error: {error_message}")
     return response
 
-@retry(stop=stop_after_delay(20*60), wait=wait_fixed(60), before_sleep=lambda _: logging.info('Will attempt again in a minute as the function may not yet be available for use...'))
-def get_function_key(subscription_id, resource_group, function_app_name, enable_managed_identities, enable_env_credentials):
-    credential = DefaultAzureCredential(logging_enable=True, exclude_managed_identity_credential=not enable_managed_identities, exclude_environment_credential=not enable_env_credentials)
-    web_mgmt_client = WebSiteManagementClient(credential, subscription_id, logging_enable=True)    
-    keys = web_mgmt_client.web_apps.list_function_keys(resource_group, function_app_name, 'document_chunking')
-    function_key = keys.additional_properties["default"]
-    return function_key
+# @retry(stop=stop_after_delay(20*60), wait=wait_fixed(60), before_sleep=lambda _: logging.info('Will attempt again in a minute as the function may not yet be available for use...'))
+# def get_function_key(subscription_id, resource_group, function_app_name, enable_managed_identities, enable_env_credentials):
+#     credential = DefaultAzureCredential(logging_enable=True, exclude_managed_identity_credential=not enable_managed_identities, exclude_environment_credential=not enable_env_credentials)
+#     web_mgmt_client = WebSiteManagementClient(credential, subscription_id, logging_enable=True)    
+#     keys = web_mgmt_client.web_apps.list_function_keys(resource_group, function_app_name, 'document_chunking')
+#     function_key = keys.additional_properties["default"]
+#     return function_key
 
 def execute_setup(subscription_id, resource_group, function_app_name, enable_managed_identities, enable_env_credentials):
     
@@ -75,7 +75,9 @@ def execute_setup(subscription_id, resource_group, function_app_name, enable_man
     logging.info(f"Storage account name: {storage_account_name}")
 
     logging.info(f"Getting function app {function_app_name} key.")
-    function_key = get_function_key(subscription_id, resource_group, function_app_name)
+    # ask the user to inform the function host key
+    function_key = input("Enter function key: ")
+    # function_key = get_function_key(subscription_id, resource_group, function_app_name)
 
     logging.info(f"Getting {function_app_name} storage connection string.")
     storage_client = StorageManagementClient(credential, subscription_id)
