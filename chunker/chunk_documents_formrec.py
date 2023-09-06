@@ -115,7 +115,7 @@ def get_chunk(content, url, page, chunk_id, text_embedder):
     filepath = url.split('/')[-1]
     chunk =  {
             "chunk_id": chunk_id,
-            "unique_id": base64.b64encode(f"{filepath}_{chunk_id}".encode("utf-8")),
+            "unique_id": base64.b64encode(f"{filepath}_{chunk_id}".encode("utf-8")).decode("utf-8"),
             "offset": 0,
             "length": 0,
             "page": page,                    
