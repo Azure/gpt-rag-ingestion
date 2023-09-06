@@ -4,6 +4,7 @@ import requests
 import time
 import json
 import html
+import base64
 from azure.keyvault.secrets import SecretClient
 from azure.identity import DefaultAzureCredential
 from embedder.text_embedder import TextEmbedder
@@ -114,6 +115,7 @@ def get_chunk(content, url, page, chunk_id, text_embedder):
     filepath = url.split('/')[-1]
     chunk =  {
             "chunk_id": chunk_id,
+            "unique_id": base64.b64encode(f"{filepath}_{chunk_id}".encode("utf-8")),
             "offset": 0,
             "length": 0,
             "page": page,                    

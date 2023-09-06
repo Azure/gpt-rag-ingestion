@@ -269,7 +269,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, enable_man
                         "type": "Edm.Int32",
                         "searchable": False,
                         "retrievable": True
-                    },
+                    },                    
                     {
                         "name": "page",
                         "type": "Edm.Int32",
@@ -353,6 +353,12 @@ def execute_setup(subscription_id, resource_group, function_app_name, enable_man
                 "searchable": False,
                 "retrievable": True
             },
+            {
+                "name": "unique_id",
+                "type": "Edm.Int32",
+                "searchable": False,
+                "retrievable": True
+            }            
             {
                 "name": "content",
                 "type": "Edm.String",
@@ -502,7 +508,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, enable_man
         "schedule" : { "interval" : f"{search_index_interval}"},
         "fieldMappings" : [
             {
-            "sourceFieldName" : "metadata_storage_path",
+            "sourceFieldName" : "unique_id",
             "targetFieldName" : "id"
             }
         ],        
