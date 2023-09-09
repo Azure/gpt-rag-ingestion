@@ -2,39 +2,50 @@
 
 Part of [gpt-rag](https://github.com/Azure/gpt-rag)
 
-## Pre-reqs
-
-- VS Code with Azure Function App Extension
-- [AZ CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)
-- Python 3.10
-- Contributor role in the *Function App*, *Storage Account* and *Search Service*.
 
 ## Deploy (quickstart)
 
-**1) Deploy function to Azure** 
+Here are the steps to configure cognitive search and deploy ingestion code using the terminal.
 
-In VSCode with [Azure Function App Extension](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-azurefunctions) go to the *Azure* Window, reveal your Function App (Data Ingestion Function) in the resource explorer, right-click it then select *Deploy*.
+**First Check your environment meets the requirements**
 
-**2) Azure Cognitive Search Setup**
+- You need **[AZ CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)** to log and run Azure commands in the command line.
+- You need **Python 3.10 or newer** to run the setup script. [Miniconda](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html) helps you creating and managing your python environments. 
+- **[Azure Functions Core Tools](https://learn.microsoft.com/en-us/azure/azure-functions/functions-run-local?tabs=windows%2Cisolated-process%2Cnode-v4%2Cpython-v2%2Chttp-trigger%2Ccontainer-apps&pivots=programming-language-python#install-the-azure-functions-core-tools)** will be needeed to deploy the chunking function.
 
-After you have completed the deployment of the function, wait about 7 Minutes so the Function App can generate the function and its keys.
+**1) Login to Azure** 
 
-Then run the setup operation in terminal to create the elements in Cognitive Search executing the following commands:
+run ```az login``` to log into azure. Run ```az login -i``` if using a VM with managed identity to run the setup.
 
-```
-az login
-pip3 install -r requirements.txt
-python3 setup.py -s SUBSCRIPTION_ID -r RESOURCE_GROUP -f FUNCTION_APP_NAME
-```
-OBS: 
+**2) Clone the repo** 
 
-- Replace SUBSCRIPTION_ID, RESOURCE_GROUP and FUNCTION_APP_NAME by the names applicable to your deployment.
+If you plan to customize the ingestion logic, create a new repo by clicking on the **Use this template** button on top of this page.
 
-- Add -m or -e when executing setup.py if you want to enable managed identities or environment credentials authentication.
+Clone the repostory locally:  ```git clone https://github.com/azure/gpt-rag-ingestion```
 
-If Function app is taking too long to generate the function and its keys, you could do another deployment of the function (step 1) and then try the commands above again.
+*If you created a new repository please update the repository URL before running the command*
 
-**3) Add source documents to object storage** 
+**3) Deploy function to Azure** 
+
+Enter in the cloned repo folder: ```cd gpt-rag-ingestion```
+
+Use Azure Functions Core Tools to deploy the function: ```func azure functionapp publish FUNCTION_APP_NAME --python```
+
+*Replace FUNCTION_APP_NAME with your Ingestion Function App name before running the command*
+
+**4) Run Azure Cognitive Search Setup**
+
+Enter in the cloned repo folder: ```cd gpt-rag-ingestion```
+
+Install python libraries: ```pip3 install -r requirements.txt```
+
+Run the setup script: ```python3 setup.py -s SUBSCRIPTION_ID -r RESOURCE_GROUP -f FUNCTION_APP_NAME```
+
+*Replace SUBSCRIPTION_ID, RESOURCE_GROUP and FUNCTION_APP_NAME by the names applicable to your environment*
+
+*Add -i command line argument when executing setup.py if using a VM with managed identity to run the setup.*
+
+**5) Add source documents to object storage** 
 
 Upload your documents to the *documents* folder in the storage account which name starts with *strag*.
 
