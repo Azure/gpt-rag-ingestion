@@ -31,7 +31,7 @@ Enter in the cloned repo folder: ```cd gpt-rag-ingestion```
 
 Use Azure Functions Core Tools to deploy the function: ```func azure functionapp publish FUNCTION_APP_NAME --python```
 
-Check the function is listed after deployment ```func azure functionapp list-functions FUNCTION_APP_NAME```
+Check the function is listed after deployment: ```func azure functionapp list-functions FUNCTION_APP_NAME```
 
 *Replace FUNCTION_APP_NAME with your Ingestion Function App name before running the command*
 
