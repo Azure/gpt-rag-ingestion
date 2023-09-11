@@ -10,7 +10,7 @@ Here are the steps to configure cognitive search and deploy ingestion code using
 **First Check your environment meets the requirements**
 
 - You need **[AZ CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)** to log and run Azure commands in the command line.
-- You need **Python 3.10 or newer** to run the setup script. [Miniconda](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html) helps you creating and managing your python environments. 
+- You need **Python 3.10** to run the setup script. [Miniconda](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html) helps you creating and managing your python environments. 
 - **[Azure Functions Core Tools](https://learn.microsoft.com/en-us/azure/azure-functions/functions-run-local?tabs=windows%2Cisolated-process%2Cnode-v4%2Cpython-v2%2Chttp-trigger%2Ccontainer-apps&pivots=programming-language-python#install-the-azure-functions-core-tools)** will be needeed to deploy the chunking function.
 
 **1) Login to Azure** 
@@ -30,6 +30,8 @@ Clone the repostory locally:  ```git clone https://github.com/azure/gpt-rag-inge
 Enter in the cloned repo folder: ```cd gpt-rag-ingestion```
 
 Use Azure Functions Core Tools to deploy the function: ```func azure functionapp publish FUNCTION_APP_NAME --python```
+
+```func azure functionapp list-functions FUNCTION_APP_NAME```
 
 *Replace FUNCTION_APP_NAME with your Ingestion Function App name before running the command*
 

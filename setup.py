@@ -11,6 +11,7 @@ from azure.mgmt.storage import StorageManagementClient
 
 logging.getLogger('azure').setLevel(logging.WARNING)
 
+
 def call_search_api(search_service, search_api_version, resource_type, resource_name, method, credential, body=None):
     """
     Calls the Azure Search API with the specified parameters.
@@ -34,7 +35,6 @@ def call_search_api(search_service, search_api_version, resource_type, resource_
     """    
     # get the token
     token = credential.get_token("https://search.azure.com/.default").token
-
     headers = {
         "Authorization": f"Bearer {token}",
         'Content-Type': 'application/json'
@@ -61,7 +61,7 @@ def call_search_api(search_service, search_api_version, resource_type, resource_
     return response
 
 
-def get_function_key(subscription_id, resource_group, function_app_name, function_name, credential):
+def get_function_key(subscription_id, resource_group, function_app_name, credential):
     """
     Returns an API key for the given function.
 
@@ -69,7 +69,6 @@ def get_function_key(subscription_id, resource_group, function_app_name, functio
     subscription_id (str): The subscription ID.
     resource_group (str): The resource group name.
     function_app_name (str): The name of the function app.
-    function_name (str): The name of the function.
     credential (str): The credential to use.
 
     Returns:
@@ -78,7 +77,7 @@ def get_function_key(subscription_id, resource_group, function_app_name, functio
     logging.info(f"Obtaining function key after creating or updating its value.")
     accessToken = f"Bearer {credential.get_token('https://management.azure.com/.default').token}"
     # Get key
-    requestUrl = f"https://management.azure.com/subscriptions/{subscription_id}/resourceGroups/{resource_group}/providers/Microsoft.Web/sites/{function_app_name}/functions/{function_name}/keys/{function_name}?api-version=2022-03-01"
+    requestUrl = f"https://management.azure.com/subscriptions/{subscription_id}/resourceGroups/{resource_group}/providers/Microsoft.Web/sites/{function_app_name}/functions/document_chunking/keys/mykey?api-version=2022-03-01"
     requestHeaders = {
         "Authorization": accessToken,
         "Content-Type": "application/json"
@@ -94,7 +93,6 @@ def get_function_key(subscription_id, resource_group, function_app_name, functio
         function_key = None
         logging.error(f"Error when getting function key. Details: {str(e)}.")        
     return function_key
-
 
 
 def approve_shared_links(subscription_id, resource_group, function_app_name, storage_account_name, credential):
@@ -180,6 +178,7 @@ def approve_shared_links(subscription_id, resource_group, function_app_name, sto
         error_message = str(e)
         logging.error(f"Error when approving private link service connection. Please do it manually. Error: {error_message}")
 
+
 def execute_setup(subscription_id, resource_group, function_app_name, enable_managed_identities, enable_env_credentials):
     """
     This function performs the necessary steps to set up the ingestion sub components, such as creating the required datastores and indexers.
@@ -209,7 +208,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, enable_man
     storage_container_chunks = function_app_settings.properties["STORAGE_CONTAINER_CHUNKS"]
     storage_account_name = function_app_settings.properties["STORAGE_ACCOUNT_NAME"]
     network_isolation = True if function_app_settings.properties["NETWORK_ISOLATION"].lower() == "true" else False
-    function_name = 'document-chunking'
+
 
     # create a code to print all variables above
     logging.info(f"Function endpoint: {function_endpoint}")
@@ -226,9 +225,9 @@ def execute_setup(subscription_id, resource_group, function_app_name, enable_man
     ###########################################################################
     # Get function key to be used later when creating the skillset
     ########################################################################### 
-    function_key = get_function_key(subscription_id, resource_group, function_app_name, function_name, credential)
+    function_key = get_function_key(subscription_id, resource_group, function_app_name, credential)
     if function_key is None:
-            logging.error(f"Could not get function key. Please make sure the function {function_app_name}/{function_name} is deployed before running this script.")
+            logging.error(f"Could not get function key. Please make sure the function {function_app_name}/document_chunking is deployed before running this script.")
             exit() 
 
     ###########################################################################
@@ -327,7 +326,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, enable_man
                 "@odata.type":"#Microsoft.Skills.Custom.WebApiSkill",
                 "name":"document-chunking",
                 "description":"Extract chunks from documents.",
-                "uri":f"{function_endpoint}/api/{function_name}?code={function_key}",
+                "uri":f"{function_endpoint}/api/document-chunking?code={function_key}",
                 "httpMethod":"POST",
                 "timeout":"PT230S",
                 "context":"/document",
