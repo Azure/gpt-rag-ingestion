@@ -126,7 +126,7 @@ def get_chunk(content, url, page, chunk_id, text_embedder):
             "content": content,
             "contentVector": text_embedder.embed_content(content)                   
     }
-    logging.info(f"Chunk: {chunk}.")
+    # logging.info(f"Chunk: {chunk}.")
     return chunk
 
 def chunk_document(data):
@@ -140,7 +140,7 @@ def chunk_document(data):
 
     # analyze document
     document = analyze_document_rest(filepath, 'prebuilt-layout')
-    logging.info(f"Analyzed document: {document}.") 
+    logging.info(f"Analyzed document: {data['documentUrl']}")
 
     # split into chunks
     # tables
