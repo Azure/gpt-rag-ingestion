@@ -662,7 +662,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, enable_man
             }
         }
     }
-    if network_isolation: body['parameters']['configuration']['executionEnvironment'] = "Private"
+    if network_isolation: body['parameters']['configuration']['executionEnvironment'] = "private"
     call_search_api(search_service, search_api_version, "indexers", f"{search_index_name}-indexer-chunk-documents", "put", credential, body)
 
     body = {
@@ -683,7 +683,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, enable_man
             }
         }
     }
-    if network_isolation: body['parameters']['configuration']['executionEnvironment'] = "Private"    
+    if network_isolation: body['parameters']['configuration']['executionEnvironment'] = "private"    
     call_search_api(search_service, search_api_version, "indexers", f"{search_index_name}-indexer-chunks", "put", credential, body)
 
     response_time = time.time() - start_time
