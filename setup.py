@@ -53,6 +53,8 @@ def call_search_api(search_service, search_api_version, resource_type, resource_
             status_code = response.status_code
             if status_code >= 400:
                 logging.error(f"Error when calling search API {method} {resource_type} {resource_name}. Code: {status_code}. Reason: {response.reason}")
+                response_text_dict = json.loads(response.text)
+                logging.error(f"Error when calling search API {method} {resource_type} {resource_name}. Message: {response_text_dict['error']['message']}")                
             else:
                 logging.info(f"Successfully called search API {method} {resource_type} {resource_name}. Code: {status_code}.")                
     except Exception as e:
