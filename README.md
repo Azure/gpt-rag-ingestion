@@ -10,7 +10,7 @@ Here are the steps to configure cognitive search and deploy ingestion code using
 **First Check your environment meets the requirements**
 
 - You need **[AZ CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)** to log and run Azure commands in the command line.
-- You need **Python 3.10** to run the setup script. [Miniconda](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html) helps you creating and managing your python environments. 
+- **Python 3.9+** to run the setup script. Ideally use **Python 3.10** (the same version used by the Function runtime).  
 - **[Azure Functions Core Tools](https://learn.microsoft.com/en-us/azure/azure-functions/functions-run-local?tabs=windows%2Cisolated-process%2Cnode-v4%2Cpython-v2%2Chttp-trigger%2Ccontainer-apps&pivots=programming-language-python#install-the-azure-functions-core-tools)** will be needeed to deploy the chunking function.
 
 **1) Login to Azure** 
@@ -31,7 +31,7 @@ Enter in the cloned repo folder: ```cd gpt-rag-ingestion```
 
 Use Azure Functions Core Tools to deploy the function: ```func azure functionapp publish FUNCTION_APP_NAME --python```
 
-Check the function is listed after deployment: ```func azure functionapp list-functions FUNCTION_APP_NAME```
+<!-- Check the function is listed after deployment: ```func azure functionapp list-functions FUNCTION_APP_NAME``` -->
 
 *Replace FUNCTION_APP_NAME with your Ingestion Function App name before running the command*
 
@@ -39,13 +39,13 @@ Check the function is listed after deployment: ```func azure functionapp list-fu
 
 Enter in the cloned repo folder: ```cd gpt-rag-ingestion```
 
-Install python libraries: ```pip3 install -r requirements.txt```
+Install python libraries: ```pip install -r requirements.txt --use-deprecated=legacy-resolver```
 
-Run the setup script: ```python3 setup.py -s SUBSCRIPTION_ID -r RESOURCE_GROUP -f FUNCTION_APP_NAME```
+Run the setup script: ```python setup.py -s SUBSCRIPTION_ID -r RESOURCE_GROUP -f FUNCTION_APP_NAME```
 
 *Replace SUBSCRIPTION_ID, RESOURCE_GROUP and FUNCTION_APP_NAME by the names applicable to your environment*
 
-*Add -i command line argument when executing setup.py if using a VM with managed identity to run the setup.*
+<!-- *Add -i command line argument when executing setup.py if using a VM with managed identity to run the setup.* -->
 
 **5) Add source documents to object storage** 
 
