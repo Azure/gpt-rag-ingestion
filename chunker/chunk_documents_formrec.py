@@ -8,6 +8,7 @@ import base64
 from azure.keyvault.secrets import SecretClient
 from azure.identity import DefaultAzureCredential
 from embedder.text_embedder import TextEmbedder
+from utils.file_utils import get_file_extension
 from .token_estimator import TokenEstimator
 
 MIN_CHUNK_SIZE = int(os.environ["MIN_CHUNK_SIZE"])
@@ -17,6 +18,24 @@ NUM_TOKENS = int(os.environ["NUM_TOKENS"])
 FORM_REC_API_VERSION = "2023-07-31"
 
 TOKEN_ESTIMATOR = TokenEstimator()
+
+FILE_EXTENSION_DICT = [
+    "pdf",
+    "bmp",
+    "jpeg",
+    "png",
+    "tiff",
+]
+
+def has_supported_file_extension(file_path: str) -> bool:
+    """Checks if the given file format is supported based on its file extension.
+    Args:
+        file_path (str): The file path of the file whose format needs to be checked.
+    Returns:
+        bool: True if the format is supported, False otherwise.
+    """
+    file_extension = get_file_extension(file_path)
+    return file_extension in FILE_EXTENSION_DICT
 
 def get_secret(secretName):
     keyVaultName = os.environ["AZURE_KEY_VAULT_NAME"]

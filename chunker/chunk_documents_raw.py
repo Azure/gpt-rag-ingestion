@@ -1,9 +1,15 @@
-import json
-import logging
 import os
 from .text_chunker import TextChunker
 from .chunk_metadata_helper import ChunkEmbeddingHelper
 
+def has_supported_file_extension(file_path: str) -> bool:
+    """Checks if the given file format is supported based on its file extension.
+    Args:
+        file_path (str): The file path of the file whose format needs to be checked.
+    Returns:
+        bool: True if the format is supported, False otherwise.
+    """
+    return TextChunker()._get_file_format(file_path) is not None
 
 def chunk_document(data):
     chunks = []
