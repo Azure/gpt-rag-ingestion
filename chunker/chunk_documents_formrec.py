@@ -144,12 +144,13 @@ def chunk_document(data):
 
     # split into chunks
     # tables
-    for table in document["tables"]:
-        table_content = table_to_html(table)
-        chunk_id += 1
-        page = table['cells'][0]['boundingRegions'][0]['pageNumber']
-        chunk = get_chunk(table_content, data['documentUrl'], page, chunk_id, text_embedder)
-        chunks.append(chunk)
+    if "tables"in document:
+        for table in document["tables"]:
+            table_content = table_to_html(table)
+            chunk_id += 1
+            page = table['cells'][0]['boundingRegions'][0]['pageNumber']
+            chunk = get_chunk(table_content, data['documentUrl'], page, chunk_id, text_embedder)
+            chunks.append(chunk)
 
     # paragraphs
     paragraph_content = ""
