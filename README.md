@@ -1,4 +1,4 @@
-# gpt on your data ingestion
+# GPT on your data ingestion
 
 Part of [GPT-RAG](https://github.com/Azure/gpt-rag)
 
