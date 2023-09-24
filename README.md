@@ -1,7 +1,14 @@
 # gpt on your data ingestion
 
-Part of [gpt-rag](https://github.com/Azure/gpt-rag)
+Part of [GPT-RAG](https://github.com/Azure/gpt-rag)
 
+## Components
+
+**1** [Data ingestion](https://github.com/Azure/gpt-rag-ingestion)
+
+**2** [Orchestrator](https://github.com/Azure/gpt-rag-orchestrator)
+
+**3** [App Front-End](https://github.com/Azure/gpt-rag-frontend)
 
 ## Deploy (quickstart)
 
