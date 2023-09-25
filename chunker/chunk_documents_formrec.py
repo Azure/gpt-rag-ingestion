@@ -5,37 +5,22 @@ import time
 import json
 import html
 import base64
-from azure.keyvault.secrets import SecretClient
 from azure.identity import DefaultAzureCredential
+from azure.storage.blob import BlobServiceClient
+from azure.keyvault.secrets import SecretClient
 from embedder.text_embedder import TextEmbedder
-from utils.file_utils import get_file_extension
 from .token_estimator import TokenEstimator
+from urllib.parse import urlparse
 
 MIN_CHUNK_SIZE = int(os.environ["MIN_CHUNK_SIZE"])
 TOKEN_OVERLAP = int(os.environ["TOKEN_OVERLAP"])
 NUM_TOKENS = int(os.environ["NUM_TOKENS"])
+NETWORK_ISOLATION = os.environ["NETWORK_ISOLATION"]
+network_isolation = True if NETWORK_ISOLATION.lower() == 'true' else False
 
 FORM_REC_API_VERSION = "2023-07-31"
 
 TOKEN_ESTIMATOR = TokenEstimator()
-
-FILE_EXTENSION_DICT = [
-    "pdf",
-    "bmp",
-    "jpeg",
-    "png",
-    "tiff",
-]
-
-def has_supported_file_extension(file_path: str) -> bool:
-    """Checks if the given file format is supported based on its file extension.
-    Args:
-        file_path (str): The file path of the file whose format needs to be checked.
-    Returns:
-        bool: True if the format is supported, False otherwise.
-    """
-    file_extension = get_file_extension(file_path)
-    return file_extension in FILE_EXTENSION_DICT
 
 def get_secret(secretName):
     keyVaultName = os.environ["AZURE_KEY_VAULT_NAME"]
@@ -47,38 +32,73 @@ def get_secret(secretName):
     return retrieved_secret.value
     
 def analyze_document_rest(filepath, model):
-
-    headers = {
-        "Content-Type": "application/json",
-        "Ocp-Apim-Subscription-Key": get_secret('formRecKey')
-    }
-    body = {
-        "urlSource": filepath
-    }
+    logging.info(f"Analyzing document {filepath}.")
+    
+    result = {}
+    
     request_endpoint = f"https://{os.environ['AZURE_FORMREC_SERVICE']}.cognitiveservices.azure.com/formrecognizer/documentModels/{model}:analyze?api-version={FORM_REC_API_VERSION}&features=ocr.highResolution"
-    try:
-        # Send request
-        response = requests.post(request_endpoint, headers=headers, json=body)
-    except requests.exceptions.ConnectionError as e:
-        logging.info("Connection error, retrying in 10seconds...")
-        time.sleep(10)
-        response = requests.post(request_endpoint, headers=headers, json=body)
+
+    if not network_isolation:
+
+        headers = {
+            "Content-Type": "application/json",
+            "Ocp-Apim-Subscription-Key": get_secret('formRecKey')
+        }
+        body = {
+            "urlSource": filepath
+        }
+        try:
+            # Send request
+            response = requests.post(request_endpoint, headers=headers, json=body)
+        except requests.exceptions.ConnectionError as e:
+            logging.info("Connection error, retrying in 10seconds...")
+            time.sleep(10)
+            response = requests.post(request_endpoint, headers=headers, json=body)
+            
+    else:
+
+        parsed_url = urlparse(filepath)
+        account_url = parsed_url.scheme + "://" + parsed_url.netloc
+        container_name = parsed_url.path.split("/")[1]
+        blob_name = parsed_url.path.split("/")[2]
+
+        logging.info(f"Conecting to blob to get {blob_name}.")
+
+        credential = DefaultAzureCredential()
+        blob_service_client = BlobServiceClient(account_url=account_url, credential=credential)
+        blob_client = blob_service_client.get_blob_client(container=container_name, blob=blob_name)
+
+        headers = {
+            "Content-Type": "application/pdf",
+            "Ocp-Apim-Subscription-Key": get_secret('formRecKey')
+        }
+
+        try:
+            data = blob_client.download_blob().readall()
+            response = requests.post(request_endpoint, headers=headers, data=data)
+        except requests.exceptions.ConnectionError as e:
+            logging.info("Connection error, retrying in 10seconds...")
+            time.sleep(10)
+            data = blob_client.download_blob().readall()            
+            response = requests.post(request_endpoint, headers=headers, data=data)
+
+        
+        logging.info(f"Removed file: {blob_name}.")
 
     # Parse response
     if response.status_code == 202:
-        # Request accepted, get operation ID
         operation_id = response.headers["Operation-Location"].split("/")[-1]
         # print("Operation ID:", operation_id)
     else:
         # Request failed
-        print("Error request: ", response.text)
-        exit()
+        logging.info(f"Doc Intelligence API error: {response.text}")
+        logging.info(f"urlSource: {filepath}")
+        return(result)
 
     # Poll for result
     result_endpoint = f"https://{os.environ['AZURE_FORMREC_SERVICE']}.cognitiveservices.azure.com/formrecognizer/documentModels/prebuilt-layout/analyzeResults/{operation_id}"
     result_headers = headers.copy()
     result_headers["Content-Type"] = "application/json-patch+json"
-    result = {}
 
     while True:
         result_response = requests.get(result_endpoint, headers=result_headers)
@@ -90,8 +110,6 @@ def analyze_document_rest(filepath, model):
             break
 
         if result_json["status"] == "succeeded":
-            # Request succeeded, print result
-            # print("Result:", json.dumps(json.dumps(result_json['analyzeResult']), indent=4))
             result = result_json['analyzeResult']
             break
 
@@ -145,7 +163,7 @@ def get_chunk(content, url, page, chunk_id, text_embedder):
             "content": content,
             "contentVector": text_embedder.embed_content(content)                   
     }
-    # logging.info(f"Chunk: {chunk}.")
+    logging.info(f"Chunk: {chunk}.")
     return chunk
 
 def chunk_document(data):
@@ -156,14 +174,15 @@ def chunk_document(data):
 
     text_embedder = TextEmbedder()
     filepath = f"{data['documentUrl']}{data['documentSasToken']}"
+    # filepath = f"{data['documentUrl']}"
 
     # analyze document
     document = analyze_document_rest(filepath, 'prebuilt-layout')
-    logging.info(f"Analyzed document: {data['documentUrl']}")
+    logging.info(f"Analyzed document: {document}.") 
 
-    # split into chunks
-    # tables
-    if "tables"in document:
+    if 'tables' in document:
+        # split into chunks
+        # tables
         for table in document["tables"]:
             table_content = table_to_html(table)
             chunk_id += 1
@@ -172,28 +191,30 @@ def chunk_document(data):
             chunks.append(chunk)
 
     # paragraphs
-    paragraph_content = ""
-    for paragraph in document['paragraphs']:
-        page = paragraph['boundingRegions'][0]['pageNumber']
-        if not in_a_table(paragraph, document['tables']):
-            chunk_size = TOKEN_ESTIMATOR.estimate_tokens(paragraph_content + paragraph['content'])
-            if chunk_size < NUM_TOKENS:
-                paragraph_content = paragraph_content + "\n" + paragraph['content']
-            else:
-                chunk_id += 1
-                chunk = get_chunk(paragraph_content, data['documentUrl'], page, chunk_id, text_embedder)
-                chunks.append(chunk)
-                # overlap logic
-                overlapped_text = paragraph_content
-                overlapped_text = overlapped_text.split()
-                overlapped_text = overlapped_text[-round(TOKEN_OVERLAP/0.75):] 
-                overlapped_text = " ".join(overlapped_text)
-                paragraph_content = overlapped_text
-    chunk_id += 1
-    # last section
-    chunk_size = TOKEN_ESTIMATOR.estimate_tokens(paragraph_content)
-    if chunk_size > MIN_CHUNK_SIZE: 
-        chunk = get_chunk(paragraph_content, data['documentUrl'], page, chunk_id, text_embedder)
-        chunks.append(chunk)
+    if 'paragraphs' in document:    
+        paragraph_content = ""
+        for paragraph in document['paragraphs']:
+            page = paragraph['boundingRegions'][0]['pageNumber']
+            if not in_a_table(paragraph, document['tables']):
+                chunk_size = TOKEN_ESTIMATOR.estimate_tokens(paragraph_content + paragraph['content'])
+                if chunk_size < NUM_TOKENS:
+                    paragraph_content = paragraph_content + "\n" + paragraph['content']
+                else:
+                    chunk_id += 1
+                    chunk = get_chunk(paragraph_content, data['documentUrl'], page, chunk_id, text_embedder)
+                    chunks.append(chunk)
+                    # overlap logic
+                    overlapped_text = paragraph_content
+                    overlapped_text = overlapped_text.split()
+                    overlapped_text = overlapped_text[-round(TOKEN_OVERLAP/0.75):] 
+                    overlapped_text = " ".join(overlapped_text)
+                    paragraph_content = overlapped_text
+
+        chunk_id += 1
+        # last section
+        chunk_size = TOKEN_ESTIMATOR.estimate_tokens(paragraph_content)
+        if chunk_size > MIN_CHUNK_SIZE: 
+            chunk = get_chunk(paragraph_content, data['documentUrl'], page, chunk_id, text_embedder)
+            chunks.append(chunk)
 
     return chunks, errors, warnings
