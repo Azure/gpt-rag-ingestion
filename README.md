@@ -2,12 +2,6 @@
 
 Part of [GPT-RAG](https://github.com/Azure/gpt-rag)
 
-## Components
-
-**2** [Orchestrator](https://github.com/Azure/gpt-rag-orchestrator)
-
-**3** [App Front-End](https://github.com/Azure/gpt-rag-frontend)
-
 ## Deploy (quickstart)
 
 Here are the steps to configure cognitive search and deploy ingestion code using the terminal.
