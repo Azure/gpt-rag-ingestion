@@ -1,5 +1,6 @@
-import os
-from typing import Generator, List, Optional, Tuple
+
+from typing import Generator, Optional, Tuple
+from utils.file_utils import get_file_extension
 from .document import Document
 from .chunking_result import ChunkingResult
 from .token_estimator import TokenEstimator
@@ -24,6 +25,7 @@ class TextChunker():
         "htm": "html",
         "py": "python",
         "pdf": "pdf",
+        "json": "json",
     }
     SENTENCE_ENDINGS = [".", "!", "?"]
     WORDS_BREAKS = ['\n', '\t', '}', '{', ']', '[', ')', '(', ' ', ':', ';', ',']
@@ -38,8 +40,7 @@ class TextChunker():
             str: The file format.
         """
         # in case the caller gives us a file path
-        file_path = os.path.basename(file_path)
-        file_extension = file_path.split(".")[-1]
+        file_extension = get_file_extension(file_path)
         return self.FILE_FORMAT_DICT.get(file_extension, None)
 
     def _chunk_content_helper(self,
