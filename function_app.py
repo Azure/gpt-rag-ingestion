@@ -55,11 +55,11 @@ def process_documents(body):
         errors = []
         warnings = []
 
-        if chunker.chunk_documents_formrec.has_supported_file_extension(data['documentUrl']):
-            chunks, errors, warnings = chunker.chunk_documents_formrec.chunk_document(data)
+        # if chunker.chunk_documents_formrec.has_supported_file_extension(data['documentUrl']):
+        chunks, errors, warnings = chunker.chunk_documents_formrec.chunk_document(data)
             
-        elif chunker.chunk_documents_raw.has_supported_file_extension(data['documentUrl']):
-            chunks, errors, warnings = chunker.chunk_documents_raw.chunk_document(data)
+        # elif chunker.chunk_documents_raw.has_supported_file_extension(data['documentUrl']):
+        # chunks, errors, warnings = chunker.chunk_documents_raw.chunk_document(data)
         
         # errors = []
         # warnings = []
