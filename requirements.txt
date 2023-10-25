@@ -10,7 +10,7 @@ jsonschema
 python-dotenv
 requests
 tiktoken
-langchain==0.0.137
+langchain==0.0.317
 openai
 azure-identity
 azure-keyvault-secrets
