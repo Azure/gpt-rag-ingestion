@@ -4,14 +4,11 @@
     "FUNCTIONS_WORKER_RUNTIME": "python",
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
     "AzureWebJobsFeatureFlags": "EnableWorkerIndexing",
-    "SEARCH_SERVICE": "",
-    "SEARCH_ANALYZER_NAME": "es.microsoft",
-    "STORAGE_CONNECTION_STRING": "",
-    "AZURE_OPENAI_API_VERSION": "",
-    "AZURE_OPENAI_SERVICE_NAME": "",
-    "AZURE_OPENAI_EMBEDDING_DEPLOYMENT": "",
-    "AZURE_KEY_VAULT_NAME": ""    
+    "MIN_CHUNK_SIZE": "",
+    "TOKEN_OVERLAP": "",
+    "NUM_TOKENS":  "",
+    "NETWORK_ISOLATION": "",
+    "AZURE_KEY_VAULT_NAME": "",
+    "AZURE_FORMREC_SERVICE": ""
   }
 }
-
-

@@ -22,7 +22,7 @@ def chunk_document(data):
     sleep_interval_seconds = int(os.getenv("SLEEP_INTERVAL", "1"))
 
     chunking_result = TextChunker().chunk_content(data['documentContent'], file_path=data['documentUrl'].split('/')[-1], num_tokens=num_tokens, min_chunk_size=min_chunk_size, token_overlap=token_overlap)
-    content_chunk_metadata = ChunkEmbeddingHelper().generate_chunks_with_embedding(data['documentUrlencoded'], [c.content for c in chunking_result.chunks], 'content', sleep_interval_seconds)
+    content_chunk_metadata = ChunkEmbeddingHelper().generate_chunks_with_embedding(data['documentUrl'], [c.content for c in chunking_result.chunks], 'content', sleep_interval_seconds)
 
     for document_chunk, embedding_metadata in zip(chunking_result.chunks, content_chunk_metadata):
         document_chunk.embedding_metadata = embedding_metadata    
