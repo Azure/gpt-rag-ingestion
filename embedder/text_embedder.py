@@ -2,6 +2,7 @@ import openai
 import os
 import re
 import logging
+import tiktoken
 from tenacity import retry, wait_random_exponential, stop_after_attempt  
 from azure.keyvault.secrets import SecretClient
 from azure.identity import DefaultAzureCredential
@@ -21,15 +22,20 @@ class TextEmbedder():
     openai.api_base = f"https://{os.getenv('AZURE_OPENAI_SERVICE_NAME')}.openai.azure.com/"
     openai.api_version = os.getenv("AZURE_OPENAI_API_VERSION")
     AZURE_OPENAI_EMBEDDING_DEPLOYMENT = os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT")
+    
+    def estimate_tokens(self, text: str) -> int:
+        gpt2_tokenizer = tiktoken.get_encoding("gpt2")
+        return len(gpt2_tokenizer.encode(text))
 
-    def clean_text(self, text, text_limit=7000):
+    def clean_text(self, text, token_limit=8191):
         # Clean up text (e.g. line breaks, )    
         text = re.sub(r'\s+', ' ', text).strip()
         text = re.sub(r'[\n\r]+', ' ', text).strip()
-        # Truncate text if necessary (e.g. for, ada-002, 4095 tokens ~ 7000 chracters)    
-        if len(text) > text_limit:
+        # Truncate text if necessary (for, ada-002 max is 8191 tokens)    
+        if self.estimate_tokens(text) > token_limit:
             logging.warning("Token limit reached exceeded maximum length, truncating...")
-            text = text[:text_limit]
+            while self.estimate_tokens(text) > token_limit:
+                text = text[:-1]
         return text
 
     @retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(6))

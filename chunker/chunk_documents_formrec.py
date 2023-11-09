@@ -13,9 +13,12 @@ from .token_estimator import TokenEstimator
 from urllib.parse import urlparse
 from utils.file_utils import get_file_extension
 
-MIN_CHUNK_SIZE = int(os.environ["MIN_CHUNK_SIZE"])
+# Chunker parameters
+NUM_TOKENS = int(os.environ["NUM_TOKENS"]) # max chunk size in tokens
+MIN_CHUNK_SIZE = int(os.environ["MIN_CHUNK_SIZE"]) # min chunk size in tokens
 TOKEN_OVERLAP = int(os.environ["TOKEN_OVERLAP"])
-NUM_TOKENS = int(os.environ["NUM_TOKENS"])
+TABLE_DISTANCE_THRESHOLD = 3 # inches
+
 NETWORK_ISOLATION = os.environ["NETWORK_ISOLATION"]
 network_isolation = True if NETWORK_ISOLATION.lower() == 'true' else False
 
@@ -30,6 +33,7 @@ FILE_EXTENSION_DICT = [
     "png",
     "tiff",
 ]
+
 
 def has_supported_file_extension(file_path: str) -> bool:
     """Checks if the given file format is supported based on its file extension.
@@ -192,24 +196,89 @@ def chunk_document(data):
     chunk_id = 0
 
     text_embedder = TextEmbedder()
-    filepath = f"{data['documentUrl']}{data['documentSasToken']}"
+    filepath = f"{data['documentUrl']}?{data['documentSasToken']}"
     # filepath = f"{data['documentUrl']}"
 
-    # analyze document
+    # 1) Analyze document with layout model
     document = analyze_document_rest(filepath, 'prebuilt-layout')
     logging.info(f"Analyzed document: {document}.") 
 
+    # 2) Chunk tables
     if 'tables' in document:
-        # split into chunks
-        # tables
-        for table in document["tables"]:
-            table_content = table_to_html(table)
-            chunk_id += 1
-            page = table['cells'][0]['boundingRegions'][0]['pageNumber']
-            chunk = get_chunk(table_content, data['documentUrl'], page, chunk_id, text_embedder)
-            chunks.append(chunk)
 
-    # paragraphs
+        # 2.1) merge consecutive tables if they have the same structure 
+        #        
+        # The definition of two tables with the same structure is given two tables, table1 and table2, they have the same structure if:
+        #   - They have same columnCount.
+        #   - table2 first boundingRegion pageNumber difference to table1 last boundingRegion pageNumber is less then 2.
+        #   - The absolute difference between table1 first boundingRegion last y coordinate and table2 first boundingRegion first y coordinate is less than TABLE_DISTANCE_THRESHOLD 
+
+        def merge_tables_if_same_structure(tables, pages):
+            merged_tables = []
+            for table in tables:
+                if not merged_tables or not same_structure(merged_tables[-1], table, pages):
+                    merged_tables.append(table)
+                else:
+                    merged_tables[-1] = merge_tables(merged_tables[-1], table)
+            return merged_tables
+        
+        def same_structure(table1, table2, pages):
+            if table1['columnCount'] != table2['columnCount']:
+                return False
+
+            bounding_region1 = table1['boundingRegions'][-1]
+            bounding_region2 = table2['boundingRegions'][0]
+
+            page_difference = bounding_region2['pageNumber'] - bounding_region1['pageNumber']
+
+            if page_difference >= 2:
+                return False
+            
+            if page_difference == 1:
+               pageIdx = bounding_region1['pageNumber'] - 1
+               tables_distance = bounding_region2['polygon'][0] + (pages[pageIdx]['height'] - bounding_region1['polygon'][-1])
+            else: 
+                tables_distance = bounding_region2['polygon'][0] - bounding_region1['polygon'][-1]
+
+            # tables distance in inches
+            if tables_distance >= TABLE_DISTANCE_THRESHOLD:
+                return False
+
+            return True
+
+        def merge_tables(table1, table2):
+            merged_table = table1.copy()
+            merged_table['rowCount'] += table2['rowCount']
+            table1_row_count = table1['rowCount']
+            
+            for cell in table2['cells']:
+                cell['rowIndex'] += table1_row_count
+                merged_table['cells'].append(cell)
+            
+            merged_table['boundingRegions'].extend(table2['boundingRegions'])
+            
+            return merged_table
+
+        document["tables"] = merge_tables_if_same_structure(document["tables"], document["pages"])
+
+        # 2.2) TODO: if there is text before the table add it to the beggining of the chunk to improve context.
+
+        # 2.3) TODO: if there is text after the table add it to the end of the chunk to improve context.
+
+        # 2.4) create chunks for each table
+        
+        processed_tables = []
+        for idx, table in enumerate(document["tables"]):
+            if idx not in processed_tables:
+                processed_tables.append(idx)
+                # TODO: check if table is too big for one chunck and split it to avoid truncation                
+                table_content = table_to_html(table)
+                chunk_id += 1
+                page = table['cells'][0]['boundingRegions'][0]['pageNumber']
+                chunk = get_chunk(table_content, data['documentUrl'], page, chunk_id, text_embedder)
+                chunks.append(chunk)
+
+    # 3) Chunk paragaphs
     if 'paragraphs' in document:    
         paragraph_content = ""
         for paragraph in document['paragraphs']:
