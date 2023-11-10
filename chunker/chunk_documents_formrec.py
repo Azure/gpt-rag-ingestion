@@ -184,7 +184,7 @@ def get_chunk(content, url, page, chunk_id, text_embedder):
             "url": url,
             "filepath": filepath,            
             "content": content,
-            "contentVector": text_embedder.embed_content(content)                   
+            "contentVector": text_embedder.embed_content(content)
     }
     logging.info(f"Chunk: {chunk}.")
     return chunk
@@ -196,7 +196,7 @@ def chunk_document(data):
     chunk_id = 0
 
     text_embedder = TextEmbedder()
-    filepath = f"{data['documentUrl']}?{data['documentSasToken']}"
+    filepath = f"{data['documentUrl']}{data['documentSasToken']}"
     # filepath = f"{data['documentUrl']}"
 
     # 1) Analyze document with layout model
