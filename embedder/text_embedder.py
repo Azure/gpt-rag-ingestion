@@ -47,7 +47,10 @@ class TextEmbedder():
         try:
             response = openai.Embedding.create(input=text, engine=self.AZURE_OPENAI_EMBEDDING_DEPLOYMENT)
         except Exception as e:
-            wait = int(e.headers['Retry-After'])
+            try:
+                wait = int(e.headers['Retry-After'])
+            except AttributeError as ae:
+                wait = 60
             time.sleep(wait+1)
             response = openai.Embedding.create(input=text, engine=self.AZURE_OPENAI_EMBEDDING_DEPLOYMENT)
 
