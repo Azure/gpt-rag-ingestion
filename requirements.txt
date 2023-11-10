@@ -11,7 +11,7 @@ python-dotenv
 requests
 tiktoken
 langchain==0.0.137
-openai
+openai==0.28.1
 azure-identity
 azure-keyvault-secrets
 tenacity
