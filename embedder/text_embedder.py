@@ -38,7 +38,7 @@ class TextEmbedder():
                 text = text[:-1]
         return text
 
-    @retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(6))
+    @retry(reraise=True, wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(6))
     def embed_content(self, text, clean_text=True, use_single_precision=True):
         import time
         embedding_precision = 9 if use_single_precision else 18
