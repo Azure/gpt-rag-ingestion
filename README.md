@@ -44,6 +44,8 @@ Run the setup script: ```python setup.py -s SUBSCRIPTION_ID -r RESOURCE_GROUP -f
 
 *Replace SUBSCRIPTION_ID, RESOURCE_GROUP and FUNCTION_APP_NAME by the names applicable to your environment*
 
+If you get "ERROR: Failed building wheel for tiktoken", you should install rust compiler toolchain from https://rustup.rs .
+
 <!-- *Add -i command line argument when executing setup.py if using a VM with managed identity to run the setup.* -->
 
 **5) Add source documents to object storage** 
