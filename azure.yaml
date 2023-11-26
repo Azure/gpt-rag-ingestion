@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: azure-gpt-rag
+metadata:
+  template: azure-gpt-rag-ingest
+services:
+  dataIngest:
+    project: .
+    language: python
+    host: function
+    hooks:
+      postdeploy:
+        posix:
+          run: scripts/postdeploy.sh
+          interactive: false
+        windows:
+          run: scripts/postdeploy.ps1
+          interactive: false          
+# infrastructure is pulled from the main azure-gpt-rag repo with a hook.
+# If you previously provisioned infrastructure, use the same azd-env name, subscription and location to deploy data ingest to that infrastructure.        
+hooks:
+  preprovision:
+    posix:
+      run: scripts/preprovision.sh
+      interactive: true
+    windows:
+      run: scripts/preprovision.ps1
+      interactive: true
+
