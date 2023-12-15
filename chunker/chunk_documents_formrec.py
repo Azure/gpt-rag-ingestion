@@ -1,10 +1,11 @@
-import os
-import logging
-import requests
-import time
-import json
-import html
 import base64
+import html
+import json
+import logging
+import os
+import requests
+import sys
+import time
 from azure.identity import DefaultAzureCredential
 from azure.storage.blob import BlobServiceClient
 from azure.keyvault.secrets import SecretClient
@@ -22,8 +23,12 @@ TABLE_DISTANCE_THRESHOLD = 3 # inches
 NETWORK_ISOLATION = os.environ["NETWORK_ISOLATION"]
 network_isolation = True if NETWORK_ISOLATION.lower() == 'true' else False
 
-FORM_REC_API_VERSION = "2023-07-31"
-
+FORM_REC_API_VERSION = os.getenv('FORM_REC_API_VERSION', '2023-07-31')
+if FORM_REC_API_VERSION == '2023-10-31-preview':
+    formrec_or_docint = "documentintelligence"
+else:
+    formrec_or_docint = "formrecognizer"
+        
 TOKEN_ESTIMATOR = TokenEstimator()
 
 FILE_EXTENSION_DICT = [
@@ -58,11 +63,10 @@ def analyze_document_rest(filepath, model):
     logging.info(f"Analyzing document {filepath}.")
     
     result = {}
-    
-    request_endpoint = f"https://{os.environ['AZURE_FORMREC_SERVICE']}.cognitiveservices.azure.com/formrecognizer/documentModels/{model}:analyze?api-version={FORM_REC_API_VERSION}&features=ocr.highResolution"
+
+    request_endpoint = f"https://{os.environ['AZURE_FORMREC_SERVICE']}.cognitiveservices.azure.com/{formrec_or_docint}/documentModels/{model}:analyze?api-version={FORM_REC_API_VERSION}&features=ocr.highResolution"
 
     if not network_isolation:
-
         headers = {
             "Content-Type": "application/json",
             "Ocp-Apim-Subscription-Key": get_secret('formRecKey')
@@ -119,7 +123,7 @@ def analyze_document_rest(filepath, model):
         return(result)
 
     # Poll for result
-    result_endpoint = f"https://{os.environ['AZURE_FORMREC_SERVICE']}.cognitiveservices.azure.com/formrecognizer/documentModels/prebuilt-layout/analyzeResults/{operation_id}"
+    result_endpoint = f"https://{os.environ['AZURE_FORMREC_SERVICE']}.cognitiveservices.azure.com/{formrec_or_docint}/documentModels/prebuilt-layout/analyzeResults/{operation_id}"
     result_headers = headers.copy()
     result_headers["Content-Type"] = "application/json-patch+json"
 
@@ -164,7 +168,14 @@ def table_to_html(table):
     table_html += "</table>"
     return table_html
 
-def in_a_table(paragraph, tables):
+def char_in_a_table(offset, tables):
+    for table in tables:
+        for cell in table['cells']:
+            if len(cell['spans']) > 0 and cell['spans'][0]['offset'] <= offset < (cell['spans'][0]['offset'] + cell['spans'][0]['length']):
+                return True
+    return False
+
+def paragraph_in_a_table(paragraph, tables):
     for table in tables:
         for cell in table['cells']:
             if len(cell['spans']) > 0 and paragraph['spans'][0]['offset'] == cell['spans'][0]['offset']:
@@ -259,22 +270,60 @@ def chunk_document(data):
             
             return merged_table
 
+        def text_before_table(document, table, tables):
+            first_cell_offset = sys.maxsize
+            # get first cell
+            for cell in table['cells']:
+                # Check if the cell has content
+                if cell.get('content'):
+                    # Get the offset of the cell content
+                    first_cell_offset = cell['spans'][0]['offset'] 
+                    break
+            text_before_offset = max(0,first_cell_offset - TOKEN_OVERLAP)
+            text_before_str = ''
+            # we don't want to add text before the table if it is contained in a table
+            for idx, c in enumerate(document['content'][text_before_offset:first_cell_offset]):
+                if not char_in_a_table(text_before_offset+idx, tables):
+                    text_before_str += c
+            return text_before_str
+        
+        def text_after_table(document, table, tables):
+            last_cell_offset = 0
+            # get last cell
+            for cell in table['cells']:
+                # Check if the cell has content
+                if cell.get('content'):
+                    # Get the offset of the cell content
+                    last_cell_offset = cell['spans'][0]['offset']
+            text_after_offset = last_cell_offset + len(cell['content'])
+            text_after_str = ''
+            # we don't want to add text after the table if it is contained in a table
+            for idx, c in enumerate(document['content'][text_after_offset:text_after_offset+TOKEN_OVERLAP]):
+                if not char_in_a_table(text_after_offset+idx, tables):
+                    text_after_str += c
+            return text_after_str
         document["tables"] = merge_tables_if_same_structure(document["tables"], document["pages"])
-
-        # 2.2) TODO: if there is text before the table add it to the beggining of the chunk to improve context.
-
-        # 2.3) TODO: if there is text after the table add it to the end of the chunk to improve context.
 
         # 2.4) create chunks for each table
         
+        content = document["content"]
         processed_tables = []
         for idx, table in enumerate(document["tables"]):
             if idx not in processed_tables:
                 processed_tables.append(idx)
-                # TODO: check if table is too big for one chunck and split it to avoid truncation                
+                # TODO: check if table is too big for one chunck and split it to avoid truncation
                 table_content = table_to_html(table)
                 chunk_id += 1
                 page = table['cells'][0]['boundingRegions'][0]['pageNumber']
+
+                # if there is text before the table add it to the beggining of the chunk to improve context.
+                text = text_before_table(document, table, document["tables"])
+                table_content = text + table_content
+
+                # if there is text after the table add it to the end of the chunk to improve context.
+                text = text_after_table(document, table, document["tables"])
+                table_content = table_content + text
+
                 chunk = get_chunk(table_content, data['documentUrl'], page, chunk_id, text_embedder)
                 chunks.append(chunk)
 
@@ -283,7 +332,7 @@ def chunk_document(data):
         paragraph_content = ""
         for paragraph in document['paragraphs']:
             page = paragraph['boundingRegions'][0]['pageNumber']
-            if not in_a_table(paragraph, document['tables']):
+            if not paragraph_in_a_table(paragraph, document['tables']):
                 chunk_size = TOKEN_ESTIMATOR.estimate_tokens(paragraph_content + paragraph['content'])
                 if chunk_size < NUM_TOKENS:
                     paragraph_content = paragraph_content + "\n" + paragraph['content']
