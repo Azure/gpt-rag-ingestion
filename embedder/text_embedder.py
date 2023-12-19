@@ -44,15 +44,7 @@ class TextEmbedder():
         embedding_precision = 9 if use_single_precision else 18
         if clean_text:
             text = self.clean_text(text)
-        try:
-            response = openai.Embedding.create(input=text, engine=self.AZURE_OPENAI_EMBEDDING_DEPLOYMENT)
-        except Exception as e:
-            try:
-                wait = int(e.headers['Retry-After'])
-            except AttributeError as ae:
-                wait = 60
-            time.sleep(wait+1)
-            response = openai.Embedding.create(input=text, engine=self.AZURE_OPENAI_EMBEDDING_DEPLOYMENT)
+        response = openai.Embedding.create(input=text, engine=self.AZURE_OPENAI_EMBEDDING_DEPLOYMENT)
 
         embedding = [round(x, embedding_precision) for x in response['data'][0]['embedding']] # type: ignore
         return embedding
