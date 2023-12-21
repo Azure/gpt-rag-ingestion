@@ -112,23 +112,19 @@ def analyze_document_rest(filepath, model):
         
         logging.info(f"Removed file: {blob_name}.")
 
-    # Parse response
-    if response.status_code == 202:
-        operation_id = response.headers["Operation-Location"].split("/")[-1]
-        # print("Operation ID:", operation_id)
-    else:
+    if response.status_code != 202:
         # Request failed
         logging.info(f"Doc Intelligence API error: {response.text}")
         logging.info(f"urlSource: {filepath}")
         return(result)
 
     # Poll for result
-    result_endpoint = f"https://{os.environ['AZURE_FORMREC_SERVICE']}.cognitiveservices.azure.com/{formrec_or_docint}/documentModels/prebuilt-layout/analyzeResults/{operation_id}"
+    get_url = response.headers["Operation-Location"]
     result_headers = headers.copy()
     result_headers["Content-Type"] = "application/json-patch+json"
 
     while True:
-        result_response = requests.get(result_endpoint, headers=result_headers)
+        result_response = requests.get(get_url, headers=result_headers)
         result_json = json.loads(result_response.text)
 
         if result_response.status_code != 200 or result_json["status"] == "failed":
