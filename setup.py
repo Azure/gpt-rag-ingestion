@@ -204,7 +204,9 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_app
     function_endpoint = f"https://{function_app_name}.azurewebsites.net"
     search_service = function_app_settings.properties["SEARCH_SERVICE"]
     search_analyzer_name= function_app_settings.properties["SEARCH_ANALYZER_NAME"]
-    search_api_version = function_app_settings.properties["SEARCH_API_VERSION"]
+    search_api_version = function_app_settings.properties.get("SEARCH_API_VERSION", "2023-10-01-Preview")
+    if search_api_version < '2023-10-01-Preview': # if the version is lower than 2023-10-01-Preview it wont work with MIS authResourceId parameter.
+        search_api_version = '2023-10-01-Preview'    
     search_index_interval = function_app_settings.properties["SEARCH_INDEX_INTERVAL"]
     search_index_name = function_app_settings.properties["SEARCH_INDEX_NAME"]
     storage_container = function_app_settings.properties["STORAGE_CONTAINER"]
@@ -699,7 +701,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_app
 
 
 
-def main(subscription_id=None, resource_group=None, function_app_name=None, search_app_id=None, enable_managed_identities=False, enable_env_credentials=False):
+def main(subscription_id=None, resource_group=None, function_app_name=None, search_app_id='', enable_managed_identities=False, enable_env_credentials=False):
     """
     Sets up a chunking function app in Azure.
 
@@ -720,8 +722,6 @@ def main(subscription_id=None, resource_group=None, function_app_name=None, sear
         resource_group = input("Enter resource group: ")
     if function_app_name is None:
         function_app_name = input("Enter chunking function app name: ")
-    if search_app_id is None:
-        search_app_id = input("Enter search app ID: ")
 
     start_time = time.time()
 
