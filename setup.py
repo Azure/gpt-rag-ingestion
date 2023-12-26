@@ -181,7 +181,7 @@ def approve_shared_links(subscription_id, resource_group, function_app_name, sto
         logging.error(f"Error when approving private link service connection. Please do it manually. Error: {error_message}")
 
 
-def execute_setup(subscription_id, resource_group, function_app_name, enable_managed_identities, enable_env_credentials):
+def execute_setup(subscription_id, resource_group, function_app_name, search_app_id, enable_managed_identities, enable_env_credentials):
     """
     This function performs the necessary steps to set up the ingestion sub components, such as creating the required datastores and indexers.
     
@@ -189,6 +189,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, enable_man
         subscription_id (str): The subscription ID of the Azure subscription to use.
         resource_group (str): The name of the resource group containing the solution resources.
         function_app_name (str): The name of the function app to use.
+        search_app_id (str): The ID of the search app in MSFT Entra.
         enable_managed_identities (bool): Whether to use managed identities to run the setup.
         enable_env_credentials (bool): Whether to use environment credentials to run the setup.
 
@@ -210,7 +211,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, enable_man
     storage_container_chunks = function_app_settings.properties["STORAGE_CONTAINER_CHUNKS"]
     storage_account_name = function_app_settings.properties["STORAGE_ACCOUNT_NAME"]
     network_isolation = True if function_app_settings.properties["NETWORK_ISOLATION"].lower() == "true" else False
-
+    azureSearchUseMIS = function_app_settings.properties.get("AZURE_SEARCH_USE_MIS", "false").lower() == "true"
 
     # create a code to print all variables above
     logging.info(f"Function endpoint: {function_endpoint}")
@@ -328,7 +329,6 @@ def execute_setup(subscription_id, resource_group, function_app_name, enable_man
                 "@odata.type":"#Microsoft.Skills.Custom.WebApiSkill",
                 "name":"document-chunking",
                 "description":"Extract chunks from documents.",
-                "uri":f"{function_endpoint}/api/document-chunking?code={function_key}",
                 "httpMethod":"POST",
                 "timeout":"PT230S",
                 "context":"/document",
@@ -376,6 +376,12 @@ def execute_setup(subscription_id, resource_group, function_app_name, enable_man
             ]
         }
     }
+    if azureSearchUseMIS:
+        body['skills'][0]['uri'] = f"{function_endpoint}/api/document-chunking"
+        body['skills'][0]['authResourceId'] = f"api://{search_app_id}"
+    else:
+        body['skills'][0]['uri'] = f"{function_endpoint}/api/document-chunking?code={function_key}"
+
     call_search_api(search_service, search_api_version, "skillsets", f"{search_index_name}-skillset-chunking", "put", credential,body)
     response_time = time.time() - start_time
     logging.info(f"02 Create skillset step. {round(response_time,2)} seconds")
@@ -693,16 +699,17 @@ def execute_setup(subscription_id, resource_group, function_app_name, enable_man
 
 
 
-def main(subscription_id=None, resource_group=None, function_app_name=None, enable_managed_identities=False, enable_env_credentials=False):
+def main(subscription_id=None, resource_group=None, function_app_name=None, search_app_id=None, enable_managed_identities=False, enable_env_credentials=False):
     """
     Sets up a chunking function app in Azure.
 
     Args:
-        subscription_id (str, optional): The subscription ID to use. If not provided, the user will be prompted to enter it.
-        resource_group (str, optional): The resource group to use. If not provided, the user will be prompted to enter it.
-        function_app_name (str, optional): The name of the chunking function app. If not provided, the user will be prompted to enter it.
-        enable_managed_identities (bool, optional): Whether to use managed identities to run the setup.
-        enable_env_credentials (bool, optional): Whether to use environment credentials to run the setup.
+        subscription_id (str): The subscription ID to use. If not provided, the user will be prompted to enter it.
+        resource_group (str): The resource group to use. If not provided, the user will be prompted to enter it.
+        function_app_name (str): The name of the chunking function app. If not provided, the user will be prompted to enter it.
+        search_app_id (str): Entra ID of the search app.         
+        enable_managed_identities (bool, optional): Whether to use managed identities to run the setup, defaults to False.
+        enable_env_credentials (bool, optional): Whether to use environment credentials to run the setup, defaults to False.
     """   
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     logging.info(f"Starting setup.")
@@ -713,10 +720,12 @@ def main(subscription_id=None, resource_group=None, function_app_name=None, enab
         resource_group = input("Enter resource group: ")
     if function_app_name is None:
         function_app_name = input("Enter chunking function app name: ")
+    if search_app_id is None:
+        search_app_id = input("Enter search app ID: ")
 
     start_time = time.time()
 
-    execute_setup(subscription_id, resource_group, function_app_name, enable_managed_identities, enable_env_credentials)
+    execute_setup(subscription_id, resource_group, function_app_name, search_app_id, enable_managed_identities, enable_env_credentials)
 
     response_time = time.time() - start_time
     logging.info(f"Finished setup. {round(response_time,2)} seconds")
@@ -727,8 +736,9 @@ if __name__ == '__main__':
     parser.add_argument('-s', '--subscription_id', help='Subscription ID')
     parser.add_argument('-r', '--resource_group', help='Resource group')
     parser.add_argument('-f', '--function_app_name', help='Chunking function app name')
-    parser.add_argument('-i', '--enable_managed_identities', action='store_true', default=False, help='Enable managed identities')
-    parser.add_argument('-e', '--enable_env_credentials', action='store_true', default=False, help='Enable environment credentials')    
+    parser.add_argument('-a', '--search_app_id', help='Entra ID of the search app')    
+    parser.add_argument('-i', '--enable_managed_identities', action='store_true', default=False, help='Enable managed identities for the setup')
+    parser.add_argument('-e', '--enable_env_credentials', action='store_true', default=False, help='Enable environment credentials for the setup')    
     args = parser.parse_args()
 
-    main(subscription_id=args.subscription_id, resource_group=args.resource_group, function_app_name=args.function_app_name, enable_managed_identities=args.enable_managed_identities, enable_env_credentials=args.enable_env_credentials)    
+    main(subscription_id=args.subscription_id, resource_group=args.resource_group, function_app_name=args.function_app_name, search_app_id=args.search_app_id, enable_managed_identities=args.enable_managed_identities, enable_env_credentials=args.enable_env_credentials)    
