@@ -233,7 +233,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_app
     function_key = get_function_key(subscription_id, resource_group, function_app_name, credential)
     if function_key is None:
             logging.error(f"Could not get function key. Please make sure the function {function_app_name}/document_chunking is deployed before running this script.")
-            exit() 
+            exit(1) 
 
     ###########################################################################
     # Approve Search Shared Private Links (if needed)
@@ -266,12 +266,12 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_app
     except azure.core.exceptions.ClientAuthenticationError as e:
         error_message = str(e)
         logging.error(f"Error connecting with storage account, you may need to restart the computer. Error: {error_message}")
-        exit()
+        exit(1)
     except azure.core.exceptions.HttpResponseError as e:
         error_message = str(e)
         logging.error(f"Error when creating container. {error_message}")
         logging.error(f"If you are in a network isolation scenario please run the script when connected to the solution vnet.")
-        exit()
+        exit(1)
 
     # Create chunks container
     container_client = blob_service_client.get_container_client(storage_container_chunks)
@@ -737,7 +737,7 @@ if __name__ == '__main__':
     parser.add_argument('-s', '--subscription_id', help='Subscription ID')
     parser.add_argument('-r', '--resource_group', help='Resource group')
     parser.add_argument('-f', '--function_app_name', help='Chunking function app name')
-    parser.add_argument('-a', '--search_app_id', help='Entra ID of the search app')    
+    parser.add_argument('-a', '--search_app_id', default='none', help='Entra ID of the search app')
     parser.add_argument('-m', '--azure_search_use_mis', help='Use Search Service Managed Identity to Connect to data ingestion function')
     parser.add_argument('-i', '--enable_managed_identities', action='store_true', default=False, help='Use VM\'s managed identities for the setup')
     parser.add_argument('-e', '--enable_env_credentials', action='store_true', default=False, help='Use environment credentials for the setup')    
