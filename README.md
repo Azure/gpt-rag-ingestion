@@ -44,6 +44,15 @@ Run the setup script: ```python setup.py -s SUBSCRIPTION_ID -r RESOURCE_GROUP -f
 
 *Replace SUBSCRIPTION_ID, RESOURCE_GROUP and FUNCTION_APP_NAME by the names applicable to your environment*
 
+If you want that AI Search use its Managed Identity to access the Azure Function, please add the ```a``` and ```m``` arguments to the script:
+
+ ```python setup.py -s SUBSCRIPTION_ID -r RESOURCE_GROUP -f FUNCTION_APP_NAME -a SEARCH_PRINCIPAL_ID -m true```
+
+Where *SEARCH_PRINCIPAL_ID* is the object (principal) ID of the Search service.
+
+Note: In order for the data ingestion function to be accessed with a managed identity, it needs to be configured to use Microsoft Entra Sign-in, as indicated [in this link](https://learn.microsoft.com/en-us/azure/app-service/configure-authentication-provider-aad).
+
+
 If you get "ERROR: Failed building wheel for tiktoken", you should install rust compiler toolchain from https://rustup.rs .
 
 <!-- *Add -i command line argument when executing setup.py if using a VM with managed identity to run the setup.* -->
