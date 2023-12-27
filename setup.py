@@ -181,7 +181,7 @@ def approve_shared_links(subscription_id, resource_group, function_app_name, sto
         logging.error(f"Error when approving private link service connection. Please do it manually. Error: {error_message}")
 
 
-def execute_setup(subscription_id, resource_group, function_app_name, search_app_id, azure_search_use_mis, enable_managed_identities, enable_env_credentials):
+def execute_setup(subscription_id, resource_group, function_app_name, search_principal_id, azure_search_use_mis, enable_managed_identities, enable_env_credentials):
     """
     This function performs the necessary steps to set up the ingestion sub components, such as creating the required datastores and indexers.
     
@@ -189,7 +189,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_app
         subscription_id (str): The subscription ID of the Azure subscription to use.
         resource_group (str): The name of the resource group containing the solution resources.
         function_app_name (str): The name of the function app to use.
-        search_app_id (str): The ID of the search app in MSFT Entra.
+        search_principal_id (str): The principal ID of the search managed identity.
         azure_search_use_mis (bool): Whether to use Search Service Managed Identity to Connect to data ingestion function
         enable_managed_identities (bool, optional): Whether to use VM's managed identities to run the setup, defaults to False.
         enable_env_credentials (bool): Whether to use environment credentials to run the setup.
@@ -380,7 +380,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_app
     }
     if azure_search_use_mis:
         body['skills'][0]['uri'] = f"{function_endpoint}/api/document-chunking"
-        body['skills'][0]['authResourceId'] = f"api://{search_app_id}"
+        body['skills'][0]['authResourceId'] = f"api://{search_principal_id}"
     else:
         body['skills'][0]['uri'] = f"{function_endpoint}/api/document-chunking?code={function_key}"
 
@@ -701,7 +701,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_app
 
 
 
-def main(subscription_id=None, resource_group=None, function_app_name=None, search_app_id='', azure_search_use_mis=False, enable_managed_identities=False, enable_env_credentials=False):
+def main(subscription_id=None, resource_group=None, function_app_name=None, search_principal_id='', azure_search_use_mis=False, enable_managed_identities=False, enable_env_credentials=False):
     """
     Sets up a chunking function app in Azure.
 
@@ -709,7 +709,7 @@ def main(subscription_id=None, resource_group=None, function_app_name=None, sear
         subscription_id (str): The subscription ID to use. If not provided, the user will be prompted to enter it.
         resource_group (str): The resource group to use. If not provided, the user will be prompted to enter it.
         function_app_name (str): The name of the chunking function app. If not provided, the user will be prompted to enter it.
-        search_app_id (str): Entra ID of the search app.         
+        search_principal_id (str): Entra ID of the search managed identity.         
         azure_search_use_mis (bool): Whether to use Search Service Managed Identity to Connect to data ingestion function
         enable_managed_identities (bool, optional): Whether to use VM's managed identities to run the setup, defaults to False.
         enable_env_credentials (bool, optional): Whether to use environment credentials to run the setup, defaults to False.
@@ -726,7 +726,7 @@ def main(subscription_id=None, resource_group=None, function_app_name=None, sear
 
     start_time = time.time()
 
-    execute_setup(subscription_id, resource_group, function_app_name, search_app_id, azure_search_use_mis, enable_managed_identities, enable_env_credentials)
+    execute_setup(subscription_id, resource_group, function_app_name, search_principal_id, azure_search_use_mis, enable_managed_identities, enable_env_credentials)
 
     response_time = time.time() - start_time
     logging.info(f"Finished setup. {round(response_time,2)} seconds")
@@ -737,7 +737,7 @@ if __name__ == '__main__':
     parser.add_argument('-s', '--subscription_id', help='Subscription ID')
     parser.add_argument('-r', '--resource_group', help='Resource group')
     parser.add_argument('-f', '--function_app_name', help='Chunking function app name')
-    parser.add_argument('-a', '--search_app_id', default='none', help='Entra ID of the search app')
+    parser.add_argument('-a', '--search_principal_id', default='none', help='Entra ID of the search service')
     parser.add_argument('-m', '--azure_search_use_mis', help='Use Search Service Managed Identity to Connect to data ingestion function')
     parser.add_argument('-i', '--enable_managed_identities', action='store_true', default=False, help='Use VM\'s managed identities for the setup')
     parser.add_argument('-e', '--enable_env_credentials', action='store_true', default=False, help='Use environment credentials for the setup')    
@@ -746,4 +746,4 @@ if __name__ == '__main__':
     # format search_use_mis to boolean
     search_use_mis = args.azure_search_use_mis.lower() == "true" if args.azure_search_use_mis not in [None, ""] else False
 
-    main(subscription_id=args.subscription_id, resource_group=args.resource_group, function_app_name=args.function_app_name, search_app_id=args.search_app_id, azure_search_use_mis=search_use_mis, enable_managed_identities=args.enable_managed_identities, enable_env_credentials=args.enable_env_credentials)    
+    main(subscription_id=args.subscription_id, resource_group=args.resource_group, function_app_name=args.function_app_name, search_principal_id=args.search_principal_id, azure_search_use_mis=search_use_mis, enable_managed_identities=args.enable_managed_identities, enable_env_credentials=args.enable_env_credentials)    
