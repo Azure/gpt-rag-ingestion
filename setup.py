@@ -205,9 +205,9 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     function_endpoint = f"https://{function_app_name}.azurewebsites.net"
     search_service = function_app_settings.properties["SEARCH_SERVICE"]
     search_analyzer_name= function_app_settings.properties["SEARCH_ANALYZER_NAME"]
-    search_api_version = function_app_settings.properties.get("SEARCH_API_VERSION", "2023-10-01-Preview")
+    search_api_version = function_app_settings.properties.get("SEARCH_API_VERSION", "2023-11-01")
     if search_api_version < '2023-10-01-Preview': # if the version is lower than 2023-10-01-Preview it wont work with MIS authResourceId parameter.
-        search_api_version = '2023-10-01-Preview'    
+        search_api_version = '2023-11-01'    
     search_index_interval = function_app_settings.properties["SEARCH_INDEX_INTERVAL"]
     search_index_name = function_app_settings.properties["SEARCH_INDEX_NAME"]
     storage_container = function_app_settings.properties["STORAGE_CONTAINER"]
@@ -594,7 +594,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                 "searchable": True,
                 "retrievable": True,
                 "dimensions": 1536,
-                "vectorSearchConfiguration": "my-vector-config"
+                "vectorSearchProfile": "myHnswProfile"
             } 
         ],
         "corsOptions": {
@@ -604,17 +604,23 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
             "maxAgeInSeconds": 60
         },
         "vectorSearch": {
-            "algorithmConfigurations": [
-                {
-                    "name": "my-vector-config",
-                    "kind": "hnsw",
-                    "hnswParameters": {
-                        "m": 4,
-                        "efConstruction": 400,
-                        "efSearch": 500,
-                        "metric": "cosine"
-                    }
+            "profiles": [
+            {
+                "name": "myHnswProfile",
+                "algorithm": "myHnswConfig"
+            }
+            ],
+            "algorithms": [
+            {
+                "name": "myHnswConfig",
+                "kind": "hnsw",
+                "hnswParameters": {
+                "m": 4,
+                "efConstruction": 400,
+                "efSearch": 500,
+                "metric": "cosine"
                 }
+            }
             ]
         },
         "semantic": {
