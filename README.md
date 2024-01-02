@@ -20,7 +20,7 @@ run ```az login``` to log into azure. Run ```az login -i``` if using a VM with m
 
 If you plan to customize the ingestion logic, create a new repo by clicking on the **Use this template** button on top of this page.
 
-Clone the repostory locally:  ```git clone https://github.com/azure/gpt-rag-ingestion```
+Clone the repository locally:  ```git clone https://github.com/azure/gpt-rag-ingestion```
 
 *If you created a new repository please update the repository URL before running the command*
 
