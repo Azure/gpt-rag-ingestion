@@ -91,7 +91,8 @@ def analyze_document_rest(filepath, model):
     if not network_isolation:
         headers = {
             "Content-Type": "application/json",
-            "Ocp-Apim-Subscription-Key": get_secret('formRecKey')
+            "Ocp-Apim-Subscription-Key": get_secret('formRecKey'),
+            "x-ms-useragent": "gpt-rag/1.0.0"
         }
         body = {
             "urlSource": filepath
@@ -119,7 +120,8 @@ def analyze_document_rest(filepath, model):
 
         headers = {
             "Content-Type": "application/pdf",
-            "Ocp-Apim-Subscription-Key": get_secret('formRecKey')
+            "Ocp-Apim-Subscription-Key": get_secret('formRecKey'),
+            "x-ms-useragent": "gpt-rag/1.0.0"
         }
 
         try:
