@@ -1,14 +1,14 @@
 import base64
-import html
 import json
 import logging
+import openai
 import os
 import requests
-import sys
 import time
 from azure.identity import DefaultAzureCredential
 from azure.storage.blob import BlobServiceClient
 from azure.keyvault.secrets import SecretClient
+from chunker import table_utils as tb
 from embedder.text_embedder import TextEmbedder
 from .token_estimator import TokenEstimator
 from urllib.parse import urlparse
@@ -18,7 +18,6 @@ from utils.file_utils import get_file_extension
 NUM_TOKENS = int(os.environ["NUM_TOKENS"]) # max chunk size in tokens
 MIN_CHUNK_SIZE = int(os.environ["MIN_CHUNK_SIZE"]) # min chunk size in tokens
 TOKEN_OVERLAP = int(os.environ["TOKEN_OVERLAP"])
-TABLE_DISTANCE_THRESHOLD = 3 # inches
 
 NETWORK_ISOLATION = os.environ["NETWORK_ISOLATION"]
 network_isolation = True if NETWORK_ISOLATION.lower() == 'true' else False
@@ -39,6 +38,26 @@ FILE_EXTENSION_DICT = [
     "tiff",
 ]
 
+##########################################################################################
+# UTILITY FUNCTIONS
+##########################################################################################
+
+def check_timeout(start_time):
+    max_time = 230 # webapp timeout is 230 seconds
+    elapsed_time = time.time() - start_time
+    if elapsed_time > max_time:
+        return True
+    else:
+        return False    
+
+def indexer_error_message(error_type, exception=None):
+    error_message = "no error message"
+    if error_type == 'timeout':
+        error_message =  "Terminating the function so it doesn't run indefinitely. The AI Search indexer's timout is 3m50s. If the document is large (more than 100 pages), try dividing it into smaller files. If you are encountering many 429 errors in the function log, try increasing the embedding model's quota as the retrial logic delays processing."
+    elif error_type == 'embedding':
+        error_message = "Error when embedding the chunk, if it is a 429 error code please consider increasing your embeddings model quota: " + str(exception)
+    logging.info(f"Error: {error_message}")
+    return {"message": error_message}
 
 def has_supported_file_extension(file_path: str) -> bool:
     """Checks if the given file format is supported based on its file extension.
@@ -58,10 +77,13 @@ def get_secret(secretName):
     logging.info(f"Retrieving {secretName} secret from {keyVaultName}.")   
     retrieved_secret = client.get_secret(secretName)
     return retrieved_secret.value
-    
+
+##########################################################################################
+# DOCUMENT INTELLIGENCE FUNCTIONS
+##########################################################################################
+
 def analyze_document_rest(filepath, model):
-    logging.info(f"Analyzing document {filepath}.")
-    
+
     result = {}
 
     request_endpoint = f"https://{os.environ['AZURE_FORMREC_SERVICE']}.cognitiveservices.azure.com/{formrec_or_docint}/documentModels/{model}:analyze?api-version={FORM_REC_API_VERSION}&features=ocr.highResolution"
@@ -141,48 +163,14 @@ def analyze_document_rest(filepath, model):
 
     return result 
 
-def table_to_html(table):
-    table_html = "<table>"
-    rows = [sorted([cell for cell in table['cells'] if cell['rowIndex'] == i], key=lambda cell: cell['columnIndex']) for i in range(table['rowCount'])]
-    for row_cells in rows:
-        table_html += "<tr>"
-        for cell in row_cells:
-            tag =  "td"
-            if 'kind' in cell:
-                if (cell['kind'] == "columnHeader" or cell['kind'] == "rowHeader"): tag = "th"
-            
-            cell_spans = ""
-            
-            if 'columnSpan' in cell:
-                if cell['columnSpan'] > 1: cell_spans += f" colSpan={cell['columnSpan']}"
-            
-            if 'rowSpan' in cell:
-                if cell['rowSpan'] > 1: cell_spans += f" rowSpan={cell['rowSpan']}"
-
-            table_html += f"<{tag}{cell_spans}>{html.escape(cell['content'])}</{tag}>"
-        table_html +="</tr>"
-    table_html += "</table>"
-    return table_html
-
-def char_in_a_table(offset, tables):
-    for table in tables:
-        for cell in table['cells']:
-            if len(cell['spans']) > 0 and cell['spans'][0]['offset'] <= offset < (cell['spans'][0]['offset'] + cell['spans'][0]['length']):
-                return True
-    return False
-
-def paragraph_in_a_table(paragraph, tables):
-    for table in tables:
-        for cell in table['cells']:
-            if len(cell['spans']) > 0 and paragraph['spans'][0]['offset'] == cell['spans'][0]['offset']:
-                return True
-    return False
+##########################################################################################
+# CHUNKING FUNCTIONS
+########################################################################################## 
 
 def get_chunk(content, url, page, chunk_id, text_embedder):
     filepath = url.split('/')[-1]
     chunk =  {
             "chunk_id": chunk_id,
-            "unique_id": base64.b64encode(f"{filepath}_{chunk_id}".encode("utf-8")).decode("utf-8"),
             "offset": 0,
             "length": 0,
             "page": page,                    
@@ -201,153 +189,99 @@ def chunk_document(data):
     errors = []
     warnings = []
     chunk_id = 0
+    error_occurred = False
+    start_time = time.time()
 
     text_embedder = TextEmbedder()
     filepath = f"{data['documentUrl']}{data['documentSasToken']}"
-    # filepath = f"{data['documentUrl']}"
+    doc_name = filepath.split('/')[-1].split('?')[0]
 
     # 1) Analyze document with layout model
+    logging.info(f"Analyzing {doc_name}.") 
     document = analyze_document_rest(filepath, 'prebuilt-layout')
-    logging.info(f"Analyzed document: {document}.") 
+    n_pages = len(document['pages'])
+    logging.info(f"Analyzed {doc_name} ({n_pages} pages). Content: {document['content'][:200]}.") 
+    if n_pages > 100:
+        logging.warn(f"DOCUMENT {doc_name} HAS MANY ({n_pages}) PAGES. Please consider splitting it into smaller documents of 100 pages.")
 
     # 2) Chunk tables
     if 'tables' in document:
 
         # 2.1) merge consecutive tables if they have the same structure 
-        #        
-        # The definition of two tables with the same structure is given two tables, table1 and table2, they have the same structure if:
-        #   - They have same columnCount.
-        #   - table2 first boundingRegion pageNumber difference to table1 last boundingRegion pageNumber is less then 2.
-        #   - The absolute difference between table1 first boundingRegion last y coordinate and table2 first boundingRegion first y coordinate is less than TABLE_DISTANCE_THRESHOLD 
-
-        def merge_tables_if_same_structure(tables, pages):
-            merged_tables = []
-            for table in tables:
-                if not merged_tables or not same_structure(merged_tables[-1], table, pages):
-                    merged_tables.append(table)
-                else:
-                    merged_tables[-1] = merge_tables(merged_tables[-1], table)
-            return merged_tables
         
-        def same_structure(table1, table2, pages):
-            if table1['columnCount'] != table2['columnCount']:
-                return False
+        document["tables"] = tb.merge_tables_if_same_structure(document["tables"], document["pages"])
 
-            bounding_region1 = table1['boundingRegions'][-1]
-            bounding_region2 = table2['boundingRegions'][0]
-
-            page_difference = bounding_region2['pageNumber'] - bounding_region1['pageNumber']
-
-            if page_difference >= 2:
-                return False
-            
-            if page_difference == 1:
-               pageIdx = bounding_region1['pageNumber'] - 1
-               tables_distance = bounding_region2['polygon'][0] + (pages[pageIdx]['height'] - bounding_region1['polygon'][-1])
-            else: 
-                tables_distance = bounding_region2['polygon'][0] - bounding_region1['polygon'][-1]
-
-            # tables distance in inches
-            if tables_distance >= TABLE_DISTANCE_THRESHOLD:
-                return False
-
-            return True
-
-        def merge_tables(table1, table2):
-            merged_table = table1.copy()
-            merged_table['rowCount'] += table2['rowCount']
-            table1_row_count = table1['rowCount']
-            
-            for cell in table2['cells']:
-                cell['rowIndex'] += table1_row_count
-                merged_table['cells'].append(cell)
-            
-            merged_table['boundingRegions'].extend(table2['boundingRegions'])
-            
-            return merged_table
-
-        def text_before_table(document, table, tables):
-            first_cell_offset = sys.maxsize
-            # get first cell
-            for cell in table['cells']:
-                # Check if the cell has content
-                if cell.get('content'):
-                    # Get the offset of the cell content
-                    first_cell_offset = cell['spans'][0]['offset'] 
-                    break
-            text_before_offset = max(0,first_cell_offset - TOKEN_OVERLAP)
-            text_before_str = ''
-            # we don't want to add text before the table if it is contained in a table
-            for idx, c in enumerate(document['content'][text_before_offset:first_cell_offset]):
-                if not char_in_a_table(text_before_offset+idx, tables):
-                    text_before_str += c
-            return text_before_str
+        # 2.2) create chunks for each table
         
-        def text_after_table(document, table, tables):
-            last_cell_offset = 0
-            # get last cell
-            for cell in table['cells']:
-                # Check if the cell has content
-                if cell.get('content'):
-                    # Get the offset of the cell content
-                    last_cell_offset = cell['spans'][0]['offset']
-            text_after_offset = last_cell_offset + len(cell['content'])
-            text_after_str = ''
-            # we don't want to add text after the table if it is contained in a table
-            for idx, c in enumerate(document['content'][text_after_offset:text_after_offset+TOKEN_OVERLAP]):
-                if not char_in_a_table(text_after_offset+idx, tables):
-                    text_after_str += c
-            return text_after_str
-        document["tables"] = merge_tables_if_same_structure(document["tables"], document["pages"])
-
-        # 2.4) create chunks for each table
-        
-        content = document["content"]
         processed_tables = []
         for idx, table in enumerate(document["tables"]):
             if idx not in processed_tables:
                 processed_tables.append(idx)
                 # TODO: check if table is too big for one chunck and split it to avoid truncation
-                table_content = table_to_html(table)
+                table_content = tb.table_to_html(table) 
                 chunk_id += 1
                 page = table['cells'][0]['boundingRegions'][0]['pageNumber']
 
                 # if there is text before the table add it to the beggining of the chunk to improve context.
-                text = text_before_table(document, table, document["tables"])
+                text = tb.text_before_table(document, table, document["tables"])
                 table_content = text + table_content
 
                 # if there is text after the table add it to the end of the chunk to improve context.
-                text = text_after_table(document, table, document["tables"])
+                text = tb.text_after_table(document, table, document["tables"])
                 table_content = table_content + text
+                try:
+                    chunk = get_chunk(table_content, data['documentUrl'], page, chunk_id, text_embedder)
+                    chunks.append(chunk)
+                except Exception as e:
+                    errors.append(indexer_error_message('embedding', e))
+                    error_occurred = True
+                    break
+                if check_timeout(start_time):
+                    errors.append(indexer_error_message('timeout'))
+                    error_occurred = True
+                    break
 
-                chunk = get_chunk(table_content, data['documentUrl'], page, chunk_id, text_embedder)
-                chunks.append(chunk)
-
-    # 3) Chunk paragaphs
-    if 'paragraphs' in document:    
+    # 3) Chunk paragraphs
+    if 'paragraphs' in document and not error_occurred:    
         paragraph_content = ""
         for paragraph in document['paragraphs']:
             page = paragraph['boundingRegions'][0]['pageNumber']
-            if not paragraph_in_a_table(paragraph, document['tables']):
+            if not tb.paragraph_in_a_table(paragraph, document['tables']):
                 chunk_size = TOKEN_ESTIMATOR.estimate_tokens(paragraph_content + paragraph['content'])
                 if chunk_size < NUM_TOKENS:
                     paragraph_content = paragraph_content + "\n" + paragraph['content']
                 else:
                     chunk_id += 1
-                    chunk = get_chunk(paragraph_content, data['documentUrl'], page, chunk_id, text_embedder)
-                    chunks.append(chunk)
+                    try:
+                        chunk = get_chunk(paragraph_content, data['documentUrl'], page, chunk_id, text_embedder)
+                        chunks.append(chunk)
+                    except Exception as e:
+                        errors.append(indexer_error_message('embedding', e))
+                        error_occurred = True
+                        break
                     # overlap logic
                     overlapped_text = paragraph_content
                     overlapped_text = overlapped_text.split()
                     overlapped_text = overlapped_text[-round(TOKEN_OVERLAP/0.75):] 
                     overlapped_text = " ".join(overlapped_text)
                     paragraph_content = overlapped_text
+                    
+                    if check_timeout(start_time):
+                        errors.append(indexer_error_message('timeout'))
+                        error_occurred = True
+                        break
 
-        chunk_id += 1
-        # last section
-        chunk_size = TOKEN_ESTIMATOR.estimate_tokens(paragraph_content)
-        if chunk_size > MIN_CHUNK_SIZE: 
-            chunk = get_chunk(paragraph_content, data['documentUrl'], page, chunk_id, text_embedder)
-            chunks.append(chunk)
+        if not error_occurred:
+            chunk_id += 1
+            # last section
+            chunk_size = TOKEN_ESTIMATOR.estimate_tokens(paragraph_content)
+            try:
+                if chunk_size > MIN_CHUNK_SIZE:
+                    chunk = get_chunk(paragraph_content, data['documentUrl'], page, chunk_id, text_embedder)
+                    chunks.append(chunk)
+            except Exception as e:
+                errors.append(indexer_error_message('embedding', e))
+    
+    logging.info(f"Finished chunking {doc_name}. {len(chunks)} chunks. {len(errors)} errors. {len(warnings)} warnings.")
 
     return chunks, errors, warnings

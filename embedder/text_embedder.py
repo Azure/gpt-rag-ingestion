@@ -3,6 +3,7 @@ import os
 import re
 import logging
 import tiktoken
+import time
 from tenacity import retry, wait_random_exponential, stop_after_attempt  
 from azure.keyvault.secrets import SecretClient
 from azure.identity import DefaultAzureCredential
@@ -40,7 +41,6 @@ class TextEmbedder():
 
     @retry(reraise=True, wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(6))
     def embed_content(self, text, clean_text=True, use_single_precision=True):
-        import time
         embedding_precision = 9 if use_single_precision else 18
         if clean_text:
             text = self.clean_text(text)
@@ -48,3 +48,26 @@ class TextEmbedder():
 
         embedding = [round(x, embedding_precision) for x in response['data'][0]['embedding']] # type: ignore
         return embedding
+    
+    def extract_retry_seconds(self, error_message):
+        match = re.search(r'retry after (\d+)', error_message)
+        if match:
+            return int(match.group(1))
+        else:
+            return 60 # default to 60 seconds in case it can't be extracted
+
+    @retry(reraise=True, stop=stop_after_attempt(6))
+    def embed_content(self, text, clean_text=True, use_single_precision=True):
+        embedding_precision = 9 if use_single_precision else 18
+        if clean_text:
+            text = self.clean_text(text)        
+        try:
+            response = openai.Embedding.create(input=text, engine=self.AZURE_OPENAI_EMBEDDING_DEPLOYMENT)
+            embedding = [round(x, embedding_precision) for x in response['data'][0]['embedding']] # type: ignore
+            return embedding            
+        except openai.error.RateLimitError as e:
+            error_message = str(e)
+            seconds = self.extract_retry_seconds(error_message) * 2
+            logging.warning(f"Embeddings model deployment rate limit exceeded, retrying in {seconds} seconds...")
+            time.sleep(seconds)
+            raise e # to make tenacity retry

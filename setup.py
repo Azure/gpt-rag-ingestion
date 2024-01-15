@@ -43,24 +43,34 @@ def call_search_api(search_service, search_api_version, resource_type, resource_
     search_endpoint = f"https://{search_service}.search.windows.net/{resource_type}/{resource_name}?api-version={search_api_version}"
     response = None
     try:
-        if method not in ["get", "put"]:
-            logging.error(f"Invalid method {method} ")
+        if method not in ["get", "put", "delete"]:
+            logging.warn(f"Invalid method {method} ")
+
+        # get and put processing
         if method == "get":
             response = requests.get(search_endpoint, headers=headers)
         elif method == "put":
             response = requests.put(search_endpoint, headers=headers, json=body)
+
         if response is not None:
             status_code = response.status_code
             if status_code >= 400:
-                logging.error(f"Error when calling search API {method} {resource_type} {resource_name}. Code: {status_code}. Reason: {response.reason}")
+                logging.error(f"Error when calling search API {method} {resource_type} {resource_name}. Code: {status_code}")
+                logging.error(f"Error when calling search API Reason: {response.reason}")
                 response_text_dict = json.loads(response.text)
                 logging.error(f"Error when calling search API {method} {resource_type} {resource_name}. Message: {response_text_dict['error']['message']}")                
             else:
-                logging.info(f"Successfully called search API {method} {resource_type} {resource_name}. Code: {status_code}.")                
+                logging.info(f"Successfully called search API {method} {resource_type} {resource_name}. Code: {status_code}.")
+
+        # delete processing
+        if method == "delete":
+            response = requests.delete(search_endpoint, headers=headers)
+            status_code = response.status_code
+            logging.info(f"Successfully called search API {method} {resource_type} {resource_name}. Code: {status_code}.")
+
     except Exception as e:
         error_message = str(e)
         logging.error(f"Error when calling search API {method} {resource_type} {resource_name}. Error: {error_message}")
-    return response
 
 
 def get_function_key(subscription_id, resource_group, function_app_name, credential):
@@ -143,7 +153,7 @@ def approve_shared_links(subscription_id, resource_group, function_app_name, sto
                     "Content-Type": "application/json"
                 }
                 response = requests.put(requestUrl, data=requestBodyJson, headers=requestHeaders)
-                print()
+
                 logging.info(f"Aproving private link service connection {connection['name']}. Code {response.status_code}. Message: {response.reason}.")
 
 
@@ -174,7 +184,6 @@ def approve_shared_links(subscription_id, resource_group, function_app_name, sto
                     "Content-Type": "application/json"
                 }
                 response = requests.put(requestUrl, data=requestBodyJson, headers=requestHeaders)
-                print()
                 logging.info(f"Aproving private link service connection {connection['name']}. Code {response.status_code}. Message: {response.reason}.")
     except Exception as e:
         error_message = str(e)
@@ -197,7 +206,6 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     Returns:
         None
     """    
-    
     logging.info(f"Getting function app {function_app_name} properties.") 
     credential = DefaultAzureCredential(logging_enable=True, exclude_managed_identity_credential=not enable_managed_identities, exclude_environment_credential=not enable_env_credentials)
     web_mgmt_client = WebSiteManagementClient(credential, subscription_id)
@@ -205,9 +213,8 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     function_endpoint = f"https://{function_app_name}.azurewebsites.net"
     search_service = function_app_settings.properties["SEARCH_SERVICE"]
     search_analyzer_name= function_app_settings.properties["SEARCH_ANALYZER_NAME"]
-    search_api_version = function_app_settings.properties.get("SEARCH_API_VERSION", "2023-11-01")
-    if search_api_version < '2023-10-01-Preview': # if the version is lower than 2023-10-01-Preview it wont work with MIS authResourceId parameter.
-        search_api_version = '2023-11-01'    
+    search_api_version = function_app_settings.properties.get("SEARCH_API_VERSION", "2023-10-01-Preview")
+    search_api_version = '2023-10-01-Preview' # enforced, to support indexProjections and also if the version is lower than 2023-10-01-Preview it wont work with MIS authResourceId parameter.   
     search_index_interval = function_app_settings.properties["SEARCH_INDEX_INTERVAL"]
     search_index_name = function_app_settings.properties["SEARCH_INDEX_NAME"]
     storage_container = function_app_settings.properties["STORAGE_CONTAINER"]
@@ -272,15 +279,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
         logging.error(f"Error when creating container. {error_message}")
         logging.error(f"If you are in a network isolation scenario please run the script when connected to the solution vnet.")
         exit(1)
-
-    # Create chunks container
-    container_client = blob_service_client.get_container_client(storage_container_chunks)
-    if not container_client.exists():
-        # Create the container
-        container_client.create_container()
-        logging.info(f"Container '{storage_container_chunks}' created successfully.")
-    else:
-        logging.info(f"Container '{storage_container_chunks}' already exists.")        
+     
     response_time = time.time() - start_time
     logging.info(f"01 Create containers step. {round(response_time,2)} seconds")
 
@@ -301,195 +300,14 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
         }
     }
     call_search_api(search_service, search_api_version, "datasources", f"{search_index_name}-datasource", "put", credential, body)
-    
-    body = {
-        "description": "Document chunks",
-        "type": "azureblob",
-        "credentials": {
-            "connectionString": storage_connection_string
-        },
-        "container": {
-            "name": f"{storage_container_chunks}"
-        }   
-    }
-    call_search_api(search_service, search_api_version, "datasources", f"{search_index_name}-datasource-chunks", "put", credential, body)
-
     response_time = time.time() - start_time
     logging.info(f"02 Create datastores step. {round(response_time,2)} seconds")
 
     ###########################################################################
-    # 03 Creating cognitive search skillsets
+    # 03 Creating indexes
     ###########################################################################
-    logging.info("03 Creating skillsets step.")
+    logging.info(f"03 Creating indexes step.")
     start_time = time.time()
-
-    body = { 
-        "name": f"{search_index_name}-skillset-chunking",
-        "description":"SKillset to do document chunking",
-        "skills":[ 
-            { 
-                "@odata.type":"#Microsoft.Skills.Custom.WebApiSkill",
-                "name":"document-chunking",
-                "description":"Extract chunks from documents.",
-                "httpMethod":"POST",
-                "timeout":"PT230S",
-                "context":"/document",
-                "batchSize":1,
-                "inputs":[ 
-                    {
-                        "name":"documentUrl",
-                        "source":"/document/metadata_storage_path"
-                    },
-                    {
-                        "name":"documentContent",
-                        "source":"/document/content"
-                    },                    
-                    { 
-                        "name":"documentSasToken",
-                        "source":"/document/metadata_storage_sas_token"
-                    },
-                    { 
-                        "name":"documentContentType",
-                        "source":"/document/metadata_content_type"
-                    }
-                ],
-                "outputs":[ 
-                    {
-                        "name":"chunks",
-                        "targetName":"chunks"
-                    }
-                ]
-            }
-        ],
-        "knowledgeStore" : {
-            "storageConnectionString": storage_connection_string,
-            "projections": [
-                {
-                    "tables": [],
-                    "objects": [
-                        {
-                                "storageContainer": f"{storage_container_chunks}",
-                                "generatedKeyName": "chunk_id",
-                                "source": "/document/chunks/*"
-                        }
-                    ],
-                    "files": []
-                }
-            ]
-        }
-    }
-    if azure_search_use_mis:
-        body['skills'][0]['uri'] = f"{function_endpoint}/api/document-chunking"
-        body['skills'][0]['authResourceId'] = f"api://{search_principal_id}"
-    else:
-        body['skills'][0]['uri'] = f"{function_endpoint}/api/document-chunking?code={function_key}"
-
-    call_search_api(search_service, search_api_version, "skillsets", f"{search_index_name}-skillset-chunking", "put", credential,body)
-    response_time = time.time() - start_time
-    logging.info(f"02 Create skillset step. {round(response_time,2)} seconds")
-
-    ###########################################################################
-    # 04 Creating indexes
-    ###########################################################################
-    logging.info(f"04 Creating indexes step.")
-    start_time = time.time()
-
-    body = {
-        "name": f"{search_index_name}-source-documents",
-        "fields": [
-            {
-                "name": "id",
-                "type": "Edm.String",
-                "searchable": False,
-                "sortable": False,
-                "key": True,                               
-                "filterable": False,
-                "facetable": False
-            },
-            {
-                "name": "metadata_storage_path",
-                "type": "Edm.String",
-                "searchable": False,
-                "sortable": False,     
-                "filterable": False,
-                "facetable": False
-            },
-            {
-                "name": "chunks",
-                "type": "Collection(Edm.ComplexType)",
-                "fields": [
-                    {
-                        "name": "content",
-                        "type": "Edm.String",
-                        "searchable": False,
-                        "retrievable": True
-                    },
-                    {
-                        "name": "category",
-                        "type": "Edm.String",
-                        "searchable": False,
-                        "retrievable": True
-                    },
-                    {
-                        "name": "filepath",
-                        "type": "Edm.String",
-                        "searchable": False,
-                        "retrievable": True
-                    },
-                    {
-                        "name": "chunk_id",
-                        "type": "Edm.Int32",
-                        "searchable": False,
-                        "retrievable": True
-                    },                    
-                    {
-                        "name": "page",
-                        "type": "Edm.Int32",
-                        "searchable": False,
-                        "retrievable": True
-                    },
-                    {
-                        "name": "offset",
-                        "type": "Edm.Int32",
-                        "searchable": False,
-                        "retrievable": True
-                    },
-                    {
-                        "name": "length",
-                        "type": "Edm.Int32",
-                        "searchable": False,
-                        "retrievable": True
-                    },
-                    {
-                        "name": "title",
-                        "type": "Edm.String",
-                        "searchable": False,
-                        "retrievable": True
-                    },
-                    {
-                        "name": "url",
-                        "type": "Edm.String",
-                        "searchable": False,
-                        "retrievable": True
-                    },                
-                    {
-                        "name": "contentVector",
-                        "type": "Collection(Edm.Double)",
-                        "searchable": False,
-                        "searchable": False,
-                        "retrievable": True
-                    }
-                ]
-            } 
-        ],
-        "corsOptions": {
-            "allowedOrigins": [
-                "*"
-            ],
-            "maxAgeInSeconds": 60
-        }
-    }
-    response = call_search_api(search_service, search_api_version, "indexes", f"{search_index_name}-source-documents", "put", credential, body)
 
     body = {
         "name":  f"{search_index_name}",
@@ -497,10 +315,17 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
             {
                 "name": "id",
                 "type": "Edm.String",
+                "key": True,
+                "analyzer": "keyword",                
+                "searchable": True,
+                "retrievable": True
+            },    
+            {
+                "name": "parent_id",
+                "type": "Edm.String",
+                "key": False,
                 "searchable": False,
-                "sortable": False,                      
-                "filterable": False,
-                "facetable": False
+                "retrievable": True
             },
             {
                 "name": "metadata_storage_path",
@@ -523,14 +348,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                 "type": "Edm.Int32",
                 "searchable": False,
                 "retrievable": True
-            },
-            {
-                "name": "unique_id",
-                "type": "Edm.String",
-                "key": True,                         
-                "searchable": False,
-                "retrievable": True
-            },            
+            },     
             {
                 "name": "content",
                 "type": "Edm.String",
@@ -595,7 +413,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                 "retrievable": True,
                 "dimensions": 1536,
                 "vectorSearchProfile": "myHnswProfile"
-            } 
+            }
         ],
         "corsOptions": {
             "allowedOrigins": [
@@ -643,10 +461,143 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
             ]
         }
     }
-    response = call_search_api(search_service, search_api_version, "indexes", f"{search_index_name}", "put", credential, body)
-
+    call_search_api(search_service, search_api_version, "indexes", f"{search_index_name}", "put", credential, body)
     response_time = time.time() - start_time
     logging.info(f"03 Create indexes step. {round(response_time,2)} seconds")
+
+
+    ###########################################################################
+    # 04 Creating cognitive search skillsets
+    ###########################################################################
+    logging.info("04 Creating skillsets step.")
+    start_time = time.time()
+
+    body = { 
+        "name": f"{search_index_name}-skillset-chunking",
+        "description":"SKillset to do document chunking",
+        "skills":[ 
+            { 
+                "@odata.type":"#Microsoft.Skills.Custom.WebApiSkill",
+                "name":"document-chunking",
+                "description":"Extract chunks from documents.",
+                "httpMethod":"POST",
+                "timeout":"PT230S",
+                "context":"/document",
+                "batchSize":1,
+                "inputs":[ 
+                    {
+                        "name":"documentUrl",
+                        "source":"/document/metadata_storage_path"
+                    },
+                    {
+                        "name":"documentContent",
+                        "source":"/document/content"
+                    },                    
+                    { 
+                        "name":"documentSasToken",
+                        "source":"/document/metadata_storage_sas_token"
+                    },
+                    { 
+                        "name":"documentContentType",
+                        "source":"/document/metadata_content_type"
+                    }
+                ],
+                "outputs":[ 
+                    {
+                        "name":"chunks",
+                        "targetName":"chunks"
+                    }
+                ]
+            }
+        ],
+        "indexProjections": {
+            "selectors": [
+                {
+                    "targetIndexName":"ragindex",
+                    "parentKeyFieldName": "parent_id",
+                    "sourceContext": "/document/chunks/*",
+                    "mappings": [
+                        {
+                        "name": "chunk_id",
+                        "source": "/document/chunks/*/chunk_id",
+                        "inputs": []
+                        },
+                        {
+                            "name": "offset",
+                            "source": "/document/chunks/*/offset",
+                            "inputs": []
+                        },
+                        {
+                            "name": "length",
+                            "source": "/document/chunks/*/length",
+                            "inputs": []
+                        },
+                        {
+                            "name": "page",
+                            "source": "/document/chunks/*/page",
+                            "inputs": []
+                        },
+                        {
+                            "name": "title",
+                            "source": "/document/chunks/*/title",
+                            "inputs": []
+                        },
+                        {
+                            "name": "category",
+                            "source": "/document/chunks/*/category",
+                            "inputs": []
+                        },
+                        {
+                            "name": "url",
+                            "source": "/document/chunks/*/url",
+                            "inputs": []
+                        },
+                        {
+                            "name": "filepath",
+                            "source": "/document/chunks/*/filepath",
+                            "inputs": []
+                        },
+                        {
+                            "name": "content",
+                            "source": "/document/chunks/*/content",
+                            "inputs": []
+                        },
+                        {
+                            "name": "contentVector",
+                            "source": "/document/chunks/*/contentVector",
+                            "inputs": []
+                        },
+                        {
+                            "name": "metadata_storage_path",
+                            "source": "/document/metadata_storage_path",
+                            "inputs": []
+                        },
+                        {
+                            "name": "metadata_storage_name",
+                            "source": "/document/metadata_storage_name",
+                            "inputs": []
+                        }
+                    ]
+                }
+            ],
+            "parameters": {
+                "projectionMode": "skipIndexingParentDocuments"
+            }
+        }
+    }
+    if azure_search_use_mis:
+        body['skills'][0]['uri'] = f"{function_endpoint}/api/document-chunking"
+        body['skills'][0]['authResourceId'] = f"api://{search_principal_id}"
+    else:
+        body['skills'][0]['uri'] = f"{function_endpoint}/api/document-chunking?code={function_key}"
+
+    # first delete to enforce web api skillset to be updated
+    call_search_api(search_service, search_api_version, "skillsets", f"{search_index_name}-skillset-chunking", "delete", credential)        
+
+    call_search_api(search_service, search_api_version, "skillsets", f"{search_index_name}-skillset-chunking", "put", credential, body)
+    
+    response_time = time.time() - start_time
+    logging.info(f"04 Create skillset step. {round(response_time,2)} seconds")
 
     ###########################################################################
     # 05 Creating indexers
@@ -655,7 +606,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     start_time = time.time()
     body = {
         "dataSourceName" : f"{search_index_name}-datasource",
-        "targetIndexName" : f"{search_index_name}-source-documents",
+        "targetIndexName" : f"{search_index_name}",
         "skillsetName" : f"{search_index_name}-skillset-chunking",
         "schedule" : { "interval" : f"{search_index_interval}"},
         "fieldMappings" : [
@@ -681,29 +632,8 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     if network_isolation: body['parameters']['configuration']['executionEnvironment'] = "private"
     call_search_api(search_service, search_api_version, "indexers", f"{search_index_name}-indexer-chunk-documents", "put", credential, body)
 
-    body = {
-        "dataSourceName" : f"{search_index_name}-datasource-chunks",
-        "targetIndexName" : f"{search_index_name}",
-        "schedule" : { "interval" : f"{search_index_interval}"},
-        "fieldMappings" : [],        
-        "parameters":
-        {
-            "batchSize": 1,
-            "maxFailedItems":-1,
-            "maxFailedItemsPerBatch":-1,
-            "base64EncodeKeys": True,            
-            "configuration": 
-            {
-                "dataToExtract": "contentAndMetadata",
-                "parsingMode": "json"
-            }
-        }
-    }
-    if network_isolation: body['parameters']['configuration']['executionEnvironment'] = "private"    
-    call_search_api(search_service, search_api_version, "indexers", f"{search_index_name}-indexer-chunks", "put", credential, body)
-
     response_time = time.time() - start_time
-    logging.info(f"04 Create indexers step. {round(response_time,2)} seconds")
+    logging.info(f"05 Create indexers step. {round(response_time,2)} seconds")
 
 
 
@@ -722,7 +652,6 @@ def main(subscription_id=None, resource_group=None, function_app_name=None, sear
     """   
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     logging.info(f"Starting setup.")
-
     if subscription_id is None:
         subscription_id = input("Enter subscription ID: ")
     if resource_group is None:
@@ -736,7 +665,6 @@ def main(subscription_id=None, resource_group=None, function_app_name=None, sear
 
     response_time = time.time() - start_time
     logging.info(f"Finished setup. {round(response_time,2)} seconds")
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Script to do the data ingestion setup for Azure Cognitive Search.')
@@ -752,4 +680,5 @@ if __name__ == '__main__':
     # format search_use_mis to boolean
     search_use_mis = args.azure_search_use_mis.lower() == "true" if args.azure_search_use_mis not in [None, ""] else False
 
-    main(subscription_id=args.subscription_id, resource_group=args.resource_group, function_app_name=args.function_app_name, search_principal_id=args.search_principal_id, azure_search_use_mis=search_use_mis, enable_managed_identities=args.enable_managed_identities, enable_env_credentials=args.enable_env_credentials)    
+    main(subscription_id=args.subscription_id, resource_group=args.resource_group, function_app_name=args.function_app_name, search_principal_id=args.search_principal_id, 
+        azure_search_use_mis=search_use_mis, enable_managed_identities=args.enable_managed_identities, enable_env_credentials=args.enable_env_credentials)    
