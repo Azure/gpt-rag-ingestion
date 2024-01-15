@@ -40,7 +40,7 @@ def document_chunking(req: func.HttpRequest) -> func.HttpResponse:
 def process_documents(body):
     import json
     import logging
-    import chunker.chunk_documents_formrec
+    import chunker.chunk_documents_docint
     import chunker.chunk_documents_raw
 
     values = body['values']
@@ -54,10 +54,17 @@ def process_documents(body):
         chunks = []
         errors = []
         warnings = []
+        
+        output_record = {
+            "recordId": value['recordId'],
+            "data": {"chunks": []},
+            "errors": None,
+            "warnings": None
+        }
 
-        if chunker.chunk_documents_formrec.has_supported_file_extension(data['documentUrl']):
-            chunks, errors, warnings = chunker.chunk_documents_formrec.chunk_document(data)
-            
+        if chunker.chunk_documents_docint.has_supported_file_extension(data['documentUrl']):
+            chunks, errors, warnings = chunker.chunk_documents_docint.chunk_document(data)
+
         elif chunker.chunk_documents_raw.has_supported_file_extension(data['documentUrl']):
             chunks, errors, warnings = chunker.chunk_documents_raw.chunk_document(data)
         
@@ -88,20 +95,21 @@ def process_documents(body):
         #                 "contentVector": [0.1] * 1536,
         #             }]
 
-        output_record = {
-            "recordId": value['recordId'],
-            "data": {
+        if len(warnings) > 0:
+            output_record["warnings"] = warnings
+
+        if len(errors) > 0:
+            output_record["errors"] = errors
+        
+        if len(chunks) > 0:
+            output_record["data"] = {
                 "chunks": chunks
-            },
-            "errors": errors,  
-            "warnings": warnings
-        }
+            }
 
         if output_record != None:
             results["values"].append(output_record)
             
-    logging.info('Finished process_documents.')
-    return json.dumps(results, ensure_ascii=False, cls=DateTimeEncoder)
+        return json.dumps(results, ensure_ascii=False, cls=DateTimeEncoder)
 
 def get_request_schema():
     return {
