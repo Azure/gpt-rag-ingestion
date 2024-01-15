@@ -2,7 +2,7 @@
 
 Part of [GPT-RAG](https://github.com/Azure/gpt-rag)
 
-## Deploy (quickstart)
+## Getting started
 
 You provision the infrastructure and deploy the solution initially using the GPT-RAG template, as instructed at: https://aka.ms/gpt-rag.
 
@@ -21,7 +21,7 @@ azd env refresh
 azd deploy  
 ```
 
-> Note: when running the azd env refresh, use the same environment name, subscription, and region used in the initial provisioning of the infrastructure.
+> Note: when running the ```azd env refresh```, use the same environment name, subscription, and region used in the initial provisioning of the infrastructure.
 
 ## References
 
