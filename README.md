@@ -4,64 +4,24 @@ Part of [GPT-RAG](https://github.com/Azure/gpt-rag)
 
 ## Deploy (quickstart)
 
-Here are the steps to configure cognitive search and deploy ingestion code using the terminal.
+You provision the infrastructure and deploy the solution initially using the GPT-RAG template, as instructed at: https://aka.ms/gpt-rag.
 
-**First Check your environment meets the requirements**
+To deploy only the ingestion component (after the initial deployment of the solution), you will need:
 
-- You need **[AZ CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)** to log and run Azure commands in the command line.
-- **Python 3.9+** to run the setup script. Ideally use **Python 3.10** (the same version used by the Function runtime).  
-- **[Azure Functions Core Tools](https://learn.microsoft.com/en-us/azure/azure-functions/functions-run-local?tabs=windows%2Cisolated-process%2Cnode-v4%2Cpython-v2%2Chttp-trigger%2Ccontainer-apps&pivots=programming-language-python#install-the-azure-functions-core-tools)** will be needeed to deploy the chunking function.
+ - Azure Developer CLI: [Download azd for Windows](https://azdrelease.azureedge.net/azd/standalone/release/1.5.0/azd-windows-amd64.msi), [Other OS's](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/install-azd).
+ - Powershell (Windows only): [Powershell](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows?view=powershell-7.4#installing-the-msi-package)
+ - Git: [Download Git](https://git-scm.com/downloads)
+ - Python 3.10: [Download Python](https://www.python.org/downloads/release/python-31011/)
 
-**1) Login to Azure** 
+Then just clone this repository and reproduce the following commands within the gpt-rag-ingestion directory:  
 
-run ```az login``` to log into azure. Run ```az login -i``` if using a VM with managed identity to run the setup.
+```
+azd auth login  
+azd env refresh  
+azd deploy  
+```
 
-**2) Clone the repo** 
-
-If you plan to customize the ingestion logic, create a new repo by clicking on the **Use this template** button on top of this page.
-
-Clone the repostory locally:  ```git clone https://github.com/azure/gpt-rag-ingestion```
-
-*If you created a new repository please update the repository URL before running the command*
-
-**3) Deploy function to Azure** 
-
-Enter in the cloned repo folder: ```cd gpt-rag-ingestion```
-
-Use Azure Functions Core Tools to deploy the function: ```func azure functionapp publish FUNCTION_APP_NAME --python```
-
-<!-- Check the function is listed after deployment: ```func azure functionapp list-functions FUNCTION_APP_NAME``` -->
-
-*Replace FUNCTION_APP_NAME with your Ingestion Function App name before running the command*
-
-**4) Run Azure Cognitive Search Setup**
-
-Enter in the cloned repo folder: ```cd gpt-rag-ingestion```
-
-Install python libraries: ```pip install -r requirements.txt --use-deprecated=legacy-resolver```
-
-Run the setup script: ```python setup.py -s SUBSCRIPTION_ID -r RESOURCE_GROUP -f FUNCTION_APP_NAME```
-
-*Replace SUBSCRIPTION_ID, RESOURCE_GROUP and FUNCTION_APP_NAME by the names applicable to your environment*
-
-If you get "ERROR: Failed building wheel for tiktoken", you should install rust compiler toolchain from https://rustup.rs .
-
-<!-- *Add -i command line argument when executing setup.py if using a VM with managed identity to run the setup.* -->
-
-
-**5) Add source documents to object storage** 
-
-Upload your documents to the *documents* folder in the storage account which name starts with *strag*.
-
-**Optional: use managed identity to connect to Azure Function**
-
-If you want that AI Search use its Managed Identity to access the Azure Function, run setup with additional arguments:
-
- ```python setup.py -s SUBSCRIPTION_ID -r RESOURCE_GROUP -f FUNCTION_APP_NAME -a SEARCH_PRINCIPAL_ID -m true```
-
-Where *SEARCH_PRINCIPAL_ID* is the object (principal) ID of the Search service.
-
-Note: In order for the data ingestion function to be accessed with a managed identity, it needs to be configured to use Microsoft Entra Sign-in, as indicated [in this link](https://learn.microsoft.com/en-us/azure/app-service/configure-authentication-provider-aad).
+> Note: when running the azd env refresh, use the same environment name, subscription, and region used in the initial provisioning of the infrastructure.
 
 ## References
 
