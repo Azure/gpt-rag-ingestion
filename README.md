@@ -6,7 +6,7 @@ Part of [GPT-RAG](https://github.com/Azure/gpt-rag)
 
 You provision the infrastructure and deploy the solution initially using the GPT-RAG template, as instructed at: https://aka.ms/gpt-rag.
 
-To deploy only the ingestion component (after the initial deployment of the solution), you will need:
+To redeploy only the ingestion component (after the initial deployment of the solution), you will need:
 
  - Azure Developer CLI: [Download azd for Windows](https://azdrelease.azureedge.net/azd/standalone/release/1.5.0/azd-windows-amd64.msi), [Other OS's](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/install-azd).
  - Powershell (Windows only): [Powershell](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows?view=powershell-7.4#installing-the-msi-package)
