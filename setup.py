@@ -218,7 +218,6 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     search_index_interval = function_app_settings.properties["SEARCH_INDEX_INTERVAL"]
     search_index_name = function_app_settings.properties["SEARCH_INDEX_NAME"]
     storage_container = function_app_settings.properties["STORAGE_CONTAINER"]
-    storage_container_chunks = function_app_settings.properties["STORAGE_CONTAINER_CHUNKS"]
     storage_account_name = function_app_settings.properties["STORAGE_ACCOUNT_NAME"]
     network_isolation = True if function_app_settings.properties["NETWORK_ISOLATION"].lower() == "true" else False
 
@@ -230,7 +229,6 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     logging.info(f"Search index interval: {search_index_interval}")
     logging.info(f"Search index name: {search_index_name}")
     logging.info(f"Storage container: {storage_container}")
-    logging.info(f"Storage container chunks: {storage_container_chunks}")
     logging.info(f"Storage account name: {storage_account_name}")
 
     
