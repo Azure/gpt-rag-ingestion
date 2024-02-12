@@ -221,7 +221,6 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     storage_account_name = function_app_settings.properties["STORAGE_ACCOUNT_NAME"]
     network_isolation = True if function_app_settings.properties["NETWORK_ISOLATION"].lower() == "true" else False
 
-    # create a code to print all variables above
     logging.info(f"Function endpoint: {function_endpoint}")
     logging.info(f"Search service: {search_service}")
     logging.info(f"Search analyzer name: {search_analyzer_name}")
@@ -609,9 +608,12 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
         "schedule" : { "interval" : f"{search_index_interval}"},
         "fieldMappings" : [
             {
-            "sourceFieldName" : "metadata_storage_path",
-            "targetFieldName" : "id"
-            }
+                "sourceFieldName" : "metadata_storage_path",
+                "targetFieldName" : "id",
+                "mappingFunction" : {
+                    "name" : "fixedLengthEncode"
+                }
+            }            
         ],
         "outputFieldMappings" : [
         ],
@@ -632,8 +634,6 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
 
     response_time = time.time() - start_time
     logging.info(f"05 Create indexers step. {round(response_time,2)} seconds")
-
-
 
 def main(subscription_id=None, resource_group=None, function_app_name=None, search_principal_id='', azure_search_use_mis=False, enable_managed_identities=False, enable_env_credentials=False):
     """
