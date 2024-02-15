@@ -19,24 +19,29 @@ NUM_TOKENS = int(os.environ["NUM_TOKENS"]) # max chunk size in tokens
 MIN_CHUNK_SIZE = int(os.environ["MIN_CHUNK_SIZE"]) # min chunk size in tokens
 TOKEN_OVERLAP = int(os.environ["TOKEN_OVERLAP"])
 
+DOCINT_40_API = '2023-10-31-preview'
+default_api_version = '2023-07-31'
+DOCINT_API_VERSION = os.getenv('FORM_REC_API_VERSION', os.getenv('DOCINT_API_VERSION', default_api_version))
+
+
 NETWORK_ISOLATION = os.environ["NETWORK_ISOLATION"]
 network_isolation = True if NETWORK_ISOLATION.lower() == 'true' else False
-
-FORM_REC_API_VERSION = os.getenv('FORM_REC_API_VERSION', '2023-07-31')
-if FORM_REC_API_VERSION == '2023-10-31-preview':
-    formrec_or_docint = "documentintelligence"
-else:
-    formrec_or_docint = "formrecognizer"
         
-TOKEN_ESTIMATOR = TokenEstimator()
-
 FILE_EXTENSION_DICT = [
     "pdf",
     "bmp",
     "jpeg",
     "png",
-    "tiff",
+    "tiff"
 ]
+
+if DOCINT_API_VERSION >= DOCINT_40_API:
+    formrec_or_docint = "documentintelligence"
+    FILE_EXTENSION_DICT.extend(["docx", "pptx", "xlsx", "html"])
+else:
+    formrec_or_docint = "formrecognizer"
+
+TOKEN_ESTIMATOR = TokenEstimator()
 
 ##########################################################################################
 # UTILITY FUNCTIONS
@@ -86,11 +91,16 @@ def analyze_document_rest(filepath, model):
 
     result = {}
 
-    request_endpoint = f"https://{os.environ['AZURE_FORMREC_SERVICE']}.cognitiveservices.azure.com/{formrec_or_docint}/documentModels/{model}:analyze?api-version={FORM_REC_API_VERSION}&features=ocr.highResolution"
+    if get_file_extension(filepath) in ["pdf"]:
+        docint_features = "ocr.highResolution"
+    else:
+        docint_features = ""
+
+    request_endpoint = f"https://{os.environ['AZURE_FORMREC_SERVICE']}.cognitiveservices.azure.com/{formrec_or_docint}/documentModels/{model}:analyze?api-version={DOCINT_API_VERSION}&features={docint_features}&includeKeys=true"
 
     if not network_isolation:
         headers = {
-            "Content-Type": "application/json",
+            # "Content-Type": "application/json",
             "Ocp-Apim-Subscription-Key": get_secret('formRecKey'),
             "x-ms-useragent": "gpt-rag/1.0.0"
         }
@@ -119,7 +129,7 @@ def analyze_document_rest(filepath, model):
         blob_client = blob_service_client.get_blob_client(container=container_name, blob=blob_name)
 
         headers = {
-            "Content-Type": "application/pdf",
+            # "Content-Type": "application/pdf",
             "Ocp-Apim-Subscription-Key": get_secret('formRecKey'),
             "x-ms-useragent": "gpt-rag/1.0.0"
         }
@@ -222,7 +232,12 @@ def chunk_document(data):
                 # TODO: check if table is too big for one chunck and split it to avoid truncation
                 table_content = tb.table_to_html(table) 
                 chunk_id += 1
-                page = table['cells'][0]['boundingRegions'][0]['pageNumber']
+
+                # page number logic
+                page = 1
+                bounding_regions = table['cells'][0].get('boundingRegions')
+                if bounding_regions is not None:
+                    page = bounding_regions[0].get('pageNumber', 1)
 
                 # if there is text before the table add it to the beggining of the chunk to improve context.
                 text = tb.text_before_table(document, table, document["tables"])
@@ -247,7 +262,13 @@ def chunk_document(data):
     if 'paragraphs' in document and not error_occurred:    
         paragraph_content = ""
         for paragraph in document['paragraphs']:
-            page = paragraph['boundingRegions'][0]['pageNumber']
+
+            # page number logic
+            page = 1
+            bounding_regions = paragraph.get('boundingRegions')
+            if bounding_regions is not None:
+                page = bounding_regions[0].get('pageNumber', 1)
+
             if not tb.paragraph_in_a_table(paragraph, document['tables']):
                 chunk_size = TOKEN_ESTIMATOR.estimate_tokens(paragraph_content + paragraph['content'])
                 if chunk_size < NUM_TOKENS:

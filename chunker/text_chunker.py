@@ -26,7 +26,19 @@ class TextChunker():
         "py": "python",
         "pdf": "pdf",
         "json": "json",
+        "csv": "csv",
+        "epub": "epub",
+        "rtf": "rtf",
+        "xml": "xml",
+        "xlsx": "xlsx",
+        "xls": "xls",
+        "docx": "docx",
+        "doc": "doc",        
+        "pptx": "pptx",
+        "ppt": "ppt",
+        "msg": "msg"
     }
+
     SENTENCE_ENDINGS = [".", "!", "?"]
     WORDS_BREAKS = ['\n', '\t', '}', '{', ']', '[', ')', '(', ' ', ':', ';', ',']
     TOKEN_ESTIMATOR = TokenEstimator()

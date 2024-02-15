@@ -49,7 +49,6 @@ def process_documents(body):
     for value in values:
         # perform operation on each record (document)
         data = value['data']
-        logging.info(f"Chunking {data['documentUrl'].split('/')[-1]}.")
         
         chunks = []
         errors = []
@@ -63,9 +62,11 @@ def process_documents(body):
         }
 
         if chunker.chunk_documents_docint.has_supported_file_extension(data['documentUrl']):
+            logging.info(f"Chunking (doc intelligence) {data['documentUrl'].split('/')[-1]}.")
             chunks, errors, warnings = chunker.chunk_documents_docint.chunk_document(data)
 
         elif chunker.chunk_documents_raw.has_supported_file_extension(data['documentUrl']):
+            logging.info(f"Chunking (raw) {data['documentUrl'].split('/')[-1]}.")
             chunks, errors, warnings = chunker.chunk_documents_raw.chunk_document(data)
         
         # errors = []
