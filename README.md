@@ -30,7 +30,7 @@ To use version 4.0 of Document Intelligence, it is necessary to add the property
 # Supported input formats for data ingestion
 
 
-**Document Inteligence Chunking**
+**Document Intelligence Chunking**
 
 | Extension | Doc Int API version |
 |-----------|-------------------|
