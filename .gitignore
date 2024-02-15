@@ -3,6 +3,7 @@ backup/
 temp/
 .env
 .vscode/
+.azure
 .azure/
 
 # Byte-compiled / optimized / DLL files
