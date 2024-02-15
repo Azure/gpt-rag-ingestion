@@ -23,6 +23,50 @@ azd deploy
 
 > Note: when running the ```azd env refresh```, use the same environment name, subscription, and region used in the initial provisioning of the infrastructure.
 
+## Document Intelligence API version
+
+To use version 4.0 of Document Intelligence, it is necessary to add the property `DOCINT_API_VERSION` with the value `2023-10-31-preview` in the function app properties. It's important to check if this version is supported in the region where the service was created. More information can be found at [this link](https://learn.microsoft.com/en-us/azure/ai-services/document-intelligence/concept-layout?view=doc-intel-4.0.0). If the property has not been defined (default behavior), the version `2023-07-31` (3.1) will be used.
+
+# Supported input formats for data ingestion
+
+
+**Document Inteligence Chunking**
+
+| Extension | Doc Int API version |
+|-----------|-------------------|
+| pdf       | 3.1, 4.0          |
+| bmp       | 3.1, 4.0          |
+| jpeg      | 3.1, 4.0          |
+| png       | 3.1, 4.0          |
+| tiff      | 3.1, 4.0          |
+| docx      | 4.0               |
+| pptx      | 4.0               |
+| xlsx      | 4.0               |
+| html      | 4.0               |
+
+**Langchain text Splitters Chunking**
+
+| Extension | Format |
+|-----------|--------|
+| txt       | text   |
+| html      | html   |
+| shtml     | html   |
+| htm       | html   |
+| py        | python |
+| pdf       | pdf    |
+| json      | json   |
+| csv       | csv    |
+| epub      | epub   |
+| rtf       | rtf    |
+| xml       | xml    |
+| xlsx      | xlsx   |
+| xls       | xls    |
+| pptx      | pptx   |
+| ppt       | ppt    |
+| msg       | msg    |
+
+Note: First, based on the file extension check if it can be processed with Document Intelligence and then chunked. If not, just use the content extracted by AI Search and attempt to perform chunking with Langchain text splitter.
+
 ## References
 
 [Cognitive Search Enrichment Pipeline](https://learn.microsoft.com/en-us/azure/search/cognitive-search-concept-intro)
