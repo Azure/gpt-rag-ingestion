@@ -7,9 +7,10 @@ class ChunkEmbeddingHelper():
 
     def generate_chunks_with_embedding(self, document_id, content_chunks, fieldname, sleep_interval_seconds) ->  dict:
         offset = 0
+        page = 0
         chunk_embeddings = []
         for index, (content_chunk) in enumerate(content_chunks):
-            metadata = self._generate_content_metadata(document_id, fieldname, index, content_chunk, offset)
+            metadata = self._generate_content_metadata(document_id, fieldname, index, content_chunk, offset, page)
             offset += metadata['length']
             chunk_embeddings.append(metadata)
             
@@ -18,11 +19,12 @@ class ChunkEmbeddingHelper():
             time.sleep(sleep_interval_seconds)
         return chunk_embeddings # type: ignore
 
-    def _generate_content_metadata(self, document_id, fieldname, index, content, offset):
+    def _generate_content_metadata(self, document_id, fieldname, index, content, offset, page):
         metadata = {'fieldname':fieldname}
         metadata['docid'] = document_id
         metadata['index'] = index
         metadata['offset'] = offset
+        metadata['page'] = page        
         metadata['length'] = len(content)
         metadata['embedding'] = self.text_embedder.embed_content(content)
         return metadata
