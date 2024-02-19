@@ -32,6 +32,7 @@ def chunk_document(data):
             "filepath": data['documentUrl'].split('/')[-1],
             "chunk_id": chunk.embedding_metadata['index'], # type: ignore
             "offset": chunk.embedding_metadata['offset'],  # type: ignore
+            "page": chunk.embedding_metadata['page'],  # type: ignore            
             "length": chunk.embedding_metadata['length'],  # type: ignore
             "title": chunk.title,
             "category": "default",
