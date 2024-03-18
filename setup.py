@@ -271,7 +271,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     logging.info(f"01 Create containers step. {round(response_time,2)} seconds")
 
     ###########################################################################
-    # 02 Creating cognitive search datasources
+    # 02 Creating AI Search datasource
     ###########################################################################    
     logging.info("02 Creating datastores step.")
     start_time = time.time()
@@ -279,6 +279,9 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     body = {
         "description": "Input documents",
         "type": "azureblob",
+        "dataDeletionDetectionPolicy" : {
+        "@odata.type" :"#Microsoft.Azure.Search.NativeBlobSoftDeleteDeletionDetectionPolicy"
+        },
         "credentials": {
             "connectionString": storage_connection_string
         },
@@ -454,7 +457,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
 
 
     ###########################################################################
-    # 04 Creating cognitive search skillsets
+    # 04 Creating AI Search skillsets
     ###########################################################################
     logging.info("04 Creating skillsets step.")
     start_time = time.time()
