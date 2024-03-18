@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
  
 ## Changelog
 
-### 2024-03-15
+### 2024-03-18
 - **Added**: Blob storage data source soft deletion support.
 
 ## 2023-11-09
