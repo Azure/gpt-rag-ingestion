@@ -1,6 +1,8 @@
 import os
+import re
 from .text_chunker import TextChunker
 from .chunk_metadata_helper import ChunkEmbeddingHelper
+from utils.file_utils import get_filename
 
 def has_supported_file_extension(file_path: str) -> bool:
     """Checks if the given file format is supported based on its file extension.
@@ -28,8 +30,9 @@ def chunk_document(data):
         document_chunk.embedding_metadata = embedding_metadata    
 
     for chunk in chunking_result.chunks:
+
         chunks.append({
-            "filepath": data['documentUrl'].split('/')[-1],
+            "filepath": get_filename(data['documentUrl']),
             "chunk_id": chunk.embedding_metadata['index'], # type: ignore
             "offset": chunk.embedding_metadata['offset'],  # type: ignore
             "page": chunk.embedding_metadata['page'],  # type: ignore            

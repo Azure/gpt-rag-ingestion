@@ -1,8 +1,7 @@
-import base64
 import json
 import logging
-import openai
 import os
+import re
 import requests
 import time
 from azure.identity import DefaultAzureCredential
@@ -13,6 +12,7 @@ from embedder.text_embedder import TextEmbedder
 from .token_estimator import TokenEstimator
 from urllib.parse import urlparse
 from utils.file_utils import get_file_extension
+from utils.file_utils import get_filename
 
 # Chunker parameters
 NUM_TOKENS = int(os.environ["NUM_TOKENS"]) # max chunk size in tokens
@@ -180,7 +180,7 @@ def analyze_document_rest(filepath, model):
 ########################################################################################## 
 
 def get_chunk(content, url, page, chunk_id, text_embedder):
-    filepath = url.split('/')[-1]
+
     chunk =  {
             "chunk_id": chunk_id,
             "offset": 0,
@@ -189,7 +189,7 @@ def get_chunk(content, url, page, chunk_id, text_embedder):
             "title": "default",
             "category": "default",
             "url": url,
-            "filepath": filepath,            
+            "filepath": get_filename(url),            
             "content": content,
             "contentVector": text_embedder.embed_content(content)
     }
