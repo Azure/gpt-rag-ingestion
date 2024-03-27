@@ -11,7 +11,7 @@ To redeploy only the ingestion component (after the initial deployment of the so
  - Azure Developer CLI: [Download azd for Windows](https://azdrelease.azureedge.net/azd/standalone/release/1.5.0/azd-windows-amd64.msi), [Other OS's](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/install-azd).
  - Powershell (Windows only): [Powershell](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows?view=powershell-7.4#installing-the-msi-package)
  - Git: [Download Git](https://git-scm.com/downloads)
- - Python 3.10: [Download Python](https://www.python.org/downloads/release/python-31011/)
+ - Python 3.11: [Download Python](https://www.python.org/downloads/release/python-3118/)
 
 Then just clone this repository and reproduce the following commands within the gpt-rag-ingestion directory:  
 
