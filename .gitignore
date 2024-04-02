@@ -2,7 +2,7 @@ local/
 backup/
 temp/
 .env
-.vscode/
+
 .azure
 .azure/
 

@@ -14,19 +14,25 @@ from urllib.parse import urlparse
 from utils.file_utils import get_file_extension
 from utils.file_utils import get_filename
 
+##########################################################################################
+# CONFIGURATION
+##########################################################################################
+
 # Chunker parameters
 NUM_TOKENS = int(os.environ["NUM_TOKENS"]) # max chunk size in tokens
 MIN_CHUNK_SIZE = int(os.environ["MIN_CHUNK_SIZE"]) # min chunk size in tokens
 TOKEN_OVERLAP = int(os.environ["TOKEN_OVERLAP"])
 
+# Doc int version
 DOCINT_40_API = '2023-10-31-preview'
 default_api_version = '2023-07-31'
 DOCINT_API_VERSION = os.getenv('FORM_REC_API_VERSION', os.getenv('DOCINT_API_VERSION', default_api_version))
 
-
+# Network isolation active?
 NETWORK_ISOLATION = os.environ["NETWORK_ISOLATION"]
 network_isolation = True if NETWORK_ISOLATION.lower() == 'true' else False
-        
+
+# Supported file extensions
 FILE_EXTENSION_DICT = [
     "pdf",
     "bmp",
@@ -34,7 +40,6 @@ FILE_EXTENSION_DICT = [
     "png",
     "tiff"
 ]
-
 if DOCINT_API_VERSION >= DOCINT_40_API:
     formrec_or_docint = "documentintelligence"
     FILE_EXTENSION_DICT.extend(["docx", "pptx", "xlsx", "html"])
@@ -74,6 +79,23 @@ def has_supported_file_extension(file_path: str) -> bool:
     file_extension = get_file_extension(file_path)
     return file_extension in FILE_EXTENSION_DICT
 
+def get_content_type(file_ext):
+    extensions = {
+        "pdf": "application/pdf", 
+        "bmp": "image/bmp",
+        "jpeg": "image/jpeg",
+        "png": "image/png",
+        "tiff": "image/tiff",
+        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "html": "text/html" 
+    }
+    if file_ext in extensions:
+        return extensions[file_ext]
+    else:
+        return "application/octet-stream"
+
 def get_secret(secretName):
     keyVaultName = os.environ["AZURE_KEY_VAULT_NAME"]
     KVUri = f"https://{keyVaultName}.vault.azure.net"
@@ -84,12 +106,13 @@ def get_secret(secretName):
     return retrieved_secret.value
 
 ##########################################################################################
-# DOCUMENT INTELLIGENCE FUNCTIONS
+# DOCUMENT INTELLIGENCE ANALYSIS
 ##########################################################################################
 
 def analyze_document_rest(filepath, model):
 
     result = {}
+    errors = []
 
     if get_file_extension(filepath) in ["pdf"]:
         docint_features = "ocr.highResolution"
@@ -99,8 +122,9 @@ def analyze_document_rest(filepath, model):
     request_endpoint = f"https://{os.environ['AZURE_FORMREC_SERVICE']}.cognitiveservices.azure.com/{formrec_or_docint}/documentModels/{model}:analyze?api-version={DOCINT_API_VERSION}&features={docint_features}&includeKeys=true"
 
     if not network_isolation:
+
         headers = {
-            # "Content-Type": "application/json",
+            "Content-Type": "application/json",
             "Ocp-Apim-Subscription-Key": get_secret('formRecKey'),
             "x-ms-useragent": "gpt-rag/1.0.0"
         }
@@ -114,13 +138,15 @@ def analyze_document_rest(filepath, model):
             logging.info("Connection error, retrying in 10seconds...")
             time.sleep(10)
             response = requests.post(request_endpoint, headers=headers, json=body)
-            
+                
     else:
+        # With network isolation doc int can't access container with no public access, so we download it and send its content as a stream.
 
         parsed_url = urlparse(filepath)
         account_url = parsed_url.scheme + "://" + parsed_url.netloc
         container_name = parsed_url.path.split("/")[1]
         blob_name = parsed_url.path.split("/")[2]
+        file_ext = blob_name.split(".")[-1]
 
         logging.info(f"Conecting to blob to get {blob_name}.")
 
@@ -129,7 +155,7 @@ def analyze_document_rest(filepath, model):
         blob_client = blob_service_client.get_blob_client(container=container_name, blob=blob_name)
 
         headers = {
-            # "Content-Type": "application/pdf",
+            "Content-Type": get_content_type(file_ext),
             "Ocp-Apim-Subscription-Key": get_secret('formRecKey'),
             "x-ms-useragent": "gpt-rag/1.0.0"
         }
@@ -143,13 +169,12 @@ def analyze_document_rest(filepath, model):
             data = blob_client.download_blob().readall()            
             response = requests.post(request_endpoint, headers=headers, data=data)
 
-        
-        logging.info(f"Removed file: {blob_name}.")
-
     if response.status_code != 202:
         # Request failed
-        logging.info(f"Doc Intelligence API error: {response.text}")
-        logging.info(f"urlSource: {filepath}")
+        error_message = f"Doc Intelligence request error, code {response.status_code}: {response.text}"
+        logging.info(error_message)
+        logging.info(f"filepath: {filepath}")
+        errors.append(error_message)
         return(result)
 
     # Poll for result
@@ -163,7 +188,9 @@ def analyze_document_rest(filepath, model):
 
         if result_response.status_code != 200 or result_json["status"] == "failed":
             # Request failed
-            print("Error result: ", result_response.text)
+            error_message = f"Doc Intelligence polling error, code {result_response.status_code}: {response.text}"
+            print(error_message)
+            errors.append(error_message)
             break
 
         if result_json["status"] == "succeeded":
@@ -173,7 +200,7 @@ def analyze_document_rest(filepath, model):
         # Request still processing, wait and try again
         time.sleep(2)
 
-    return result 
+    return result, errors
 
 ##########################################################################################
 # CHUNKING FUNCTIONS
@@ -210,20 +237,26 @@ def chunk_document(data):
 
     # 1) Analyze document with layout model
     logging.info(f"Analyzing {doc_name}.") 
-    document = analyze_document_rest(filepath, 'prebuilt-layout')
-    n_pages = len(document['pages'])
-    logging.info(f"Analyzed {doc_name} ({n_pages} pages). Content: {document['content'][:200]}.") 
-    if n_pages > 100:
-        logging.warn(f"DOCUMENT {doc_name} HAS MANY ({n_pages}) PAGES. Please consider splitting it into smaller documents of 100 pages.")
+    document, analysis_errors = analyze_document_rest(filepath, 'prebuilt-layout')
+    if len(analysis_errors) > 0:
+        errors = errors + analysis_errors
+        error_occurred = True
 
-    # 2) Chunk tables
-    if 'tables' in document:
+    # 2) Check number of pages
+    if 'pages' in document and not error_occurred:
+        n_pages = len(document['pages'])
+        logging.info(f"Analyzed {doc_name} ({n_pages} pages). Content: {document['content'][:200]}.") 
+        if n_pages > 100:
+            logging.warn(f"DOCUMENT {doc_name} HAS MANY ({n_pages}) PAGES. Please consider splitting it into smaller documents of 100 pages.")      
 
-        # 2.1) merge consecutive tables if they have the same structure 
+    # 3) Chunk tables
+    if 'tables' in document and not error_occurred:
+
+        # 3.1) merge consecutive tables if they have the same structure 
         
         document["tables"] = tb.merge_tables_if_same_structure(document["tables"], document["pages"])
 
-        # 2.2) create chunks for each table
+        # 3.2) create chunks for each table
         
         processed_tables = []
         for idx, table in enumerate(document["tables"]):
@@ -258,7 +291,7 @@ def chunk_document(data):
                     error_occurred = True
                     break
 
-    # 3) Chunk paragraphs
+    # 4) Chunk paragraphs
     if 'paragraphs' in document and not error_occurred:    
         paragraph_content = ""
         for paragraph in document['paragraphs']:
