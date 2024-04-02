@@ -1,0 +1,68 @@
+{
+	"info": {
+		"_postman_id": "155b6cc2-540c-4e1b-8fa0-d09d4f46d298",
+		"name": "gtp-rag-ingestion",
+		"description": "Search REST API Documentation:\n\n[https://learn.microsoft.com/en-us/rest/api/searchservice/](https://learn.microsoft.com/en-us/rest/api/searchservice/)",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "28097542",
+		"_collection_link": "https://lively-water-791017.postman.co/workspace/gpt-rag~36e1a022-b449-412f-8d44-932b8c3a182f/collection/28097542-155b6cc2-540c-4e1b-8fa0-d09d4f46d298?action=share&source=collection_link&creator=28097542"
+	},
+	"item": [
+		{
+			"name": "Local Chunking",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "api-key",
+						"value": "",
+						"type": "text",
+						"disabled": true
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"values\": [\r\n        {\r\n            \"data\": {\r\n                \"documentContentType\": \"application/pdf\",\r\n                \"documentSasToken\": \"?sp=r&st=2024-04-02T02:03:00Z&se=2024-04-02T10:03:00Z&spr=https&sv=2022-11-02&sr=b&sig=gMWnzo7wU%2FW5g9mnx7OhGXSwhqSKJY2yoedJSxS1GLw%3D\",\r\n                \"documentUrl\": \"https://strag0awqxz3a3pk672.blob.core.windows.net/documents/surface-pro-4-user-guide-EN.pdf\",\r\n                \"documentContent\": \"\"\r\n            },\r\n            \"recordId\": \"1234\"\r\n        }\r\n    ]\r\n}\r\n            // Example \"data\"\r\n            // \"data\": {\r\n            //     \"documentContentType\": \"application/pdf\",\r\n            //     \"documentUrl\": \"https://strag0awqxz3a3pk672.blob.core.windows.net/documents/surface-pro-4-user-guide-EN.pdf\",\r\n            //     \"documentSasToken\": \"?sp=r&st=2024-04-02T02:03:00Z&se=2024-04-02T10:03:00Z&spr=https&sv=2022-11-02&sr=b&sig=gMWnzo7wU%2FW5g91237O456SwhqSKJY2yoedJSxS1GLw%3D\",\r\n            //     \"documentContent\": \"\"\r\n            // }",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:7071/api/document-chunking",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "7071",
+					"path": [
+						"api",
+						"document-chunking"
+					]
+				}
+			},
+			"response": []
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	]
+}

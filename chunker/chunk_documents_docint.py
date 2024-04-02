@@ -134,7 +134,7 @@ def analyze_document_rest(filepath, model):
         try:
             # Send request
             response = requests.post(request_endpoint, headers=headers, json=body)
-        except requests.exceptions.ConnectionError as e:
+        except requests.exceptions.ConnectionError as conn_error:
             logging.info("Connection error, retrying in 10seconds...")
             time.sleep(10)
             response = requests.post(request_endpoint, headers=headers, json=body)
@@ -160,14 +160,27 @@ def analyze_document_rest(filepath, model):
             "x-ms-useragent": "gpt-rag/1.0.0"
         }
 
+        blob_error = None
+
         try:
             data = blob_client.download_blob().readall()
             response = requests.post(request_endpoint, headers=headers, data=data)
-        except requests.exceptions.ConnectionError as e:
+        except requests.exceptions.ConnectionError as conn_error:
             logging.info("Connection error, retrying in 10seconds...")
             time.sleep(10)
-            data = blob_client.download_blob().readall()            
-            response = requests.post(request_endpoint, headers=headers, data=data)
+            try:
+                data = blob_client.download_blob().readall()            
+                response = requests.post(request_endpoint, headers=headers, data=data)
+            except Exception as e:
+                blob_error = e
+        except Exception as e:
+            blob_error = e
+
+        if blob_error:
+            error_message = f"Blob client error when reading from blob storage. {blob_error}"
+            logging.info(error_message)
+            errors.append(error_message)
+            return result, errors
 
     if response.status_code != 202:
         # Request failed
@@ -175,7 +188,7 @@ def analyze_document_rest(filepath, model):
         logging.info(error_message)
         logging.info(f"filepath: {filepath}")
         errors.append(error_message)
-        return(result)
+        return result, errors
 
     # Poll for result
     get_url = response.headers["Operation-Location"]
