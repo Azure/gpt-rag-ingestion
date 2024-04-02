@@ -3,6 +3,9 @@ backup/
 temp/
 .env
 
+.vscode/
+.vscode
+
 .azure
 .azure/
 
