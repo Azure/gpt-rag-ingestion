@@ -15,7 +15,7 @@ Once the cloud resources (such as Azure OpenAI, Azure KeyVault) have been provis
    - [Azure Functions](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-azurefunctions)  
    - [Azurite (blob storage emulator)](https://marketplace.visualstudio.com/items?itemName=Azurite.azurite)  
    
-4. Refer to the section below [Key Vault Access Policies](#key-vault-access-policies) to grant your user the necessary policies to access the secrets used by the function.  
+4. Refer to the sections [Key Vault Access Policies](#key-vault-access-policies) and [Storage Account Role](#storage-account-role) to grant the necessary roles and policies needed to run the function locally.  
    
 5. Open VS Code in the directory where you cloned the repository.  
    
@@ -35,10 +35,16 @@ Once the cloud resources (such as Azure OpenAI, Azure KeyVault) have been provis
 
 ### Key Vault Access Policies
 
-Since you will be running from your machine and we are using Managed Identities, it's not possible to use the identity of the function running on Azure. Therefore, you must assign **List** and **Get** access policies to the identity used by the DefaultAzureCredential class for the secrets of the Key Vault used by the solution. If you are running a VM on Azure (as we do in the case of network isolation configuration), it will be the identity of the **VM**. Otherwise, it will be the identity of the **User** logged into Visual Studio or Azure CLI, as explained here [DefaultAzureCredential](https://learn.microsoft.com/en-us/python/api/azure-identity/azure.identity.defaultazurecredential).
+The function uses credentials to access **Azure OpenAI** and **Document Intelligence**, which are stored as **secrets** in the solution's **Key Vault**. Since you will be running from your machine and we are using Managed Identities, it's not possible to use the identity of the function running on Azure. Therefore, you must assign **List** and **Get** access policies to the identity used by the DefaultAzureCredential class for the secrets of the Key Vault used by the solution. If you are running a VM on Azure (as we do in the case of network isolation configuration), it will be the identity of the **VM**. Otherwise, it will be the identity of the **User** logged into Visual Studio or Azure CLI, as explained here [DefaultAzureCredential](https://learn.microsoft.com/en-us/python/api/azure-identity/azure.identity.defaultazurecredential).
 
 Here’s an example of a virtual machine (VM) with **List** and **Get** permissions on the solution’s secrets:
 
 ![KeyVault](media/02.04.2024_09.47.18_REC.png)
 
+### Storage Account Role
 
+To read the content of the **blob storage** when testing in a network-isolated environment, you'll also need to assign the **Storage Blob Data Contributor** role to the identity used by **DefaultAzureCredential**. If you're using the VM's identity, follow the example below:
+
+Azure Storage Account **Storage Blob Data Contributor** role.
+
+![KeyVault](media/02.04.2024_13.48.29_REC.png)

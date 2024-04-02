@@ -37,6 +37,10 @@ def document_chunking(req: func.HttpRequest) -> func.HttpResponse:
         logging.error(error_message)
         return func.HttpResponse(error_message, status_code=400)
 
+def format_messages(messages):
+    formatted = [{"message": msg} for msg in messages]
+    return formatted
+
 def process_documents(body):
     import json
     import logging
@@ -56,7 +60,7 @@ def process_documents(body):
         
         output_record = {
             "recordId": value['recordId'],
-            "data": {"chunks": []},
+            "data": None,
             "errors": None,
             "warnings": None
         }
@@ -97,10 +101,10 @@ def process_documents(body):
         #             }]
 
         if len(warnings) > 0:
-            output_record["warnings"] = warnings
+            output_record["warnings"] = format_messages(warnings)
 
         if len(errors) > 0:
-            output_record["errors"] = errors
+            output_record["errors"] = format_messages(errors)
         
         if len(chunks) > 0:
             output_record["data"] = {
