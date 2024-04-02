@@ -4,7 +4,11 @@ Part of [GPT-RAG](https://github.com/Azure/gpt-rag)
 
 ## Getting started
 
-You provision the infrastructure and deploy the solution initially using the GPT-RAG template, as instructed at: https://aka.ms/gpt-rag.
+You can provision the infrastructure and deploy the whole solution using the GPT-RAG template, as instructed at: https://aka.ms/gpt-rag.
+
+## What if I want to redeploy just the ingestion component?
+
+Eventually, you may want to make some adjustments to the data ingestion code and redeploy the component.
 
 To redeploy only the ingestion component (after the initial deployment of the solution), you will need:
 
@@ -22,6 +26,10 @@ azd deploy
 ```
 
 > Note: when running the ```azd env refresh```, use the same environment name, subscription, and region used in the initial provisioning of the infrastructure.
+
+## Running Locally with VS Code  
+   
+[How can I test the data ingestion component locally in VS Code?](docs/LOCAL_DEPLOYMENT.md)
 
 ## Document Intelligence API version
 
@@ -69,7 +77,7 @@ Note: First, based on the file extension check if it can be processed with Docum
 
 ## References
 
-[Cognitive Search Enrichment Pipeline](https://learn.microsoft.com/en-us/azure/search/cognitive-search-concept-intro)
+[AI Search Enrichment Pipeline](https://learn.microsoft.com/en-us/azure/search/cognitive-search-concept-intro)
 
 [Azure Open AI Embeddings Generator](https://github.com/Azure-Samples/azure-search-power-skills/tree/57214f6e8773029a638a8f56840ab79fd38574a2/Vector/EmbeddingGenerator)
 
