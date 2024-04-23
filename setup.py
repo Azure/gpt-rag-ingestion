@@ -851,7 +851,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                 "name":"document-chunking",
                 "description":"Extract chunks from documents.",
                 "httpMethod":"POST",
-                "timeout":"PT230S",
+                "timeout":"PT600S",
                 "context":"/document",
                 "batchSize":1,
                 "inputs":[ 
