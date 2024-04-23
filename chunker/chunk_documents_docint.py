@@ -48,7 +48,7 @@ TOKEN_ESTIMATOR = TokenEstimator()
 ##########################################################################################
 
 def check_timeout(start_time):
-    max_time = 230 # webapp timeout is 230 seconds
+    max_time = 600 # webapp timeout is 600 seconds
     elapsed_time = time.time() - start_time
     if elapsed_time > max_time:
         return True
