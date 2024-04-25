@@ -298,7 +298,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     ###########################################################################
     logging.info(f"03 Creating indexes step.")
     start_time = time.time()
-
+    
     body = {
         "name":  f"{search_index_name}",
         "fields": [
@@ -471,8 +471,9 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                 "name":"document-chunking",
                 "description":"Extract chunks from documents.",
                 "httpMethod":"POST",
-                "timeout":"PT600S",
-                "context":"/document",
+                "timeout": "PT3M50S",
+                "context": "/document/pages/*",
+                #"context":"/document", changed with new skillset
                 "batchSize":1,
                 "inputs":[ 
                     {
@@ -481,7 +482,8 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                     },
                     {
                         "name":"documentContent",
-                        "source":"/document/content"
+                        "source": "/document/pages/*"
+                        #"source":"/document/content" changed with new skillset structure
                     },                    
                     { 
                         "name":"documentSasToken",
@@ -498,83 +500,107 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                         "targetName":"chunks"
                     }
                 ]
+            },
+            {
+                "@odata.type": "#Microsoft.Skills.Text.SplitSkill",
+                "name": "Split Skill",
+                "description": "Split skill to chunk documents",
+                "context": "/document",
+                "defaultLanguageCode": "en",
+                "textSplitMode": "pages",
+                "maximumPageLength": 50000,
+                "pageOverlapLength": 0,
+                "maximumPagesToTake": 0,
+                "inputs": [
+                    {
+                    "name": "text",
+                    "source": "/document/content"
+                    }
+                ],
+                "outputs": [
+                {
+                    "name": "textItems",
+                    "targetName": "pages"
+                }
+                ]
             }
         ],
-        "indexProjections": {
-            "selectors": [
-                {
-                    "targetIndexName":"ragindex",
-                    "parentKeyFieldName": "parent_id",
-                    "sourceContext": "/document/chunks/*",
-                    "mappings": [
-                        {
-                        "name": "chunk_id",
-                        "source": "/document/chunks/*/chunk_id",
-                        "inputs": []
-                        },
-                        {
-                            "name": "offset",
-                            "source": "/document/chunks/*/offset",
-                            "inputs": []
-                        },
-                        {
-                            "name": "length",
-                            "source": "/document/chunks/*/length",
-                            "inputs": []
-                        },
-                        {
-                            "name": "page",
-                            "source": "/document/chunks/*/page",
-                            "inputs": []
-                        },
-                        {
-                            "name": "title",
-                            "source": "/document/chunks/*/title",
-                            "inputs": []
-                        },
-                        {
-                            "name": "category",
-                            "source": "/document/chunks/*/category",
-                            "inputs": []
-                        },
-                        {
-                            "name": "url",
-                            "source": "/document/chunks/*/url",
-                            "inputs": []
-                        },
-                        {
-                            "name": "filepath",
-                            "source": "/document/chunks/*/filepath",
-                            "inputs": []
-                        },
-                        {
-                            "name": "content",
-                            "source": "/document/chunks/*/content",
-                            "inputs": []
-                        },
-                        {
-                            "name": "contentVector",
-                            "source": "/document/chunks/*/contentVector",
-                            "inputs": []
-                        },
-                        {
-                            "name": "metadata_storage_path",
-                            "source": "/document/metadata_storage_path",
-                            "inputs": []
-                        },
-                        {
-                            "name": "metadata_storage_name",
-                            "source": "/document/metadata_storage_name",
-                            "inputs": []
-                        }
-                    ]
-                }
-            ],
-            "parameters": {
-                "projectionMode": "skipIndexingParentDocuments"
-            }
-        }
     }
+    # "indexProjections": {
+    #     "selectors": [
+    #         {
+    #             "targetIndexName":"ragindex",
+    #             "parentKeyFieldName": "parent_id",
+    #             "sourceContext": "/document/chunks/*",
+    #             "mappings": [
+    #                 {
+    #                 "name": "chunk_id",
+    #                 "source": "/document/chunks/*/chunk_id",
+    #                 "inputs": []
+    #                 },
+    #                 {
+    #                     "name": "offset",
+    #                     "source": "/document/chunks/*/offset",
+    #                     "inputs": []
+    #                 },
+    #                 {
+    #                     "name": "length",
+    #                     "source": "/document/chunks/*/length",
+    #                     "inputs": []
+    #                 },
+    #                 {
+    #                     "name": "page",
+    #                     "source": "/document/chunks/*/page",
+    #                     "inputs": []
+    #                 },
+    #                 {
+    #                     "name": "title",
+    #                     "source": "/document/chunks/*/title",
+    #                     "inputs": []
+    #                 },
+    #                 {
+    #                     "name": "category",
+    #                     "source": "/document/chunks/*/category",
+    #                     "inputs": []
+    #                 },
+    #                 {
+    #                     "name": "url",
+    #                     "source": "/document/chunks/*/url",
+    #                     "inputs": []
+    #                 },
+    #                 {
+    #                     "name": "filepath",
+    #                     "source": "/document/chunks/*/filepath",
+    #                     "inputs": []
+    #                 },
+    #                 {
+    #                     "name": "content",
+    #                     "source": "/document/chunks/*/content",
+    #                     "inputs": []
+    #                 },
+    #                 {
+    #                     "name": "contentVector",
+    #                     "source": "/document/chunks/*/contentVector",
+    #                     "inputs": []
+    #                 },
+    #                 {
+    #                     "name": "metadata_storage_path",
+    #                     "source": "/document/metadata_storage_path",
+    #                     "inputs": []
+    #                 },
+    #                 {
+    #                     "name": "metadata_storage_name",
+    #                     "source": "/document/metadata_storage_name",
+    #                     "inputs": []
+    #                 }
+    #             ]
+    #         }
+    #     ],
+    #     "parameters": {
+    #         "projectionMode": "skipIndexingParentDocuments"
+    #     }
+    # }
+
     if azure_search_use_mis:
         body['skills'][0]['uri'] = f"{function_endpoint}/api/document-chunking"
         body['skills'][0]['authResourceId'] = f"api://{search_principal_id}"
