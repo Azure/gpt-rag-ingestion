@@ -344,7 +344,10 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                 "type": "Edm.String",
                 "searchable": True,
                 "retrievable": True,
-                "analyzer": search_analyzer_name
+                "analyzer": search_analyzer_name,
+                "filterable": False,
+                "sortable": False,
+                "facetable": False,  
             },
             {
                 "name": "page",
