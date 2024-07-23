@@ -1,0 +1,12 @@
+transform:
+  pdf:
+  - operation: "max_pages"
+    parameters:
+      num_max_pages: 10
+  
+  xlsx:
+  - operation: "print_screen"
+  
+  default:
+  - operation: "move"
+    output_format: "same"

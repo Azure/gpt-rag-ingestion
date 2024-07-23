@@ -221,6 +221,8 @@ def analyze_document_rest(filepath, model):
 
 def get_chunk(content, url, page, chunk_id, text_embedder):
 
+    embeddings = text_embedder.embed_content(content)
+
     chunk =  {
             "chunk_id": chunk_id,
             "offset": 0,
@@ -231,7 +233,7 @@ def get_chunk(content, url, page, chunk_id, text_embedder):
             "url": url,
             "filepath": get_filename(url),            
             "content": content,
-            "contentVector": text_embedder.embed_content(content)
+            "contentVector": embeddings
     }
     logging.info(f"Chunk: {chunk}.")
     return chunk
@@ -258,7 +260,8 @@ def chunk_document(data):
     # 2) Check number of pages
     if 'pages' in document and not error_occurred:
         n_pages = len(document['pages'])
-        logging.info(f"Analyzed {doc_name} ({n_pages} pages). Content: {document['content'][:200]}.") 
+        sneak_peak = document['content'].replace('\n', '').replace('\r', '')[:200]
+        logging.info(f"Analyzed {doc_name} ({n_pages} pages). Content: {sneak_peak}.") 
         if n_pages > 100:
             logging.warn(f"DOCUMENT {doc_name} HAS MANY ({n_pages}) PAGES. Please consider splitting it into smaller documents of 100 pages.")      
 
@@ -299,10 +302,10 @@ def chunk_document(data):
                     errors.append(indexer_error_message('embedding', e))
                     error_occurred = True
                     break
-                if check_timeout(start_time):
-                    errors.append(indexer_error_message('timeout'))
-                    error_occurred = True
-                    break
+                # if check_timeout(start_time):
+                #     errors.append(indexer_error_message('timeout'))
+                #     error_occurred = True
+                #     break
 
     # 4) Chunk paragraphs
     if 'paragraphs' in document and not error_occurred:    
