@@ -94,7 +94,11 @@ def document_chunking(req: func.HttpRequest) -> func.HttpResponse:
 
         if body:
             start_time = time.time()
+            start_time = time.time()
             result = process_documents(body)
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            logging.info(f'[document_chunking] Finished document_chunking skill in {elapsed_time:.2f} seconds.')
             end_time = time.time()
             elapsed_time = end_time - start_time
             logging.info(f'[document_chunking] Finished document_chunking skill in {elapsed_time:.2f} seconds.')

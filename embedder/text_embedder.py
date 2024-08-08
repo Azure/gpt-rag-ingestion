@@ -54,13 +54,13 @@ class TextEmbedder():
                     text = text[:-step_size]
                     iteration += 1
                     
-                    # Increase step size exponentially every 10 iterations
+                    # Increase step size exponentially every 5 iterations
                     if iteration % 5 == 0:
                         step_size = min(step_size * 2, 100)
 
             return text
-    
-    # @retry(reraise=True, wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(6))
+
+    @retry(reraise=True, wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(6))
     def embed_content(self, text, clean_text=True, use_single_precision=True):
         embedding_precision = 9 if use_single_precision else 18
         if clean_text:
