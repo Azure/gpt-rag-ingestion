@@ -123,6 +123,8 @@ def analyze_document_rest(filepath, model):
 
     result = {}
     errors = []
+    
+    logging.info(f"Analyzing {filepath} with model {model}.")
 
     if get_file_extension(filepath) in ["pdf"]:
         docint_features = "ocr.highResolution"
@@ -132,6 +134,7 @@ def analyze_document_rest(filepath, model):
     request_endpoint = f"https://{os.environ['AZURE_FORMREC_SERVICE']}.cognitiveservices.azure.com/{formrec_or_docint}/documentModels/{model}:analyze?api-version={DOCINT_API_VERSION}&features={docint_features}&outputContentFormat=markdown"
 
     if not network_isolation:
+        logging.info(f"Conecting to doc int to analyze {filepath[:100]}.")
 
         headers = {
             "Content-Type": "application/json",
@@ -149,6 +152,7 @@ def analyze_document_rest(filepath, model):
 
     else:
         # With network isolation doc int can't access container with no public access, so we download it and send its content as a stream.
+        logging.info(f"Network isolation active, downloading {filepath[:100]}.")
 
         parsed_url = urlparse(filepath)
         account_url = parsed_url.scheme + "://" + parsed_url.netloc
@@ -184,8 +188,10 @@ def analyze_document_rest(filepath, model):
                 data = blob_client.download_blob().readall()
                 response = requests.post(request_endpoint, headers=headers, data=data)
             except Exception as e:
+                logging.error(f"Exception on blob downloading process after retry. {e}")
                 blob_error = e
         except Exception as e:
+            logging.error(f"Exception on blob downloading process. {e}")
             blob_error = e
 
         if blob_error:
@@ -280,8 +286,7 @@ def process_blob_with_sas_url(blob_url):
 # CHUNKING FUNCTIONS
 ##########################################################################################
 
-
-def get_chunk(content, url, page, chunk_id, text_embedder):
+def get_chunk(content, url, page, chunk_id, text_embedder: TextEmbedder):
 
     chunk = {
         "chunk_id": chunk_id,
@@ -293,7 +298,7 @@ def get_chunk(content, url, page, chunk_id, text_embedder):
         "url": url,
         "filepath": get_filename(url),
         "content": content,
-        "contentVector": text_embedder.embed_content(content),
+        "contentVector": text_embedder.embed_content(content.page_content),
     }
     logging.info(f"Chunk: {chunk}.")
     return chunk
@@ -346,9 +351,8 @@ def chunk_document(data):
         headers_to_split_on=headers_to_split_on
     )
 
-    docs_string = document.page_content
+    docs_string = document["content"]
     splits = header_splitter.split_text(docs_string)
-    print(f"Number of splits for {filepath}: {len(splits)}")
 
     for index, split in enumerate(splits, start=1):
         page = index

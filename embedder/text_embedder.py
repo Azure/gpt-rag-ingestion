@@ -75,7 +75,7 @@ class TextEmbedder():
             response = openai.Embedding.create(input=text, engine=self.AZURE_OPENAI_EMBEDDING_DEPLOYMENT)
             embedding = [round(x, embedding_precision) for x in response['data'][0]['embedding']] # type: ignore
             return embedding            
-        except openai.error.RateLimitError as e:
+        except Exception as e:
             error_message = str(e)
             seconds = self.extract_retry_seconds(error_message) * 2
             logging.warning(f"Embeddings model deployment rate limit exceeded, retrying in {seconds} seconds...")
