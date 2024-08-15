@@ -2,12 +2,16 @@ import azure.functions as func
 
 app = func.FunctionApp()
 from json import JSONEncoder
+
+
 class DateTimeEncoder(JSONEncoder):
-    #Override the default method
+    # Override the default method
     def default(self, obj):
         import datetime
+
         if isinstance(obj, (datetime.date, datetime.datetime)):
             return obj.isoformat()
+
 
 @app.route(route="document-chunking", auth_level=func.AuthLevel.FUNCTION)
 def document_chunking(req: func.HttpRequest) -> func.HttpResponse:
@@ -16,9 +20,10 @@ def document_chunking(req: func.HttpRequest) -> func.HttpResponse:
     import time
     
     logging.info('Invoked document_chunking skill.')
+
     try:
         body = req.get_json()
-        logging.debug(f'REQUEST BODY: {body}')
+        logging.debug(f"REQUEST BODY: {body}")
         jsonschema.validate(body, schema=get_request_schema())
 
         if body:
@@ -41,62 +46,82 @@ def document_chunking(req: func.HttpRequest) -> func.HttpResponse:
         logging.error(error_message)
         return func.HttpResponse(error_message, status_code=400)
 
+
 def format_messages(messages):
     formatted = [{"message": msg} for msg in messages]
     return formatted
 
+
 def process_documents(body):
     import json
     import logging
-    import chunker.chunk_documents_docint
+    import os
+    import chunker.chunk_documents_headings
     import chunker.chunk_documents_raw
+    import chunker.chunk_documents_headings
 
-    values = body['values']
+    values = body["values"]
     results = {}
     results["values"] = []
+    use_default_chunking = os.getenv("USE_DEFAULT_CHUNKING", "false")
     for value in values:
         # perform operation on each record (document)
-        data = value['data']
-        
+        data = value["data"]
+
         chunks = []
         errors = []
         warnings = []
-        
+
         output_record = {
-            "recordId": value['recordId'],
+            "recordId": value["recordId"],
             "data": None,
             "errors": None,
-            "warnings": None
+            "warnings": None,
         }
 
-        if chunker.chunk_documents_docint.has_supported_file_extension(data['documentUrl']):
-            logging.info(f"Chunking (doc intelligence) {data['documentUrl'].split('/')[-1]}.")
-            chunks, errors, warnings = chunker.chunk_documents_docint.chunk_document(data)
+        # Execute the new chunking method if environment variable is set
+        if use_default_chunking == "false":
+            logging.info(f"Chunking (headings) {data['documentUrl'].split('/')[-1]}.")
+            chunks, errors, warnings = chunker.chunk_documents_headings.chunk_document(
+                data
+            )
 
-        elif chunker.chunk_documents_raw.has_supported_file_extension(data['documentUrl']):
+        elif chunker.chunk_documents_headings.has_supported_file_extension(
+            data["documentUrl"]
+        ):
+            logging.info(
+                f"Chunking (doc intelligence) {data['documentUrl'].split('/')[-1]}."
+            )
+            chunks, errors, warnings = chunker.chunk_documents_headings.chunk_document(
+                data
+            )
+
+        elif chunker.chunk_documents_raw.has_supported_file_extension(
+            data["documentUrl"]
+        ):
             logging.info(f"Chunking (raw) {data['documentUrl'].split('/')[-1]}.")
             chunks, errors, warnings = chunker.chunk_documents_raw.chunk_document(data)
-        
+
         # errors = []
-        # warnings = []
+        # warnings = []å
         # chunks = [{
         #             "filepath": '123',
         #             "chunk_id": 0,
         #             "offset": 0,
         #             "length": 0,
-        #             "page": 1,                    
+        #             "page": 1,
         #             "title": "default",
         #             "category": "default",
         #             "url": '123',
         #             "content": data['documentUrl'],
-        #             "contentVector": [0.1] * 1536,                    
+        #             "contentVector": [0.1] * 1536,
         #             },
         #             {
         #                 "filepath": '123',
         #                 "chunk_id": 2,
         #                 "offset": 0,
         #                 "length": 0,
-        #                 "page": 1,                           
+        #                 "page": 1,
         #                 "title": "default",
         #                 "category": "default",
         #                 "url": '123',
@@ -109,16 +134,15 @@ def process_documents(body):
 
         if len(errors) > 0:
             output_record["errors"] = format_messages(errors)
-        
+
         if len(chunks) > 0:
-            output_record["data"] = {
-                "chunks": chunks
-            }
+            output_record["data"] = {"chunks": chunks}
 
         if output_record != None:
             results["values"].append(output_record)
-            
+
         return json.dumps(results, ensure_ascii=False, cls=DateTimeEncoder)
+
 
 def get_request_schema():
     return {
@@ -135,12 +159,20 @@ def get_request_schema():
                         "data": {
                             "type": "object",
                             "properties": {
-                                "documentUrl": {"type": "string", "minLength": 1}, 
-                                "documentContent": {"type": "string"},                                                                
+                                "documentUrl": {"type": "string", "minLength": 1},
+                                "documentContent": {"type": "string"},
                                 "documentSasToken": {"type": "string", "minLength": 1},
-                                "documentContentType": {"type": "string", "minLength": 1}
+                                "documentContentType": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                },
                             },
-                            "required": ["documentContent", "documentUrl", "documentSasToken", "documentContentType"],
+                            "required": [
+                                "documentContent",
+                                "documentUrl",
+                                "documentSasToken",
+                                "documentContentType",
+                            ],
                         },
                     },
                     "required": ["recordId", "data"],
