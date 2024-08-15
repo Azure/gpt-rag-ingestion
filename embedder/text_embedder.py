@@ -1,4 +1,6 @@
-import openai
+from openai import AzureOpenAI
+import os
+
 import os
 import re
 import logging
@@ -17,13 +19,13 @@ def get_secret(secretName):
     retrieved_secret = client.get_secret(secretName)
     return retrieved_secret.value
 
+client = AzureOpenAI(api_key=get_secret('azureOpenAIKey'),
+azure_endpoint=f"https://{os.getenv('AZURE_OPENAI_SERVICE_NAME')}.openai.azure.com/",
+api_version=os.getenv("AZURE_OPENAI_API_VERSION"))
+
 class TextEmbedder():
-    openai.api_type = "azure"    
-    openai.api_key = get_secret('azureOpenAIKey')
-    openai.api_base = f"https://{os.getenv('AZURE_OPENAI_SERVICE_NAME')}.openai.azure.com/"
-    openai.api_version = os.getenv("AZURE_OPENAI_API_VERSION")
     AZURE_OPENAI_EMBEDDING_DEPLOYMENT = os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT")
-    
+
     def estimate_tokens(self, text: str) -> int:
         gpt2_tokenizer = tiktoken.get_encoding("gpt2")
         return len(gpt2_tokenizer.encode(text))
@@ -42,7 +44,7 @@ class TextEmbedder():
                 while self.estimate_tokens(text) > token_limit:
                     text = text[:-step_size]
                     iteration += 1
-                    
+
                     # Increase step size exponentially every 5 iterations
                     if iteration % 5 == 0:
                         step_size = min(step_size * 2, 100)
@@ -54,11 +56,11 @@ class TextEmbedder():
         embedding_precision = 9 if use_single_precision else 18
         if clean_text:
             text = self.clean_text(text)
-        response = openai.Embedding.create(input=text, engine=self.AZURE_OPENAI_EMBEDDING_DEPLOYMENT)
+        response = client.embeddings.create(input=text, model=self.AZURE_OPENAI_EMBEDDING_DEPLOYMENT)
 
-        embedding = [round(x, embedding_precision) for x in response['data'][0]['embedding']] # type: ignore
+        embedding = [round(x, embedding_precision) for x in response.data[0].embedding] # type: ignore
         return embedding
-    
+
     def extract_retry_seconds(self, error_message):
         match = re.search(r'retry after (\d+)', error_message)
         if match:
@@ -72,8 +74,8 @@ class TextEmbedder():
         if clean_text:
             text = self.clean_text(text)        
         try:
-            response = openai.Embedding.create(input=text, engine=self.AZURE_OPENAI_EMBEDDING_DEPLOYMENT)
-            embedding = [round(x, embedding_precision) for x in response['data'][0]['embedding']] # type: ignore
+            response = client.embeddings.create(input=text, model=self.AZURE_OPENAI_EMBEDDING_DEPLOYMENT)
+            embedding = [round(x, embedding_precision) for x in response.data[0].embedding] # type: ignore
             return embedding            
         except Exception as e:
             error_message = str(e)

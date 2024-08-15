@@ -300,7 +300,7 @@ def get_chunk(content, url, page, chunk_id, text_embedder: TextEmbedder):
         "content": content,
         "contentVector": text_embedder.embed_content(content.page_content),
     }
-    logging.info(f"Chunk: {chunk}.")
+    logging.info(f"Chunk: {chunk['filepath']} Page: {chunk['page']} Id: {chunk['chunk_id']}.")
     return chunk
 
 
