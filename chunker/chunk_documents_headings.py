@@ -7,7 +7,6 @@ import time
 from azure.identity import DefaultAzureCredential
 from azure.storage.blob import BlobServiceClient
 from azure.keyvault.secrets import SecretClient
-from langchain.text_splitter import MarkdownHeaderTextSplitter
 from chunker import table_utils as tb
 from embedder.text_embedder import TextEmbedder
 from .token_estimator import TokenEstimator
@@ -15,6 +14,7 @@ from urllib.parse import urlparse
 from utils.file_utils import get_file_extension
 from utils.file_utils import get_filename
 
+from langchain.text_splitter import MarkdownHeaderTextSplitter, CharacterTextSplitter, NLTKTextSplitter, SpacyTextSplitter
 ##########################################################################################
 # CONFIGURATION
 ##########################################################################################
@@ -298,7 +298,7 @@ def get_chunk(content, url, page, chunk_id, text_embedder: TextEmbedder):
         "url": url,
         "filepath": get_filename(url),
         "content": content,
-        "contentVector": text_embedder.embed_content(content.page_content),
+        "contentVector": text_embedder.embed_content(content),
     }
     logging.info(f"Chunk: {chunk['filepath']} Page: {chunk['page']} Id: {chunk['chunk_id']}.")
     return chunk
@@ -347,12 +347,12 @@ def chunk_document(data):
     ]
 
     # Initialize the header splitter with the given chunk size, overlap, and headers
-    header_splitter = MarkdownHeaderTextSplitter(
-        headers_to_split_on=headers_to_split_on
-    )
+    import nltk
+    nltk.download('punkt')
+    splitter = NLTKTextSplitter()
 
     docs_string = document["content"]
-    splits = header_splitter.split_text(docs_string)
+    splits = splitter.split_text(docs_string)
 
     for index, split in enumerate(splits, start=1):
         page = index
