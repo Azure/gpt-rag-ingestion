@@ -319,8 +319,6 @@ def chunk_document(data):
     # 1) Analyze document with layout model
     logging.info(f"Analyzing {doc_name}.")
     document, analysis_errors = analyze_document_rest(filepath, "prebuilt-layout")
-    with open("document.json", "w") as f:
-        json.dump(document, f)
     if len(analysis_errors) > 0:
         errors = errors + analysis_errors
         error_occurred = True
@@ -350,9 +348,6 @@ def chunk_document(data):
 
     # Initialize the header splitter with the given chunk size, overlap, and headers
     splitter = MarkdownHeaderTextSplitter(headers_to_split_on=headers_to_split_on)
-    # import nltk
-    # nltk.download('punkt')
-    # splitter = NLTKTextSplitter()
 
     docs_string = document["content"]
     splits = splitter.split_text(docs_string)
@@ -363,14 +358,15 @@ def chunk_document(data):
     from langchain.docstore.document import Document
     
     for split in splits:
-        logging.error(len(split.page_content))
+        logging.info(f"Split content length {len(split.page_content)}")
         if(len(split.page_content) > 100000):
-            print(f"Splitting excess content for chunking {split.page_content}")
+            logging.info(f"Splitting excess content for chunking")
             new_split = split.page_content
             import nltk
             nltk.download('punkt')
             excess_splitter = NLTKTextSplitter()
             excess_splits = excess_splitter.split_text(new_split)
+            logging.info(f"Markdown split splitted in {len(excess_splits)} parts")
             new_splits.extend([Document(page_content=string) for string in excess_splits])
             splits.remove(split)
             
