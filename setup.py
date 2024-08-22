@@ -733,12 +733,12 @@ def execute_setup(
                         },
                         {
                             "name": "content",
-                            "source": "/document/docintContent/page/*",
+                            "source": "/document/docintContent/pages/*",
                             "inputs": [],
                         },
                         {
                             "name": "vector",
-                            "source": "/document/docintContent/page/*/vector",
+                            "source": "/document/docintContent/pages/*/vector",
                             "inputs": [],
                         },
                         {
