@@ -689,7 +689,7 @@ def execute_setup(
                 {
                     "targetIndexName": f"{search_index_name}",
                     "parentKeyFieldName": "parent_id",
-                    "sourceContext": "/document",
+                    "sourceContext": "/document/docintContent/pages/*",
                     "mappings": [
                         # {
                         # "name": "chunk_id",
