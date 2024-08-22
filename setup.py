@@ -626,8 +626,8 @@ def execute_setup(
                 "context": "/document/docintContent",
                 "defaultLanguageCode": "en",
                 "textSplitMode": "pages",
-                "maximumPageLength": 2000,
-                "pageOverlapLength": 500,
+                "maximumPageLength": 1575,
+                "pageOverlapLength": 375,
                 "maximumPagesToTake": 0,
                 "inputs": [
                     {"name": "text", "source": "/document/docintContent/content"}
