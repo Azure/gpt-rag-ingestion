@@ -508,6 +508,39 @@ def execute_setup(
                 "dimensions": 1536,
                 "vectorSearchProfile": "myHnswProfile",
             },
+            {
+                "name": "keyPhrases",
+                "type": "Collection(Edm.String)",
+                "searchable": True,
+                "filterable": False,
+                "retrievable": True,
+                "stored": True,
+                "sortable": False,
+                "facetable": False,
+                "analyzer": "standard.lucene",
+            },
+            {
+                "name": "languageCode",
+                "type": "Edm.String",
+                "searchable": True,
+                "filterable": True,
+                "retrievable": True,
+                "stored": True,
+                "sortable": False,
+                "facetable": False,
+                "key": False,
+            },
+            {
+                "name": "languageName",
+                "type": "Edm.String",
+                "searchable": True,
+                "filterable": True,
+                "retrievable": True,
+                "stored": True,
+                "sortable": False,
+                "facetable": False,
+                "key": False,
+            },
         ],
         "corsOptions": {"allowedOrigins": ["*"], "maxAgeInSeconds": 60},
         "vectorSearch": {
@@ -594,7 +627,9 @@ def execute_setup(
                 "maximumPageLength": 2000,
                 "pageOverlapLength": 500,
                 "maximumPagesToTake": 0,
-                "inputs": [{"name": "text", "source": "/document/docintContent/content"}],
+                "inputs": [
+                    {"name": "text", "source": "/document/docintContent/content"}
+                ],
                 "outputs": [{"name": "textItems", "targetName": "pages"}],
             },
             {
@@ -607,16 +642,20 @@ def execute_setup(
                 "deploymentId": f"{azure_open_ai_embedding_deployment}",
                 "dimensions": 1536,
                 "modelName": f"{azure_open_ai_embedding_deployment}",
-                "inputs": [{"name": "text", "source": "/document/docintContent/pages/*"}],
+                "inputs": [
+                    {"name": "text", "source": "/document/docintContent/pages/*"}
+                ],
                 "outputs": [{"name": "embedding", "targetName": "vector"}],
-                "authIdentity": None
+                "authIdentity": None,
             },
             {
                 "@odata.type": "#Microsoft.Skills.Text.LanguageDetectionSkill",
                 "name": "Lenguage Detection",
                 "description": "Skill to get the language of the document",
                 "context": "/document/docintContent/pages/*",
-                "inputs": [{"name": "text", "source": "/document/docintContent/pages/*"}],
+                "inputs": [
+                    {"name": "text", "source": "/document/docintContent/pages/*"}
+                ],
                 "outputs": [
                     {"name": "languageCode", "targetName": "languageCode"},
                     {"name": "languageName", "targetName": "languageName"},
@@ -663,7 +702,7 @@ def execute_setup(
                         # },
                         # {
                         #     "name": "page",
-                        #     "source": "/document/docintContent/*/page",
+                        #     "source": "/document/docintContent/page/*",
                         #     "inputs": []
                         # },
                         # {
@@ -676,26 +715,26 @@ def execute_setup(
                         #     "source": "/document/docintContent/*/category",
                         #     "inputs": []
                         # },
-                        # {
-                        #     "name": "url",
-                        #     "source": "/document/docintContent/*/url",
-                        #     "inputs": []
-                        # },
-                        # {
-                        #     "name": "filepath",
-                        #     "source": "/document/docintContent/*/filepath",
-                        #     "inputs": []
-                        # },
-                        # {
-                        #     "name": "content",
-                        #     "source": "/document/docintContent/*/content",
-                        #     "inputs": []
-                        # },
-                        # {
-                        #     "name": "contentVector",
-                        #     "source": "/document/docintContent/*/contentVector",
-                        #     "inputs": []
-                        # },
+                        {
+                            "name": "url",
+                            "source": "/document/docintContent/url",
+                            "inputs": [],
+                        },
+                        {
+                            "name": "filepath",
+                            "source": "/document/docintContent/url",
+                            "inputs": [],
+                        },
+                        {
+                            "name": "content",
+                            "source": "/document/docintContent/page/*",
+                            "inputs": [],
+                        },
+                        {
+                            "name": "vector",
+                            "source": "/document/docintContent/page/*/vector",
+                            "inputs": [],
+                        },
                         {
                             "name": "metadata_storage_path",
                             "source": "/document/metadata_storage_path",
@@ -704,6 +743,21 @@ def execute_setup(
                         {
                             "name": "metadata_storage_name",
                             "source": "/document/metadata_storage_name",
+                            "inputs": [],
+                        },
+                        {
+                            "name": "keyPhrases",
+                            "source": "/document/docintContent/pages/*/keyPhrases",
+                            "inputs": [],
+                        },
+                        {
+                            "name": "languageCode",
+                            "source": "/document/docintContent/pages/*/languageCode",
+                            "inputs": [],
+                        },
+                        {
+                            "name": "languageName",
+                            "source": "/document/docintContent/pages/*/languageName",
                             "inputs": [],
                         },
                     ],
