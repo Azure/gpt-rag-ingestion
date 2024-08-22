@@ -139,7 +139,7 @@ def process_documents(body):
         if len(errors) > 0:
             output_record["errors"] = format_messages(errors)
 
-        output_record["data"] = {"chunks": chunks}
+        output_record["data"] = {"docintContent": chunks}
 
         if output_record != None:
             results["values"].append(output_record)

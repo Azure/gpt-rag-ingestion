@@ -582,32 +582,32 @@ def execute_setup(
                         "source": "/document/metadata_content_type",
                     },
                 ],
-                "outputs": [{"name": "chunks", "targetName": "chunks"}],
+                "outputs": [{"name": "docintContent", "targetName": "docintContent"}],
             },
             {
                 "@odata.type": "#Microsoft.Skills.Text.SplitSkill",
                 "name": "Split skill",
                 "description": "Split skill to handle document",
-                "context": "/document/chunks",
+                "context": "/document/docintContent",
                 "defaultLanguageCode": "en",
                 "textSplitMode": "pages",
                 "maximumPageLength": 2000,
                 "pageOverlapLength": 500,
                 "maximumPagesToTake": 0,
-                "inputs": [{"name": "text", "source": "/document/chunks/content"}],
+                "inputs": [{"name": "text", "source": "/document/docintContent/content"}],
                 "outputs": [{"name": "textItems", "targetName": "pages"}],
             },
             {
                 "@odata.type": "#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill",
                 "name": "Embedding",
                 "description": "Azure OpenAI Embedding Skill",
-                "context": "/document/chunks/pages/*",
+                "context": "/document/docintContent/pages/*",
                 "resourceUri": f"https://{azure_open_ai_service_name}.openai.azure.com",
                 "apiKey": f"{azure_open_ai_service_key}",
                 "deploymentId": f"{azure_open_ai_embedding_deployment}",
                 "dimensions": 1536,
                 "modelName": f"{azure_open_ai_embedding_deployment}",
-                "inputs": [{"name": "text", "source": "/document/chunks/pages/*"}],
+                "inputs": [{"name": "text", "source": "/document/docintContent/pages/*"}],
                 "outputs": [{"name": "embedding", "targetName": "vector"}],
                 "authIdentity": None
             },
@@ -615,8 +615,8 @@ def execute_setup(
                 "@odata.type": "#Microsoft.Skills.Text.LanguageDetectionSkill",
                 "name": "Lenguage Detection",
                 "description": "Skill to get the language of the document",
-                "context": "/document/chunks/pages/*",
-                "inputs": [{"name": "text", "source": "/document/chunks/pages/*"}],
+                "context": "/document/docintContent/pages/*",
+                "inputs": [{"name": "text", "source": "/document/docintContent/pages/*"}],
                 "outputs": [
                     {"name": "languageCode", "targetName": "languageCode"},
                     {"name": "languageName", "targetName": "languageName"},
@@ -627,13 +627,13 @@ def execute_setup(
                 "@odata.type": "#Microsoft.Skills.Text.KeyPhraseExtractionSkill",
                 "name": "Key Phrase Extraction",
                 "description": "Skill to get the key phrases of the document",
-                "context": "/document/chunks/pages/*",
+                "context": "/document/docintContent/pages/*",
                 "defaultLanguageCode": "en",
                 "inputs": [
-                    {"name": "text", "source": "/document/chunks/pages/*"},
+                    {"name": "text", "source": "/document/docintContent/pages/*"},
                     {
                         "name": "languageCode",
-                        "source": "/document/chunks/pages/*/languageCode",
+                        "source": "/document/docintContent/pages/*/languageCode",
                     },
                 ],
                 "outputs": [{"name": "keyPhrases", "targetName": "keyPhrases"}],
@@ -648,52 +648,52 @@ def execute_setup(
                     "mappings": [
                         # {
                         # "name": "chunk_id",
-                        # "source": "/document/chunks/*/chunk_id",
+                        # "source": "/document/docintContent/*/chunk_id",
                         # "inputs": []
                         # },
                         # {
                         #     "name": "offset",
-                        #     "source": "/document/chunks/*/offset",
+                        #     "source": "/document/docintContent/*/offset",
                         #     "inputs": []
                         # },
                         # {
                         #     "name": "length",
-                        #     "source": "/document/chunks/*/length",
+                        #     "source": "/document/docintContent/*/length",
                         #     "inputs": []
                         # },
                         # {
                         #     "name": "page",
-                        #     "source": "/document/chunks/*/page",
+                        #     "source": "/document/docintContent/*/page",
                         #     "inputs": []
                         # },
                         # {
                         #     "name": "title",
-                        #     "source": "/document/chunks/*/title",
+                        #     "source": "/document/docintContent/*/title",
                         #     "inputs": []
                         # },
                         # {
                         #     "name": "category",
-                        #     "source": "/document/chunks/*/category",
+                        #     "source": "/document/docintContent/*/category",
                         #     "inputs": []
                         # },
                         # {
                         #     "name": "url",
-                        #     "source": "/document/chunks/*/url",
+                        #     "source": "/document/docintContent/*/url",
                         #     "inputs": []
                         # },
                         # {
                         #     "name": "filepath",
-                        #     "source": "/document/chunks/*/filepath",
+                        #     "source": "/document/docintContent/*/filepath",
                         #     "inputs": []
                         # },
                         # {
                         #     "name": "content",
-                        #     "source": "/document/chunks/*/content",
+                        #     "source": "/document/docintContent/*/content",
                         #     "inputs": []
                         # },
                         # {
                         #     "name": "contentVector",
-                        #     "source": "/document/chunks/*/contentVector",
+                        #     "source": "/document/docintContent/*/contentVector",
                         #     "inputs": []
                         # },
                         {

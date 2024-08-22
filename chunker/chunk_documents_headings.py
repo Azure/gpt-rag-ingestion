@@ -289,10 +289,6 @@ def process_blob_with_sas_url(blob_url):
 def get_chunk(content, url):
 
     chunk = {
-        "offset": 0,
-        "length": 0,
-        "title": "default",
-        "category": "default",
         "url": url,
         "filepath": get_filename(url),
         "content": content,
