@@ -22,4 +22,3 @@ langchain-openai
 langchainhub
 azure-ai-documentintelligence
 azure-search-documents==11.6.0b3
-nltk

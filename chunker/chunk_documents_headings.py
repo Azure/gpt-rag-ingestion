@@ -14,7 +14,6 @@ from urllib.parse import urlparse
 from utils.file_utils import get_file_extension
 from utils.file_utils import get_filename
 
-from langchain.text_splitter import MarkdownHeaderTextSplitter, CharacterTextSplitter, NLTKTextSplitter, SpacyTextSplitter
 ##########################################################################################
 # CONFIGURATION
 ##########################################################################################
@@ -123,7 +122,7 @@ def analyze_document_rest(filepath, model):
 
     result = {}
     errors = []
-    
+
     logging.info(f"Analyzing {filepath} with model {model}.")
 
     if get_file_extension(filepath) in ["pdf"]:
@@ -286,21 +285,15 @@ def process_blob_with_sas_url(blob_url):
 # CHUNKING FUNCTIONS
 ##########################################################################################
 
-def get_chunk(content, url, page, chunk_id, text_embedder: TextEmbedder):
+
+def get_chunk(content, url):
 
     chunk = {
-        "chunk_id": chunk_id,
-        "offset": 0,
-        "length": 0,
-        "page": page,
-        "title": "default",
-        "category": "default",
         "url": url,
         "filepath": get_filename(url),
         "content": content,
-        "contentVector": text_embedder.embed_content(content),
     }
-    logging.info(f"Chunk: {chunk['filepath']} Page: {chunk['page']} Id: {chunk['chunk_id']}.")
+    logging.info(f"Chunk: {chunk['filepath']}.")
     return chunk
 
 
@@ -333,52 +326,11 @@ def chunk_document(data):
             logging.warn(
                 f"DOCUMENT {doc_name} HAS MANY ({n_pages}) PAGES. Please consider splitting it into smaller documents of 100 pages."
             )
+    logging.info(f"Document: {doc_name} has {len(document['pages'])} pages.")
 
-        # Define headers to split on
-    headers_to_split_on = [
-        ("#", "Header 1"),
-        ("##", "Header 2"),
-        ("###", "Header 3"),
-        ("####", "Header 4"),
-        ("#####", "Header 5"),
-        ("######", "Header 6"),
-        ("===", "Alternative Header 1"),
-        ("---", "Alternative Header 2"),
-    ]
-
-    # Initialize the header splitter with the given chunk size, overlap, and headers
-    splitter = MarkdownHeaderTextSplitter(headers_to_split_on=headers_to_split_on)
-
-    docs_string = document["content"]
-    splits = splitter.split_text(docs_string)
-    
-    excess_splits = []
-    new_splits = []
-    
-    from langchain.docstore.document import Document
-    
-    for split in splits:
-        logging.info(f"Split content length {len(split.page_content)}")
-        if(len(split.page_content) > 100000):
-            logging.info(f"Splitting excess content for chunking")
-            new_split = split.page_content
-            import nltk
-            nltk.download('punkt')
-            excess_splitter = NLTKTextSplitter()
-            excess_splits = excess_splitter.split_text(new_split)
-            logging.info(f"Markdown split splitted in {len(excess_splits)} parts")
-            new_splits.extend([Document(page_content=string) for string in excess_splits])
-            splits.remove(split)
-            
-    splits.extend(new_splits)
-
-    for index, split in enumerate(splits, start=1):
-        page = index
-        chunk = get_chunk(split.page_content, data["documentUrl"], page, chunk_id, text_embedder)
-        if chunk:
-            chunks.append(chunk)
+    chunks = get_chunk(document["content"], data["documentUrl"])
     logging.info(
-        f"Finished chunking {doc_name}. {len(chunks)} chunks. {len(errors)} errors. {len(warnings)} warnings."
+        f"Finished processing {doc_name} {len(errors)} errors. {len(warnings)} warnings."
     )
 
     return chunks, errors, warnings

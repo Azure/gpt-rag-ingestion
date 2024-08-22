@@ -23,7 +23,7 @@ def document_chunking(req: func.HttpRequest) -> func.HttpResponse:
 
     try:
         body = req.get_json()
-        logging.debug(f"REQUEST BODY: {body}")
+        logging.info(f"REQUEST BODY: {body}")
         jsonschema.validate(body, schema=get_request_schema())
 
         if body:
@@ -39,12 +39,16 @@ def document_chunking(req: func.HttpRequest) -> func.HttpResponse:
             return func.HttpResponse(error_message, status_code=400)
     except ValueError as e:
         error_message = "Invalid body: {0}".format(e)
-        logging.error(error_message)
+        logging.error(f"Value Error: {error_message}")
         return func.HttpResponse(error_message, status_code=400)
     except jsonschema.exceptions.ValidationError as e:
         error_message = "Invalid request: {0}".format(e)
-        logging.error(error_message)
+        logging.error(f"Invalid request: {error_message}")
         return func.HttpResponse(error_message, status_code=400)
+    except Exception as e:
+        error_message = "An error occurred: {0}".format(e)
+        logging.error(f"An error occurred: {error_message}")
+        return func.HttpResponse(error_message, status_code=500)
 
 
 def format_messages(messages):
@@ -81,7 +85,7 @@ def process_documents(body):
 
         # Execute the new chunking method if environment variable is set
         if use_default_chunking == "false":
-            logging.info(f"Chunking (headings) {data['documentUrl'].split('/')[-1]}.")
+            logging.info(f"Chunking {data['documentUrl'].split('/')[-1]}.")
             chunks, errors, warnings = chunker.chunk_documents_headings.chunk_document(
                 data
             )
@@ -135,8 +139,7 @@ def process_documents(body):
         if len(errors) > 0:
             output_record["errors"] = format_messages(errors)
 
-        if len(chunks) > 0:
-            output_record["data"] = {"chunks": chunks}
+        output_record["data"] = {"docintContent": chunks}
 
         if output_record != None:
             results["values"].append(output_record)
