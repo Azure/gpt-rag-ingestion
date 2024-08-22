@@ -283,6 +283,8 @@ def execute_setup(
     azure_open_ai_embedding_deployment = function_app_settings.properties[
         "AZURE_OPENAI_EMBEDDING_DEPLOYMENT"
     ]
+    
+    cognitive_services_key = function_app_settings.properties["COGNITIVE_SERVICES_KEY"]
 
     network_isolation = (
         True
@@ -678,6 +680,10 @@ def execute_setup(
                 "outputs": [{"name": "keyPhrases", "targetName": "keyPhrases"}],
             },
         ],
+        "cognitiveServices": {
+            "@odata.type": "#Microsoft.Azure.Search.CognitiveServicesByKey",
+            "key": f"{cognitive_services_key}",
+        },
         "indexProjections": {
             "selectors": [
                 {
