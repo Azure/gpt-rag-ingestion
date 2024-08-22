@@ -3,11 +3,13 @@ import time
 import requests
 import argparse
 import json
+import os
 import azure.core.exceptions
 from azure.storage.blob import BlobServiceClient
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.web import WebSiteManagementClient
 from azure.mgmt.storage import StorageManagementClient
+from azure.keyvault.secrets import SecretClient
 
 logging.getLogger("azure").setLevel(logging.WARNING)
 
@@ -224,6 +226,15 @@ def approve_search_shared_private_access(
             f"Error when approving private link service connection. Please do it manually. Error: {error_message}"
         )
 
+def get_secret(secretName):
+        logging.info("Retrieving secret from Azure Key Vault.")
+        keyVaultName = os.environ["AZURE_KEY_VAULT_NAME"]
+        KVUri = f"https://{keyVaultName}.vault.azure.net"
+        credential = DefaultAzureCredential()
+        client = SecretClient(vault_url=KVUri, credential=credential)
+        logging.info(f"Retrieving {secretName} secret from {keyVaultName}.")   
+        retrieved_secret = client.get_secret(secretName)
+        return retrieved_secret.value
 
 def execute_setup(
     subscription_id,
@@ -277,9 +288,7 @@ def execute_setup(
     azure_open_ai_service_name = function_app_settings.properties[
         "AZURE_OPENAI_SERVICE_NAME"
     ]
-    azure_open_ai_service_key = function_app_settings.properties[
-        "AZURE_OPENAI_SERVICE_KEY"
-    ]
+    azure_open_ai_service_key = get_secret('azureOpenAIKey')
     azure_open_ai_embedding_deployment = function_app_settings.properties[
         "AZURE_OPENAI_EMBEDDING_DEPLOYMENT"
     ]
