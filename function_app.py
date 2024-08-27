@@ -10,7 +10,7 @@ class DateTimeEncoder(JSONEncoder):
             return obj.isoformat()
 
 @app.route(route="document-chunking", auth_level=func.AuthLevel.FUNCTION)
-def document_chunking(req: func.HttpRequest) -> func.HttpResponse:
+async def document_chunking(req: func.HttpRequest) -> func.HttpResponse:
     import jsonschema
     import logging
     
@@ -21,7 +21,7 @@ def document_chunking(req: func.HttpRequest) -> func.HttpResponse:
         jsonschema.validate(body, schema=get_request_schema())
 
         if body:
-            result = process_documents(body)
+            result = await process_documents(body)
             logging.info('Finished document_chunking skill.')
             return func.HttpResponse(result, mimetype="application/json")
         else:
@@ -36,12 +36,16 @@ def document_chunking(req: func.HttpRequest) -> func.HttpResponse:
         error_message = "Invalid request: {0}".format(e)
         logging.error(error_message)
         return func.HttpResponse(error_message, status_code=400)
+    except Exception as e:
+        error_message = "An error occurred: {0}".format(e)
+        logging.error(error_message)
+        return func.HttpResponse(error_message, status_code=500)
 
 def format_messages(messages):
     formatted = [{"message": msg} for msg in messages]
     return formatted
 
-def process_documents(body):
+async def process_documents(body):
     import json
     import logging
     import chunker.chunk_documents_docint
@@ -67,11 +71,11 @@ def process_documents(body):
 
         if chunker.chunk_documents_docint.has_supported_file_extension(data['documentUrl']):
             logging.info(f"Chunking (doc intelligence) {data['documentUrl'].split('/')[-1]}.")
-            chunks, errors, warnings = chunker.chunk_documents_docint.chunk_document(data)
+            chunks, errors, warnings = await chunker.chunk_documents_docint.chunk_document(data)
 
         elif chunker.chunk_documents_raw.has_supported_file_extension(data['documentUrl']):
             logging.info(f"Chunking (raw) {data['documentUrl'].split('/')[-1]}.")
-            chunks, errors, warnings = chunker.chunk_documents_raw.chunk_document(data)
+            chunks, errors, warnings = await chunker.chunk_documents_raw.chunk_document(data)
         
         # errors = []
         # warnings = []

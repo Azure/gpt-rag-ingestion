@@ -4,25 +4,41 @@ import re
 import logging
 import tiktoken
 import time
+import asyncio
 from tenacity import retry, wait_random_exponential, stop_after_attempt  
-from azure.keyvault.secrets import SecretClient
-from azure.identity import DefaultAzureCredential
+from azure.keyvault.secrets.aio import SecretClient
+from azure.identity.aio import DefaultAzureCredential
 
-def get_secret(secretName):
+async def get_secret(secretName):
     keyVaultName = os.environ["AZURE_KEY_VAULT_NAME"]
     KVUri = f"https://{keyVaultName}.vault.azure.net"
     credential = DefaultAzureCredential()
     client = SecretClient(vault_url=KVUri, credential=credential)
     logging.info(f"Retrieving {secretName} secret from {keyVaultName}.")   
-    retrieved_secret = client.get_secret(secretName)
+    retrieved_secret = await client.get_secret(secretName)
+    await client.close()
+    await credential.close()
     return retrieved_secret.value
 
-class TextEmbedder():
-    openai.api_type = "azure"    
-    openai.api_key = get_secret('azureOpenAIKey')
-    openai.api_base = f"https://{os.getenv('AZURE_OPENAI_SERVICE_NAME')}.openai.azure.com/"
-    openai.api_version = os.getenv("AZURE_OPENAI_API_VERSION")
-    AZURE_OPENAI_EMBEDDING_DEPLOYMENT = os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT")
+class TextEmbedder:
+    def __init__(self, api_key, api_base, api_version, embedding_deployment):
+        self.api_key = api_key
+        self.api_base = api_base
+        self.api_version = api_version
+        self.embedding_deployment = embedding_deployment
+
+        openai.api_type = "azure"
+        openai.api_key = self.api_key
+        openai.api_base = self.api_base
+        openai.api_version = self.api_version
+
+    @classmethod
+    async def create(cls):
+        api_key = await get_secret('azureOpenAIKey')
+        api_base = f"https://{os.getenv('AZURE_OPENAI_SERVICE_NAME')}.openai.azure.com/"
+        api_version = os.getenv("AZURE_OPENAI_API_VERSION")
+        embedding_deployment = os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT")
+        return cls(api_key, api_base, api_version, embedding_deployment)
     
     def estimate_tokens(self, text: str) -> int:
         gpt2_tokenizer = tiktoken.get_encoding("gpt2")
@@ -40,11 +56,11 @@ class TextEmbedder():
         return text
 
     @retry(reraise=True, wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(6))
-    def embed_content(self, text, clean_text=True, use_single_precision=True):
+    async def embed_content(self, text, clean_text=True, use_single_precision=True):
         embedding_precision = 9 if use_single_precision else 18
         if clean_text:
             text = self.clean_text(text)
-        response = openai.Embedding.create(input=text, engine=self.AZURE_OPENAI_EMBEDDING_DEPLOYMENT)
+        response = await openai.Embedding.acreate(input=text, engine=self.embedding_deployment)
 
         embedding = [round(x, embedding_precision) for x in response['data'][0]['embedding']] # type: ignore
         return embedding
@@ -57,17 +73,17 @@ class TextEmbedder():
             return 60 # default to 60 seconds in case it can't be extracted
 
     @retry(reraise=True, stop=stop_after_attempt(6))
-    def embed_content(self, text, clean_text=True, use_single_precision=True):
+    async def embed_content(self, text, clean_text=True, use_single_precision=True):
         embedding_precision = 9 if use_single_precision else 18
         if clean_text:
             text = self.clean_text(text)        
         try:
-            response = openai.Embedding.create(input=text, engine=self.AZURE_OPENAI_EMBEDDING_DEPLOYMENT)
+            response = await openai.Embedding.acreate(input=text, engine=self.embedding_deployment)
             embedding = [round(x, embedding_precision) for x in response['data'][0]['embedding']] # type: ignore
             return embedding            
         except openai.error.RateLimitError as e:
             error_message = str(e)
             seconds = self.extract_retry_seconds(error_message) * 2
             logging.warning(f"Embeddings model deployment rate limit exceeded, retrying in {seconds} seconds...")
-            time.sleep(seconds)
+            await asyncio.sleep(seconds)
             raise e # to make tenacity retry
