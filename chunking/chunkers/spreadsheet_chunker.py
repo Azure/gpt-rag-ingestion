@@ -1,11 +1,52 @@
 import logging
-from tools import BlobStorageClient
-from .base_chunker import BaseChunker
-from openpyxl import load_workbook
-from tabulate import tabulate
 from io import BytesIO
 
+from openpyxl import load_workbook
+from tabulate import tabulate
+
+from tools import BlobStorageClient
+from .base_chunker import BaseChunker
+
 class SpreadsheetChunker(BaseChunker):
+    """
+    SpreadsheetChunker is a class designed to process and chunk spreadsheet content, such as Excel files, into manageable pieces. The class handles different spreadsheet structures, converting them into formats suitable for chunking and summarization.
+
+    Initialization:
+    ---------------
+    The SpreadsheetChunker is initialized with the following parameters:
+    - data (str): The spreadsheet content to be chunked.
+    - max_chunk_size (int, optional): The maximum size of each chunk in tokens. Defaults to 4096 tokens.
+
+    Attributes:
+    -----------
+    - blob_client (BlobStorageClient): An instance of the BlobStorageClient used to download the spreadsheet data from a blob storage.
+    - max_chunk_size (int): Maximum allowed tokens per chunk, used to ensure that chunks do not exceed a specified size.
+    - document_content (str): The content of the spreadsheet document after processing.
+
+    Methods:
+    --------
+    - get_chunks():
+        Splits the spreadsheet content into chunks, converting each sheet into an appropriate format 
+        (HTML, Markdown, or a summary) based on its size. The method logs the process and creates 
+        chunks that include the sheet's table content, summary, and title.
+
+    - _spreadsheet_process():
+        Processes each sheet in the spreadsheet, converting it to HTML or Markdown, depending on the 
+        token size. If the sheet content is too large, a summary is generated instead. This method 
+        returns a list of dictionaries, each containing the sheet name, table content, and a summary.
+
+    - _excel_to_markdown():
+        Converts a given sheet from the spreadsheet into Markdown format. It reads the data from each 
+        row and cell, handling empty values and formatting the content into a Markdown table using the 
+        `tabulate` library.
+
+    - _excel_to_html():
+        Converts a given sheet from the spreadsheet into HTML format. This method handles merged cells 
+        by mapping them to the appropriate `rowspan` and `colspan` attributes in the HTML table. 
+        The method processes each row and cell to generate a well-formatted HTML table representation.
+
+    The SpreadsheetChunker class is useful for breaking down large spreadsheet documents into smaller, more manageable pieces, allowing for efficient processing, analysis, and summarization. It ensures that even complex spreadsheet structures, such as merged cells, are handled correctly during the chunking process.
+    """
     def __init__(self, data, max_chunk_size=None):
         """
         Initializes the SpreadsheetChunker with the given data and sets up chunking parameters from environment variables.

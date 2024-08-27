@@ -65,7 +65,7 @@ class DocumentChunker:
             logging.exception(exception)
         return {"message": error_message}
 
-    def chunk(self, data):
+    def chunk_document(self, data):
         """Chunk the document into smaller parts."""
         chunks = []
         errors = []

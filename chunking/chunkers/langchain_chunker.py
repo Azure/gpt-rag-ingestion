@@ -7,21 +7,33 @@ from langchain.text_splitter import MarkdownTextSplitter, RecursiveCharacterText
 
 class LangChainChunker(BaseChunker):
     """
-    TextChunker class is responsible for splitting document content into chunks based on the specified format and criteria.
-    
-    Format-specific Splitters:
-    -------------------------
-    The TextChunker uses different LangChain splitters based on the file format to ensure accurate and efficient chunking:
-    
-    - Markdown: Uses `MarkdownTextSplitter` to handle markdown-specific chunking.
-    - Python: Uses `PythonCodeTextSplitter` to handle Python code-specific chunking.
-    - Other Formats: Uses `RecursiveCharacterTextSplitter` with sentence and word separators for other formats like text, HTML, etc.
-    
-    Chunking Parameters:
-    --------------------
-    - max_chunk_size: The maximum size of each chunk in terms of tokens. This is set from the environment variable `NUM_TOKENS` (default is 2048).
-    - token_overlap: The number of overlapping tokens between consecutive chunks. This is set from the environment variable `TOKEN_OVERLAP` (default is 100).
-    - minimum_chunk_size: The minimum size of each chunk in terms of tokens. This is set from the environment variable `MIN_CHUNK_SIZE` (default is 100).
+    LangChainChunker is a class designed to split document content into chunks based on the format and specific chunking criteria. The class leverages various LangChain splitters tailored for different content formats, ensuring accurate and efficient processing.
+
+    Initialization:
+    ---------------
+    The LangChainChunker is initialized with the following parameters:
+    - data (str): The document content to be chunked.
+
+    Attributes:
+    -----------
+    - max_chunk_size (int): The maximum allowed size of each chunk in tokens, derived from the `NUM_TOKENS` environment variable (default is 2048 tokens).
+    - token_overlap (int): The number of overlapping tokens between consecutive chunks, derived from the `TOKEN_OVERLAP` environment variable (default is 100 tokens).
+    - minimum_chunk_size (int): The minimum required size of each chunk in tokens, derived from the `MIN_CHUNK_SIZE` environment variable (default is 100 tokens).
+    - supported_formats (dict): A dictionary mapping file extensions to their corresponding content format, used to select the appropriate text splitter.
+
+    Methods:
+    --------
+    - get_chunks():
+        Splits the document content into chunks based on the specified format and criteria. 
+        The method first checks if the document's format is supported, then processes the content 
+        into chunks, skipping those that don't meet the minimum size requirement. Finally, it logs 
+        the number of chunks created and skipped.
+
+    - _chunk_content():
+        Splits the document content into chunks according to the format-specific splitting strategy.
+        The method identifies the format of the document and chooses the corresponding LangChain splitter 
+        (e.g., `MarkdownTextSplitter` for Markdown, `PythonCodeTextSplitter` for Python code, and 
+        `RecursiveCharacterTextSplitter` for other formats). It yields each chunk along with its token count.
     """
 
     def __init__(self, data):
@@ -90,10 +102,19 @@ class LangChainChunker(BaseChunker):
     
     def _chunk_content(self):
         """
-        Splits the document content into chunks based on the specified format and criteria.
-        
+        Splits the document content into chunks according to the specified format and token limits.
+
+        Args:
+            content (str): The full content of the document to be chunked.
+
         Yields:
-            tuple: A tuple containing the chunked content and the number of tokens in the chunk.
+            tuple: A tuple containing the chunked content (str) and the number of tokens in the chunk (int).
+
+        The method includes the following steps:
+        1. Replaces HTML tables in the content with placeholders to facilitate chunking.
+        2. Chooses an appropriate text splitter based on the document's format.
+        3. Splits the content into chunks, restoring any original HTML tables after chunking.
+        4. Truncates chunks that exceed the maximum token size, ensuring they fit within the limit.
         """
         file_format = self.supported_formats[self.extension]
     

@@ -1,8 +1,8 @@
 import logging
 
 from .chunkers.doc_analysis_chunker import DocAnalysisChunker
-from .chunkers.spreadsheet_chunker import SpreadsheetChunker
 from .chunkers.langchain_chunker import LangChainChunker
+from .chunkers.spreadsheet_chunker import SpreadsheetChunker
 from .chunkers.transcription_chunker import TranscriptionChunker
 
 from tools import DocumentIntelligenceClient

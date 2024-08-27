@@ -1,9 +1,9 @@
 import logging
 import os
 import re
+
+from tools import AzureOpenAIClient, GptTokenEstimator
 from utils.file_utils import get_file_extension, get_filename
-from tools import AzureOpenAIClient
-from tools import GptTokenEstimator
 
 class BaseChunker:
     """

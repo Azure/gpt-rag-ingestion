@@ -174,7 +174,7 @@ def _chunk_documents(body):
         }
 
         logging.info(f"[document_chunking] Chunking {data['documentUrl'].split('/')[-1]}.")
-        chunks, errors, warnings = DocumentChunker().chunk(data)
+        chunks, errors, warnings = DocumentChunker().chunk_document(data)
 
         if len(warnings) > 0:
             output_record["warnings"] = _format_messages(warnings)

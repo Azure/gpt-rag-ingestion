@@ -1,11 +1,47 @@
 import logging
-import webvtt
 import os
-from .base_chunker import BaseChunker
 from io import StringIO
+
+import webvtt
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
+from .base_chunker import BaseChunker
+
 class TranscriptionChunker(BaseChunker):
+    """
+    TranscriptionChunker is a class designed to process and chunk transcription text content, specifically from WebVTT (Web Video Text Tracks) format files. It utilizes the RecursiveCharacterTextSplitter to segment the transcription into manageable chunks, considering token limits and content structure.
+
+    Initialization:
+    ---------------
+    The TranscriptionChunker is initialized with the following parameters:
+    - data (str): The transcription text content to be chunked.
+    - max_chunk_size (int, optional): The maximum size of each chunk in tokens. Defaults to 2048 tokens or the value specified in the `NUM_TOKENS` environment variable.
+    - token_overlap (int, optional): The number of overlapping tokens between consecutive chunks. Defaults to 100 tokens.
+
+    Methods:
+    --------
+    - get_chunks():
+        Processes the transcription text and generates chunks based on the specified chunking parameters. 
+        It first processes the WebVTT file, extracts the text, and then splits the content into chunks. 
+        The method includes a mechanism to summarize the content and attaches this summary to each chunk.
+
+    - _vtt_process():
+        Converts the WebVTT content into a continuous text block, retaining speaker changes. 
+        It processes each caption, merging text from the same speaker and separating segments by speaker changes.
+
+    - _chunk_document_content():
+        Splits the processed document content into chunks using the RecursiveCharacterTextSplitter. 
+        This method yields each chunk as it is created.
+
+    Attributes:
+    -----------
+    - max_chunk_size (int): Maximum allowed tokens per chunk.
+    - token_overlap (int): Number of overlapping tokens between chunks.
+    - document_content (str): The content of the document after processing.
+    - aoai_client: An instance for generating summaries and processing content with OpenAI models.
+    - token_estimator: A utility for estimating the number of tokens in a given text.
+    """
+
     def __init__(self, data, max_chunk_size=None, token_overlap=None):
         """
         Initializes the TranscriptionChunker with the given data and sets up chunking parameters from environment variables.
