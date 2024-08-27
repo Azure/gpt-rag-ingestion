@@ -226,15 +226,17 @@ def approve_search_shared_private_access(
             f"Error when approving private link service connection. Please do it manually. Error: {error_message}"
         )
 
+
 def get_secret(secretName):
-        logging.info("Retrieving secret from Azure Key Vault.")
-        keyVaultName = os.environ["AZURE_KEY_VAULT_NAME"]
-        KVUri = f"https://{keyVaultName}.vault.azure.net"
-        credential = DefaultAzureCredential()
-        client = SecretClient(vault_url=KVUri, credential=credential)
-        logging.info(f"Retrieving {secretName} secret from {keyVaultName}.")   
-        retrieved_secret = client.get_secret(secretName)
-        return retrieved_secret.value
+    logging.info("Retrieving secret from Azure Key Vault.")
+    keyVaultName = os.environ["AZURE_KEY_VAULT_NAME"]
+    KVUri = f"https://{keyVaultName}.vault.azure.net"
+    credential = DefaultAzureCredential()
+    client = SecretClient(vault_url=KVUri, credential=credential)
+    logging.info(f"Retrieving {secretName} secret from {keyVaultName}.")
+    retrieved_secret = client.get_secret(secretName)
+    return retrieved_secret.value
+
 
 def execute_setup(
     subscription_id,
@@ -288,11 +290,11 @@ def execute_setup(
     azure_open_ai_service_name = function_app_settings.properties[
         "AZURE_OPENAI_SERVICE_NAME"
     ]
-    azure_open_ai_service_key = get_secret('azureOpenAIKey')
+    azure_open_ai_service_key = get_secret("azureOpenAIKey")
     azure_open_ai_embedding_deployment = function_app_settings.properties[
         "AZURE_OPENAI_EMBEDDING_DEPLOYMENT"
     ]
-    
+
     cognitive_services_key = function_app_settings.properties["COGNITIVE_SERVICES_KEY"]
 
     network_isolation = (
@@ -553,6 +555,14 @@ def execute_setup(
                 "key": False,
             },
         ],
+        "scoringProfiles": [
+            {
+                "name": "ragindex-scoring-profile",
+                "functionAggregation": "sum",
+                "text": {"weights": {"content": 45, "keyPhrases": 45, "title": 5}},
+                "functions": [],
+            }
+        ],
         "corsOptions": {"allowedOrigins": ["*"], "maxAgeInSeconds": 60},
         "vectorSearch": {
             "profiles": [{"name": "myHnswProfile", "algorithm": "myHnswConfig"}],
@@ -565,6 +575,18 @@ def execute_setup(
                         "efConstruction": 400,
                         "efSearch": 500,
                         "metric": "cosine",
+                    },
+                }
+            ],
+            "vectorizers": [
+                {
+                    "name": "vector-ce-vectorizer",
+                    "kind": "azureOpenAI",
+                    "azureOpenAIParameters": {
+                        "resourceUri": f"https://{azure_open_ai_service_name}.openai.azure.com",
+                        "deploymentId": f"{azure_open_ai_embedding_deployment}",
+                        "apiKey": f"{azure_open_ai_service_key}",
+                        "modelName": f"{azure_open_ai_embedding_deployment}",
                     },
                 }
             ],
@@ -635,7 +657,7 @@ def execute_setup(
                 "context": "/document/docintContent",
                 "defaultLanguageCode": "en",
                 "textSplitMode": "pages",
-                "maximumPageLength": 1575,
+                "maximumPageLength": 1500,
                 "pageOverlapLength": 375,
                 "maximumPagesToTake": 0,
                 "inputs": [
@@ -679,6 +701,7 @@ def execute_setup(
                 "description": "Skill to get the key phrases of the document",
                 "context": "/document/docintContent/pages/*",
                 "defaultLanguageCode": "en",
+                "maxKeyPhraseCount": 10,
                 "inputs": [
                     {"name": "text", "source": "/document/docintContent/pages/*"},
                     {
