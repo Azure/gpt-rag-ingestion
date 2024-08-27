@@ -12,8 +12,12 @@ python-dotenv
 requests
 tiktoken
 langchain==0.0.329
-openai==0.28.1
+openai==1.42.0
 azure-identity
 azure-keyvault-secrets
 tenacity
 aiohttp==3.9.0b0
+msgraph-sdk
+webvtt-py
+openpyxl
+tabulate

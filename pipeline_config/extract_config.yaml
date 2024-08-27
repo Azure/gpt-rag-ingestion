@@ -1,4 +1,0 @@
-extract:
-  - type: "graph_api"
-    query: "dummy"
-    output_format: "txt"

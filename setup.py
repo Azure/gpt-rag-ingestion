@@ -397,6 +397,20 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                 "retrievable": True
             },
             {
+                "name": "relatedImages",
+                "type": "Collection(Edm.String)",
+                "filterable": False,
+                "searchable": False,
+                "retrievable": True
+            },
+            {
+                "name": "relatedFiles",
+                "type": "Collection(Edm.String)",
+                "filterable": False,
+                "searchable": False,
+                "retrievable": True
+            },
+            {
                 "name": "contentVector",
                 "type": "Collection(Edm.Single)",
                 "searchable": True,
@@ -540,6 +554,16 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                         {
                             "name": "url",
                             "source": "/document/chunks/*/url",
+                            "inputs": []
+                        },
+                        {
+                            "name": "relatedImages",
+                            "source": "/document/chunks/*/relatedImages",
+                            "inputs": []
+                        },
+                        {
+                            "name": "relatedFiles",
+                            "source": "/document/chunks/*/relatedFiles",
                             "inputs": []
                         },
                         {
