@@ -513,7 +513,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
         "indexProjections": {
             "selectors": [
                 {
-                    "targetIndexName":"ragindex",
+                    "targetIndexName":f"{search_index_name}",
                     "parentKeyFieldName": "parent_id",
                     "sourceContext": "/document/chunks/*",
                     "mappings": [

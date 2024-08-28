@@ -13,6 +13,7 @@ class DateTimeEncoder(JSONEncoder):
 async def document_chunking(req: func.HttpRequest) -> func.HttpResponse:
     import jsonschema
     import logging
+    import time
     
     logging.info('Invoked document_chunking skill.')
     try:
@@ -21,8 +22,11 @@ async def document_chunking(req: func.HttpRequest) -> func.HttpResponse:
         jsonschema.validate(body, schema=get_request_schema())
 
         if body:
+            start_time = time.time()
             result = await process_documents(body)
-            logging.info('Finished document_chunking skill.')
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            logging.info(f'[document_chunking] Finished document_chunking skill in {elapsed_time:.2f} seconds.')
             return func.HttpResponse(result, mimetype="application/json")
         else:
             error_message = "Invalid body."
