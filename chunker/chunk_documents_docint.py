@@ -379,8 +379,9 @@ async def chunk_document(data):
                 except Exception as e:
                     errors.append(indexer_error_message('embedding', e))
     except Exception as e:
-        logging.info(f"Error when chunking {doc_name}: {e}")
+        logging.error(f"Error when chunking {doc_name}: {e}")
         errors.append(indexer_error_message('embedding', e))
+        raise
     logging.info(f"Finished chunking {doc_name}. {len(chunks)} chunks. {len(errors)} errors. {len(warnings)} warnings.")
 
     return chunks, errors, warnings

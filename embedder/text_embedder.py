@@ -1,4 +1,5 @@
 import openai
+from openai import AsyncOpenAI,AsyncAzureOpenAI
 import os
 import re
 import logging
@@ -21,16 +22,10 @@ async def get_secret(secretName):
     return retrieved_secret.value
 
 class TextEmbedder:
-    def __init__(self, api_key, api_base, api_version, embedding_deployment):
-        self.api_key = api_key
-        self.api_base = api_base
-        self.api_version = api_version
+    def __init__(self,embedding_deployment,client:AsyncAzureOpenAI):
+        self.client=client
         self.embedding_deployment = embedding_deployment
 
-        openai.api_type = "azure"
-        openai.api_key = self.api_key
-        openai.api_base = self.api_base
-        openai.api_version = self.api_version
 
     @classmethod
     async def create(cls):
@@ -38,7 +33,9 @@ class TextEmbedder:
         api_base = f"https://{os.getenv('AZURE_OPENAI_SERVICE_NAME')}.openai.azure.com/"
         api_version = os.getenv("AZURE_OPENAI_API_VERSION")
         embedding_deployment = os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT")
-        return cls(api_key, api_base, api_version, embedding_deployment)
+        client=AsyncAzureOpenAI(api_key=api_key, azure_endpoint=api_base, api_version=api_version,azure_deployment=embedding_deployment)
+        
+        return cls(embedding_deployment,client)
     
     def estimate_tokens(self, text: str) -> int:
         gpt2_tokenizer = tiktoken.get_encoding("gpt2")
@@ -60,9 +57,9 @@ class TextEmbedder:
         embedding_precision = 9 if use_single_precision else 18
         if clean_text:
             text = self.clean_text(text)
-        response = await openai.Embedding.acreate(input=text, engine=self.embedding_deployment)
-
-        embedding = [round(x, embedding_precision) for x in response['data'][0]['embedding']] # type: ignore
+    
+            response = await self.client.embeddings.create(input=text,model=self.embedding_deployment)
+            embedding = [round(x, embedding_precision) for x in response.data[0].embedding] # type: ignore
         return embedding
     
     def extract_retry_seconds(self, error_message):
@@ -78,10 +75,10 @@ class TextEmbedder:
         if clean_text:
             text = self.clean_text(text)        
         try:
-            response = await openai.Embedding.acreate(input=text, engine=self.embedding_deployment)
-            embedding = [round(x, embedding_precision) for x in response['data'][0]['embedding']] # type: ignore
+            response = await self.client.embeddings.create(input=text,model=self.embedding_deployment)
+            embedding = [round(x, embedding_precision) for x in response.data[0].embedding] # type: ignore
             return embedding            
-        except openai.error.RateLimitError as e:
+        except openai.RateLimitError as e:
             error_message = str(e)
             seconds = self.extract_retry_seconds(error_message) * 2
             logging.warning(f"Embeddings model deployment rate limit exceeded, retrying in {seconds} seconds...")

@@ -47,7 +47,8 @@ async def chunk_document(data):
             })
     except Exception as e:
         errors.append(str(e))
-        logging.info(f"Error chunking document: {e}")
+        logging.error(f"Error chunking document: {e}")
+        raise
     # chunks = [{
     #                     "filepath": data['documentUrl'].split('/')[-1],
     #                     "chunk_id": 0,
