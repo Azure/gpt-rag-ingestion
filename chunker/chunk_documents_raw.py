@@ -50,7 +50,7 @@ async def chunk_document(data):
         logging.error(f"Error chunking document: {e}")
         raise
     finally:
-        chunk_embedding_helper.text_embedder.client.close()
+        await chunk_embedding_helper.text_embedder.client.close()
     # chunks = [{
     #                     "filepath": data['documentUrl'].split('/')[-1],
     #                     "chunk_id": 0,
