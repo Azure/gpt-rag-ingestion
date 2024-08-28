@@ -14,6 +14,7 @@ def has_supported_file_extension(file_path: str) -> bool:
     return TextChunker()._get_file_format(file_path) is not None
 
 async def chunk_document(data):
+    chunk_embedding_helper=await ChunkEmbeddingHelper.create()
     try:
         chunks = []
         errors = []
@@ -25,7 +26,6 @@ async def chunk_document(data):
         sleep_interval_seconds = int(os.getenv("SLEEP_INTERVAL", "1"))
 
         chunking_result = TextChunker().chunk_content(data['documentContent'], file_path=data['documentUrl'].split('/')[-1], num_tokens=num_tokens, min_chunk_size=min_chunk_size, token_overlap=token_overlap)
-        chunk_embedding_helper=await ChunkEmbeddingHelper.create()
         content_chunk_metadata = await chunk_embedding_helper.generate_chunks_with_embedding(data['documentUrl'], [c.content for c in chunking_result.chunks], 'content', sleep_interval_seconds)
 
         for document_chunk, embedding_metadata in zip(chunking_result.chunks, content_chunk_metadata):
@@ -49,6 +49,8 @@ async def chunk_document(data):
         errors.append(str(e))
         logging.error(f"Error chunking document: {e}")
         raise
+    finally:
+        chunk_embedding_helper.text_embedder.client.close()
     # chunks = [{
     #                     "filepath": data['documentUrl'].split('/')[-1],
     #                     "chunk_id": 0,

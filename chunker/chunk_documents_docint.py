@@ -1,8 +1,6 @@
 import json
 import logging
 import os
-import re
-import requests
 import time
 from azure.identity.aio import DefaultAzureCredential
 from azure.storage.blob.aio import BlobServiceClient
@@ -264,6 +262,7 @@ async def get_chunk(content, url, page, chunk_id, text_embedder):
     return chunk
 
 async def chunk_document(data):
+    text_embedder = await TextEmbedder.create()
     try:
         chunks = []
         errors = []
@@ -271,8 +270,6 @@ async def chunk_document(data):
         chunk_id = 0
         error_occurred = False
         start_time = time.time()
-
-        text_embedder = await TextEmbedder.create()
         filepath = f"{data['documentUrl']}{data['documentSasToken']}"
         doc_name = filepath.split('/')[-1].split('?')[0]
 
@@ -382,6 +379,8 @@ async def chunk_document(data):
         logging.error(f"Error when chunking {doc_name}: {e}")
         errors.append(indexer_error_message('embedding', e))
         raise
+    finally:
+        await text_embedder.client.close()
     logging.info(f"Finished chunking {doc_name}. {len(chunks)} chunks. {len(errors)} errors. {len(warnings)} warnings.")
 
     return chunks, errors, warnings

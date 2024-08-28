@@ -2,7 +2,7 @@ import asyncio
 from embedder.text_embedder import TextEmbedder
 
 class ChunkEmbeddingHelper:
-    def __init__(self, text_embedder):
+    def __init__(self, text_embedder:TextEmbedder):
         self.text_embedder = text_embedder
 
     @classmethod
