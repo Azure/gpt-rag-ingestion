@@ -2,9 +2,9 @@ local/
 backup/
 temp/
 .env
-
+local.settings.json
 .vscode/
-.vscode
+
 
 .azure
 .azure/

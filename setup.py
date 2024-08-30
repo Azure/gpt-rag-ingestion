@@ -210,7 +210,6 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     storage_container = function_app_settings.properties["STORAGE_CONTAINER"]
     storage_account_name = function_app_settings.properties["STORAGE_ACCOUNT_NAME"]
     network_isolation = True if function_app_settings.properties["NETWORK_ISOLATION"].lower() == "true" else False
-    search_trimming = True if function_app_settings.properties["AZURE_SEARCH_TRIMMING"].lower() == "true" else False
 
     logging.info(f"Function endpoint: {function_endpoint}")
     logging.info(f"Search service: {search_service}")
@@ -398,6 +397,34 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                 "retrievable": True
             },
             {
+                "name": "summary",
+                "type": "Edm.String",
+                "filterable": False,
+                "searchable": True,
+                "retrievable": True
+            },            
+            {
+                "name": "relatedImages",
+                "type": "Collection(Edm.String)",
+                "filterable": False,
+                "searchable": False,
+                "retrievable": True
+            },
+            {
+                "name": "relatedFiles",
+                "type": "Collection(Edm.String)",
+                "filterable": False,
+                "searchable": False,
+                "retrievable": True
+            },
+            {
+                "name": "security_id",
+                "type": "Collection(Edm.String)",
+                "searchable": False,
+                "retrievable": True,
+                "filterable": True
+            },
+            {
                 "name": "contentVector",
                 "type": "Collection(Edm.Single)",
                 "searchable": True,
@@ -453,14 +480,6 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
         }
     }
 
-    if search_trimming:body['fields'].append({
-        "name": "security_id",
-        "type": "Collection(Edm.String)",
-        "searchable": False,
-        "retrievable": True,
-        "filterable": True
-    })    
-
     call_search_api(search_service, search_api_version, "indexes", f"{search_index_name}", "put", credential, body)
     response_time = time.time() - start_time
     logging.info(f"03 Create indexes step. {round(response_time,2)} seconds")
@@ -500,7 +519,11 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                     { 
                         "name":"documentContentType",
                         "source":"/document/metadata_content_type"
-                    }
+                    },
+                    { 
+                        "name": "documentSecurityId",
+                        "source": "/document/security_id"
+                    }                    
                 ],
                 "outputs":[ 
                     {
@@ -553,6 +576,16 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                             "inputs": []
                         },
                         {
+                            "name": "relatedImages",
+                            "source": "/document/chunks/*/relatedImages",
+                            "inputs": []
+                        },
+                        {
+                            "name": "relatedFiles",
+                            "source": "/document/chunks/*/relatedFiles",
+                            "inputs": []
+                        },
+                        {
                             "name": "filepath",
                             "source": "/document/chunks/*/filepath",
                             "inputs": []
@@ -562,6 +595,11 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                             "source": "/document/chunks/*/content",
                             "inputs": []
                         },
+                        {
+                            "name": "summary",
+                            "source": "/document/chunks/*/summary",
+                            "inputs": []
+                        },                        
                         {
                             "name": "contentVector",
                             "source": "/document/chunks/*/contentVector",
@@ -576,7 +614,11 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                             "name": "metadata_storage_name",
                             "source": "/document/metadata_storage_name",
                             "inputs": []
-                        }
+                        },
+                        { 
+                            "name": "security_id",
+                            "source": "/document/security_id"
+                        }                        
                     ]
                 }
             ],
@@ -590,16 +632,6 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
         body['skills'][0]['authResourceId'] = f"api://{search_principal_id}"
     else:
         body['skills'][0]['uri'] = f"{function_endpoint}/api/document-chunking?code={function_key}"
-
-    if search_trimming:body['skills'][0]['inputs'].append({ 
-        "name": "documentSecurityId",
-        "source": "/document/security_id"
-    })
-
-    if search_trimming:body['indexProjections']['selectors'][0]['mappings'].append({ 
-        "name": "security_id",
-        "source": "/document/security_id"
-    })
         
     # first delete to enforce web api skillset to be updated
     call_search_api(search_service, search_api_version, "skillsets", f"{search_index_name}-skillset-chunking", "delete", credential)        
