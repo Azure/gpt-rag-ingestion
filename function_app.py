@@ -1,56 +1,161 @@
+import logging
+import jsonschema
+import json
+import time
 import azure.functions as func
+import datetime
+from chunking import DocumentChunker
+from json import JSONEncoder
+
+###############################################################################
+# Pipeline Functions
+###############################################################################
 
 app = func.FunctionApp()
-from json import JSONEncoder
+
+###################################################################################
+# Extract Function (Timer Triggered)
+###################################################################################
+
+# Extract Function implementation
+        
+###################################################################################
+# Document Chunking Function (HTTP Triggered by AI Search)
+###################################################################################
+
 class DateTimeEncoder(JSONEncoder):
     #Override the default method
     def default(self, obj):
-        import datetime
         if isinstance(obj, (datetime.date, datetime.datetime)):
             return obj.isoformat()
-
+        
+# Document Chunking Function (HTTP Triggered by AI Search)
 @app.route(route="document-chunking", auth_level=func.AuthLevel.FUNCTION)
 def document_chunking(req: func.HttpRequest) -> func.HttpResponse:
-    import jsonschema
-    import logging
-    import time
-    
-    logging.info('Invoked document_chunking skill.')
+    logging.info('[document_chunking] Invoked document_chunking function.')
     try:
         body = req.get_json()
-        logging.debug(f'REQUEST BODY: {body}')
-        jsonschema.validate(body, schema=get_request_schema())
-
+        logging.debug(f'[document_chunking] REQUEST BODY: {body}')
+        jsonschema.validate(body, schema=_get_request_schema())
         if body:
             start_time = time.time()
-            result = process_documents(body)
+            start_time = time.time()
+            result = _chunk_documents(body)
             end_time = time.time()
             elapsed_time = end_time - start_time
             logging.info(f'[document_chunking] Finished document_chunking skill in {elapsed_time:.2f} seconds.')
             return func.HttpResponse(result, mimetype="application/json")
         else:
             error_message = "Invalid body."
-            logging.error(error_message)
+            logging.error(f"[document_chunking] {error_message}")
             return func.HttpResponse(error_message, status_code=400)
     except ValueError as e:
         error_message = "Invalid body: {0}".format(e)
-        logging.error(error_message)
+        logging.error(f"[document_chunking] {error_message}")
         return func.HttpResponse(error_message, status_code=400)
     except jsonschema.exceptions.ValidationError as e:
         error_message = "Invalid request: {0}".format(e)
-        logging.error(error_message)
+        logging.error(f"[document_chunking] {error_message}")
         return func.HttpResponse(error_message, status_code=400)
 
-def format_messages(messages):
+def _format_messages(messages):
     formatted = [{"message": msg} for msg in messages]
     return formatted
 
-def process_documents(body):
-    import json
-    import logging
-    import chunker.chunk_documents_docint
-    import chunker.chunk_documents_raw
+def _chunk_documents(body):
+    """
+    Processes and chunks the documents provided in the input body, creating a structured response
+    that includes the chunked content along with any errors or warnings encountered during the process.
 
+    Args:
+    -----
+    body (dict): 
+        A dictionary containing a list of document records under the key 'values'. 
+        Each record should have a 'data' field that includes the document's metadata and content.
+
+    Returns:
+    --------
+    str: 
+        A JSON-encoded string representing the results of the chunking process. The structure of the
+        returned JSON is as follows:
+
+        - "values" (list[dict]): 
+            A list of dictionaries, each corresponding to a processed document record. 
+            Each dictionary contains:
+            
+            - "recordId" (str): 
+                The identifier of the document record.
+            
+            - "data" (dict or None): 
+                A dictionary containing the following key:
+                
+                - "chunks" (list[dict]): 
+                    An array of chunk dictionaries as described in the Chunk Dictionary Structure. 
+                    This field is present if chunking was successful.
+            
+            - "errors" (list[str] or None): 
+                A list of error messages encountered during processing, if any. 
+                This field is present only if errors were encountered.
+            
+            - "warnings" (list[str] or None): 
+                A list of warning messages encountered during processing, if any. 
+                This field is present only if warnings were encountered.
+    
+    The JSON is encoded using `json.dumps`, ensuring it is safely serialized for transmission or storage.
+    The `DateTimeEncoder` is used to handle any date-time objects within the data.
+
+    Chunk Dictionary Structure:
+    ===========================
+
+    The chunk dictionary represents a segment of a document, including its content and associated metadata. 
+    Each key in the dictionary serves a specific purpose, aiding in the management and utilization of the chunked content.
+
+    Fields:
+    -------
+
+    - chunk_id (str): 
+        A unique identifier for the chunk. This ID allows for easy reference and retrieval of specific chunks within the document.
+
+    - url (str): 
+        The original URL of the document from which this chunk was created. Provides a direct link to the source document, 
+        ensuring traceability and context preservation.
+
+    - filepath (str): 
+        The name of the file from which the chunk was derived, extracted from the document's URL. Useful for identifying the document, 
+        especially when processing multiple documents.
+
+    - content (str): 
+        The actual content of the chunk. This field contains the segment of the document that has been processed and split 
+        according to the chunking logic.
+
+    - contentVector (list[float]): 
+        A vector representation of the chunk's content, generated using embeddings from Azure OpenAI. This is essential for operations 
+        like similarity searches and clustering.
+
+    - summary (str, optional): 
+        A brief summary of the content. Defaults to an empty string.
+
+    - title (str): 
+        The title of the chunk, typically extracted and formatted from the document's filename. If no specific title is provided, 
+        this field ensures the chunk has a meaningful, human-readable identifier.
+
+    - page (int): 
+        The page number from which the chunk was extracted. Particularly useful for paginated documents, enabling users 
+        to locate the content within the original document.
+
+    - offset (int): 
+        The position within the page or document where the chunk's content begins. This allows for precise tracking of content 
+        within the document.
+
+    - relatedImages (list[str]): 
+        A list of URLs or file paths to images related to the chunk's content. These images may be embedded within the document 
+        or contextually associated with the chunk's content.
+
+    - relatedFiles (list[str]): 
+        A list of URLs or file paths to files related to the chunk's content. These files may provide additional context 
+        or supplementary information relevant to the chunk.
+
+    """
     values = body['values']
     results = {}
     results["values"] = []
@@ -69,46 +174,14 @@ def process_documents(body):
             "warnings": None
         }
 
-        if chunker.chunk_documents_docint.has_supported_file_extension(data['documentUrl']):
-            logging.info(f"Chunking (doc intelligence) {data['documentUrl'].split('/')[-1]}.")
-            chunks, errors, warnings = chunker.chunk_documents_docint.chunk_document(data)
-
-        elif chunker.chunk_documents_raw.has_supported_file_extension(data['documentUrl']):
-            logging.info(f"Chunking (raw) {data['documentUrl'].split('/')[-1]}.")
-            chunks, errors, warnings = chunker.chunk_documents_raw.chunk_document(data)
-        
-        # errors = []
-        # warnings = []
-        # chunks = [{
-        #             "filepath": '123',
-        #             "chunk_id": 0,
-        #             "offset": 0,
-        #             "length": 0,
-        #             "page": 1,                    
-        #             "title": "default",
-        #             "category": "default",
-        #             "url": '123',
-        #             "content": data['documentUrl'],
-        #             "contentVector": [0.1] * 1536,                    
-        #             },
-        #             {
-        #                 "filepath": '123',
-        #                 "chunk_id": 2,
-        #                 "offset": 0,
-        #                 "length": 0,
-        #                 "page": 1,                           
-        #                 "title": "default",
-        #                 "category": "default",
-        #                 "url": '123',
-        #                 "content": data['documentUrl'],
-        #                 "contentVector": [0.1] * 1536,
-        #             }]
+        logging.info(f"[document_chunking] Chunking {data['documentUrl'].split('/')[-1]}.")
+        chunks, errors, warnings = DocumentChunker().chunk_document(data)
 
         if len(warnings) > 0:
-            output_record["warnings"] = format_messages(warnings)
+            output_record["warnings"] = _format_messages(warnings)
 
         if len(errors) > 0:
-            output_record["errors"] = format_messages(errors)
+            output_record["errors"] = _format_messages(errors)
         
         if len(chunks) > 0:
             output_record["data"] = {
@@ -120,7 +193,7 @@ def process_documents(body):
             
         return json.dumps(results, ensure_ascii=False, cls=DateTimeEncoder)
 
-def get_request_schema():
+def _get_request_schema():
     return {
         "$schema": "http://json-schema.org/draft-04/schema#",
         "type": "object",
@@ -136,7 +209,7 @@ def get_request_schema():
                             "type": "object",
                             "properties": {
                                 "documentUrl": {"type": "string", "minLength": 1}, 
-                                "documentContent": {"type": "string"},                                                                
+                                "documentContent": {"type": "string"},
                                 "documentSasToken": {"type": "string", "minLength": 1},
                                 "documentContentType": {"type": "string", "minLength": 1}
                             },
