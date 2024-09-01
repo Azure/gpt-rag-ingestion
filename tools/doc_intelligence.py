@@ -28,7 +28,7 @@ class DocumentIntelligenceClient:
         self.DOCINT_40_API = '2023-10-31-preview'
         self.DEFAULT_API_VERSION = '2023-07-31'
         self.api_version = os.getenv('FORM_REC_API_VERSION', os.getenv('DOCINT_API_VERSION', self.DEFAULT_API_VERSION))
-        self.docint_40_api = self.api_version >= docint.DOCINT_40_API
+        self.docint_40_api = self.api_version >= self.DOCINT_40_API
 
         # Network isolation
         network_isolation = os.getenv('NETWORK_ISOLATION', self.DEFAULT_API_VERSION)
