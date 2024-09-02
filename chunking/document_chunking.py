@@ -45,7 +45,7 @@ class DocumentChunker:
         elapsed_time = time.time() - start_time
         return elapsed_time > self.max_time
 
-    def _error_message(self, error_type="general", exception=None):
+    def _error_message(self, error_type="general", exception=None, filename=""):
         """Generate an error message based on the error type."""
         if error_type == 'timeout':
             error_message = (
@@ -58,9 +58,10 @@ class DocumentChunker:
         else:
             error_message = "An error occurred while processing the document."
             if exception is not None:
-                error_message += f"[document_chunking] Exception: {str(exception)}"
+                error_message += f"Exception: {str(exception)}"
 
-        logging.info(f"Error: {error_message}")
+        logging.info(f"[document_chunking]{f'[{filename}]' if filename else ''} Error: {error_message}, Ingested Document: {self.ingested_document}")
+
         return error_message
 
     def chunk_document(self, data):
@@ -78,11 +79,11 @@ class DocumentChunker:
             chunker = ChunkerFactory().get_chunker(extension, data)
             chunks = chunker.get_chunks()
         except Exception as e:
-            errors.append(self._error_message(exception=e))
+            errors.append(self._error_message(exception=e, filename=filename))
 
         elapsed_time = time.time() - start_time
         logging.info(
-            f"[document_chunking] Finished chunking {filename} in {elapsed_time:.2f} seconds. "
+            f"[document_chunking][{filename}] Finished chunking in {elapsed_time:.2f} seconds. "
             f"{len(chunks)} chunks. {len(errors)} errors. {len(warnings)} warnings."
         )
         return chunks, errors, warnings

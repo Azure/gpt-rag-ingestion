@@ -20,7 +20,15 @@ class DocumentIntelligenceClient:
         analyze_document(filepath, model):
             Analyzes a document using the specified model.
     """
-    def __init__(self):
+    def __init__(self, document_filename=""):
+        """
+        Initializes the DocumentIntelligence client.
+
+        Parameters:
+        document_filename (str, optional): Additional attribute for improved log traceability.
+        """
+        self.document_filename = f"[{document_filename}]" if document_filename else ""
+        
         # ai service resource name
         self.service_name = os.environ['AZURE_FORMREC_SERVICE']
         
@@ -118,7 +126,7 @@ class DocumentIntelligenceClient:
         blob_name = parsed_url.path.split("/")[2]
         file_ext = blob_name.split(".")[-1]
 
-        logging.info(f"[docintelligence] Connecting to blob to get {blob_name}.")
+        logging.info(f"[docintelligence]{self.document_filename} Connecting to blob.")
 
         credential = DefaultAzureCredential()
         blob_service_client = BlobServiceClient(account_url=account_url, credential=credential)
@@ -130,7 +138,7 @@ class DocumentIntelligenceClient:
             data = blob_client.download_blob().readall()
             response = requests.post(request_endpoint, headers=headers, data=data)
         except requests.exceptions.ConnectionError:
-            logging.info("[docintelligence] Connection error, retrying in 10 seconds...")
+            logging.info(f"[docintelligence]{self.document_filename} Connection error, retrying in 10 seconds...")
             time.sleep(10)
             try:
                 data = blob_client.download_blob().readall()
@@ -142,7 +150,7 @@ class DocumentIntelligenceClient:
 
         if blob_error:
             error_message = f"Blob client error when reading from blob storage. {blob_error}"
-            logging.info(f"[docintelligence] {error_message}")
+            logging.info(f"[docintelligence]{self.document_filename} {error_message}")
             errors.append(error_message)
             return result, errors
 
@@ -152,8 +160,8 @@ class DocumentIntelligenceClient:
         
         if response.status_code in error_messages or response.status_code != 202:
             error_message = error_messages.get(response.status_code, f"Doc Intelligence request error, code {response.status_code}: {response.text}")
-            logging.info(f"[docintelligence] {error_message}")
-            logging.info(f"[docintelligence] filepath: {file_url}")
+            logging.info(f"[docintelligence]{self.document_filename} {error_message}")
+            logging.info(f"[docintelligence]{self.document_filename} filepath: {file_url}")
             errors.append(error_message)
             return result, errors
 
@@ -167,7 +175,7 @@ class DocumentIntelligenceClient:
 
             if result_response.status_code != 200 or result_json["status"] == "failed":
                 error_message = f"Doc Intelligence polling error, code {result_response.status_code}: {response.text}"
-                logging.info(f"[docintelligence] {error_message}")
+                logging.info(f"[docintelligence]{self.document_filename} {error_message}")
                 errors.append(error_message)
                 break
 

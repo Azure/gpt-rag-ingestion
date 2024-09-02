@@ -56,12 +56,12 @@ class TranscriptionChunker(BaseChunker):
 
     def get_chunks(self):           
         chunks = [] 
-        logging.info(f"[transcription_chunker] Running get_chunks for {self.filename}.")
+        logging.info(f"[transcription_chunker][{self.filename}] Running get_chunks.")
 
         # Extract the text from the vtt file
         text = self._vtt_process()
         self.document_content = text
-        logging.info(f"[transcription_chunker] Transcription text: {text[:100]}")
+        logging.info(f"[transcription_chunker][{self.filename}] transcription text: {text[:100]}")
 
         # Get the summary of the text
         prompt = f"Provide clearly elaborated summary along with the keypoints and values mentioned for the transcript of a conversation: {text} "
@@ -72,7 +72,7 @@ class TranscriptionChunker(BaseChunker):
             chunk_id += 1
             chunk_size = self.token_estimator.estimate_tokens(text_chunk)
             if chunk_size > self.max_chunk_size:
-                logging.warning(f"[transcription_chunker] Truncating {chunk_size} size chunk to fit within {self.max_chunk_size} tokens")
+                logging.info(f"[transcription_chunker][{self.filename}] truncating {chunk_size} size chunk to fit within {self.max_chunk_size} tokens")
                 text_chunk = self._truncate_chunk(text_chunk)
             chunk_dict = self._create_chunk(chunk_id=chunk_id, content=text_chunk, embedding_text=summary, summary=summary) 
             chunks.append(chunk_dict)      

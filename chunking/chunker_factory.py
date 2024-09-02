@@ -26,7 +26,7 @@ class ChunkerFactory:
             BaseChunker: An instance of a chunker class.
         """
         filename = data['documentUrl'].split('/')[-1]
-        logging.info(f"[chunker_factory] Creating chunker for {filename}")
+        logging.info(f"[chunker_factory][{filename}] Creating chunker")
 
         if extension == 'vtt':
             return TranscriptionChunker(data)

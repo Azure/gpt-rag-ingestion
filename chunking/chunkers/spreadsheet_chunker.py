@@ -58,11 +58,11 @@ class SpreadsheetChunker(BaseChunker):
 
     def get_chunks(self):           
         chunks = [] 
-        logging.info(f"[spreadsheet_chunker] Running get_chunks for {self.filename}.")
+        logging.info(f"[spreadsheet_chunker][{self.filename}] Running get_chunks.")
 
         # Extract the relevant text from the spreadsheet
         sheets = self._spreadsheet_process()
-        logging.info(f"[spreadsheet_chunker] Spreadsheet has {len(sheets)} sheets")
+        logging.info(f"[spreadsheet_chunker][{self.filename}] workbook has {len(sheets)} sheets")
 
         chunk_id = 0
         for sheet in sheets:
