@@ -35,7 +35,7 @@ def document_chunking(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('[document_chunking] Invoked document_chunking function.')
     try:
         body = req.get_json()
-        logging.info(f'[document_chunking] REQUEST BODY: {body}')
+        logging.debug(f'[document_chunking] REQUEST BODY: {body}')
         jsonschema.validate(body, schema=_get_request_schema())
         if body:
             start_time = time.time()

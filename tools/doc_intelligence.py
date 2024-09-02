@@ -117,6 +117,7 @@ class DocumentIntelligenceClient:
                 "urlSource": file_url
             }
             try:
+                logging.info("[docintelligence] Request endpoint: " + request_endpoint)                
                 response = requests.post(request_endpoint, headers=headers, json=body)
             except requests.exceptions.ConnectionError:
                 logging.info("[docintelligence] Connection error, retrying in 10 seconds...")
@@ -144,6 +145,7 @@ class DocumentIntelligenceClient:
 
             try:
                 data = blob_client.download_blob().readall()
+                logging.info("[docintelligence] Request endpoint: " + request_endpoint)   
                 response = requests.post(request_endpoint, headers=headers, data=data)
             except requests.exceptions.ConnectionError:
                 logging.info("[docintelligence] Connection error, retrying in 10 seconds...")
