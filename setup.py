@@ -519,11 +519,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                     { 
                         "name":"documentContentType",
                         "source":"/document/metadata_content_type"
-                    },
-                    { 
-                        "name": "documentSecurityId",
-                        "source": "/document/security_id"
-                    }                    
+                    }                  
                 ],
                 "outputs":[ 
                     {
@@ -605,6 +601,11 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                             "source": "/document/chunks/*/contentVector",
                             "inputs": []
                         },
+                        { 
+                            "name": "security_id",
+                            "source": "/document/chunks/*/security_id",
+                            "inputs": []                            
+                        },
                         {
                             "name": "metadata_storage_path",
                             "source": "/document/metadata_storage_path",
@@ -614,11 +615,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                             "name": "metadata_storage_name",
                             "source": "/document/metadata_storage_name",
                             "inputs": []
-                        },
-                        { 
-                            "name": "security_id",
-                            "source": "/document/security_id"
-                        }                        
+                        }                    
                     ]
                 }
             ],

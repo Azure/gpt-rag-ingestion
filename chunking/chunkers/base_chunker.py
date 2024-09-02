@@ -2,7 +2,7 @@ import logging
 import os
 import re
 
-from tools import AzureOpenAIClient, GptTokenEstimator
+from tools import AzureOpenAIClient, BlobStorageClient, GptTokenEstimator
 from utils.file_utils import get_file_extension, get_filename
 
 class BaseChunker:
@@ -75,7 +75,8 @@ class BaseChunker:
         self.filename = get_filename(self.url)
         self.extension = get_file_extension(self.url)           
         self.token_estimator = GptTokenEstimator()
-        self.aoai_client = AzureOpenAIClient()
+        self.aoai_client = AzureOpenAIClient(document_filename=self.filename)
+        self.blob_client = BlobStorageClient()        
 
     def get_chunks(self):
         """Abstract method to be implemented by subclasses."""
@@ -112,11 +113,14 @@ class BaseChunker:
             "url": self.url,
             "filepath": self.filename,
             "content": content,
-            "summary": summary,            
+            "summary": summary,
+            "category": "",  
+            "length": len(content),                             
             "contentVector": content_vector,
             "title": self._extract_title_from_filename(self.filename) if not title else title,
             "page": page,
             "offset": offset,
+            "security_id": [],
             "relatedImages": related_images,
             "relatedFiles": related_files
         }
@@ -150,7 +154,7 @@ class BaseChunker:
     
             return title
         except Exception as e:
-            logging.error(f"[base_chunker] Error extracting title from filename '{filename}': {e}")
+            logging.error(f"[base_chunker][{filename}] Error extracting title from filename '{filename}': {e}")
             return "filename"
         
     def _truncate_chunk(self, text):
@@ -168,7 +172,7 @@ class BaseChunker:
             str: The truncated chunk.
         """
         if self.token_estimator.estimate_tokens(text) > self.max_chunk_size:
-            logging.warning("[base_chunker] Token limit exceeded maximum length, truncating...")
+            logging.info(f"[base_chunker][{self.filename}] Token limit exceeded maximum length, truncating...")
             step_size = 1  # Initial step size
             iteration = 0  # Iteration counter
 

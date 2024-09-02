@@ -59,7 +59,7 @@ class DocAnalysisChunker(BaseChunker):
         self.max_chunk_size = max_chunk_size or int(os.getenv("NUM_TOKENS", "2048"))
         self.minimum_chunk_size = minimum_chunk_size or int(os.getenv("MIN_CHUNK_SIZE", "100"))
         self.token_overlap = token_overlap or int(os.getenv("TOKEN_OVERLAP", "100"))
-        self.docint_client = DocumentIntelligenceClient()
+        self.docint_client = DocumentIntelligenceClient(document_filename=self.filename)
         self.supported_formats = self.docint_client.file_extensions
 
     def get_chunks(self):
@@ -81,12 +81,12 @@ class DocAnalysisChunker(BaseChunker):
         if self.extension not in self.supported_formats:
             raise UnsupportedFormatError(f"[doc_analysis_chunker] {self.extension} format is not supported")
 
-        logging.info(f"[doc_analysis_chunker] Analyzing {self.filename}.")
+        logging.info(f"[doc_analysis_chunker][{self.filename}] Running get_chunks.")
 
         document, analysis_errors = self._analyze_document_with_retry()
         if analysis_errors:
             formatted_errors = ', '.join(map(str, analysis_errors))
-            raise Exception(f"[doc_analysis_chunker] Error analyzing {self.filename}: {formatted_errors}")
+            raise Exception(f"Error in doc_analysis_chunker analyzing {self.filename}: {formatted_errors}")
 
         chunks = self._process_document_chunks(document)
         
@@ -110,9 +110,7 @@ class DocAnalysisChunker(BaseChunker):
                 document, analysis_errors = self.docint_client.analyze_document(self.file_url)
                 return document, analysis_errors
             except Exception as e:
-                logging.error(
-                    f"[doc_analysis_chunker] Analysis failed on attempt {attempt + 1}/{retries}: {str(e)}"
-                )
+                logging.error(f"[doc_analysis_chunker][{self.filename}] docint analyze document failed on attempt {attempt + 1}/{retries}: {str(e)}")
                 if attempt == retries - 1:
                     raise
         return None, None
@@ -157,9 +155,9 @@ class DocAnalysisChunker(BaseChunker):
             else:
                 skipped_chunks += 1
 
-        logging.info(f"[doc_analysis_chunker] {len(chunks)} chunk(s) created")
+        logging.info(f"[doc_analysis_chunker][{self.filename}] {len(chunks)} chunk(s) created")
         if skipped_chunks > 0:
-            logging.info(f"[doc_analysis_chunker] {skipped_chunks} chunk(s) skipped")
+            logging.info(f"[doc_analysis_chunker][{self.filename}] {skipped_chunks} chunk(s) skipped")
         return chunks
 
     def _chunk_content(self, content):
@@ -178,9 +176,7 @@ class DocAnalysisChunker(BaseChunker):
         for chunked_content in chunks:
             chunk_size = self.token_estimator.estimate_tokens(chunked_content)
             if chunk_size > self.max_chunk_size:
-                logging.warning(
-                    f"[doc_analysis_chunker] Truncating {chunk_size} size chunk to fit within {self.max_chunk_size} tokens"
-                )
+                logging.info(f"[doc_analysis_chunker][{self.filename}] truncating {chunk_size} size chunk to fit within {self.max_chunk_size} tokens")
                 chunked_content = self._truncate_chunk(chunked_content)
 
             yield chunked_content, chunk_size
@@ -320,7 +316,7 @@ class DocAnalysisChunker(BaseChunker):
 
         # Truncate if necessary
         if self.token_estimator.estimate_tokens(text) > self.max_chunk_size:
-            logging.warning("Token limit reached, truncating...")
+            logging.info(f"[doc_analysis_chunker][{self.filename}] token limit reached, truncating...")
             step_size = 1  # Initial step size
             iteration = 0  # Iteration counter
 

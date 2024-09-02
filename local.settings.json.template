@@ -4,8 +4,6 @@
     "FUNCTIONS_WORKER_RUNTIME": "python",
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
     "AzureWebJobsFeatureFlags": "EnableWorkerIndexing",
-    "RagStorageConnection__serviceUri": "https://xxxxxx.blob.core.windows.net",
-    "RagStorageConnection__queueServiceUri": "https://xxxxxx.queue.core.windows.net",
     "MIN_CHUNK_SIZE": "100",
     "TOKEN_OVERLAP": "200",
     "NUM_TOKENS":  "2048",

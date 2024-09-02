@@ -1,6 +1,7 @@
 import logging
 import os
 from io import StringIO
+from io import BytesIO
 
 import webvtt
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -37,7 +38,7 @@ class TranscriptionChunker(BaseChunker):
     -----------
     - max_chunk_size (int): Maximum allowed tokens per chunk.
     - token_overlap (int): Number of overlapping tokens between chunks.
-    - document_content (str): The content of the document after processing.
+    - document_content (str): The content of the document.
     - aoai_client: An instance for generating summaries and processing content with OpenAI models.
     - token_estimator: A utility for estimating the number of tokens in a given text.
     """
@@ -49,18 +50,18 @@ class TranscriptionChunker(BaseChunker):
         Args:
             data (str): The document content to be chunked.
         """
-        super().__init__(data)
+        super().__init__(data)       
         self.max_chunk_size = max_chunk_size or int(os.getenv("NUM_TOKENS", "2048"))
         self.token_overlap = token_overlap or 100
 
     def get_chunks(self):           
         chunks = [] 
-        logging.info(f"[transcription_chunker] Running get_chunks for {self.filename}. Transcription size: {len(self.document_content)} characters")
+        logging.info(f"[transcription_chunker][{self.filename}] Running get_chunks.")
 
         # Extract the text from the vtt file
         text = self._vtt_process()
         self.document_content = text
-        logging.info(f"[transcription_chunker] Transcription text: {text[:100]}")
+        logging.info(f"[transcription_chunker][{self.filename}] transcription text: {text[:100]}")
 
         # Get the summary of the text
         prompt = f"Provide clearly elaborated summary along with the keypoints and values mentioned for the transcript of a conversation: {text} "
@@ -71,14 +72,16 @@ class TranscriptionChunker(BaseChunker):
             chunk_id += 1
             chunk_size = self.token_estimator.estimate_tokens(text_chunk)
             if chunk_size > self.max_chunk_size:
-                logging.warning(f"[transcription_chunker] Truncating {chunk_size} size chunk to fit within {self.max_chunk_size} tokens")
+                logging.info(f"[transcription_chunker][{self.filename}] truncating {chunk_size} size chunk to fit within {self.max_chunk_size} tokens")
                 text_chunk = self._truncate_chunk(text_chunk)
             chunk_dict = self._create_chunk(chunk_id=chunk_id, content=text_chunk, embedding_text=summary, summary=summary) 
             chunks.append(chunk_dict)      
         return chunks
 
     def _vtt_process(self):
-        vtt = webvtt.read_buffer(StringIO(self.document_content))
+        blob_data = self.blob_client.download_blob(self.file_url)
+        blob_stream = BytesIO(blob_data)
+        vtt = webvtt.read_buffer(blob_stream)
         data, text, voice = [], "", ""
 
         for caption in vtt:

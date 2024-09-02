@@ -32,14 +32,18 @@ class DateTimeEncoder(JSONEncoder):
 # Document Chunking Function (HTTP Triggered by AI Search)
 @app.route(route="document-chunking", auth_level=func.AuthLevel.FUNCTION)
 def document_chunking(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info('[document_chunking] Invoked document_chunking function.')
     try:
         body = req.get_json()
-        logging.debug(f'[document_chunking] REQUEST BODY: {body}')
         jsonschema.validate(body, schema=_get_request_schema())
+
         if body:
+            # Log the incoming request
+            logging.info(f'[document_chunking] Invoked document_chunking skill. Number of items: {len(body["values"])}.')
+            for i, item in enumerate(body["values"]):
+                data = item["data"]
+                logging.info(f'[document_chunking] Item {i + 1}: File {data["documentUrl"].split("/")[-1]}, Content Type {data["documentContentType"]}, Content Length {len(data["documentContent"])} chars.')
             start_time = time.time()
-            start_time = time.time()
+            # Chunk the documents
             result = _chunk_documents(body)
             end_time = time.time()
             elapsed_time = end_time - start_time
@@ -174,7 +178,7 @@ def _chunk_documents(body):
             "warnings": None
         }
 
-        logging.info(f"[document_chunking] Chunking {data['documentUrl'].split('/')[-1]}.")
+        logging.info(f"[document_chunking][{data['documentUrl'].split('/')[-1]}] chunking document.")
         chunks, errors, warnings = DocumentChunker().chunk_document(data)
 
         if len(warnings) > 0:
