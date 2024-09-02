@@ -113,11 +113,14 @@ class BaseChunker:
             "url": self.url,
             "filepath": self.filename,
             "content": content,
-            "summary": summary,            
+            "summary": summary,
+            "category": "",  
+            "length": len(content),                             
             "contentVector": content_vector,
             "title": self._extract_title_from_filename(self.filename) if not title else title,
             "page": page,
             "offset": offset,
+            "security_id": "",
             "relatedImages": related_images,
             "relatedFiles": related_files
         }
