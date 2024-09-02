@@ -58,12 +58,10 @@ class DocumentChunker:
         else:
             error_message = "An error occurred while processing the document."
             if exception is not None:
-                error_message += f" Exception: {str(exception)}"
+                error_message += f"[document_chunking] Exception: {str(exception)}"
 
         logging.info(f"Error: {error_message}")
-        if exception:
-            logging.exception(exception)
-        return {"message": error_message}
+        return error_message
 
     def chunk_document(self, data):
         """Chunk the document into smaller parts."""

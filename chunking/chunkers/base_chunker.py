@@ -120,7 +120,7 @@ class BaseChunker:
             "title": self._extract_title_from_filename(self.filename) if not title else title,
             "page": page,
             "offset": offset,
-            "security_id": "",
+            "security_id": [],
             "relatedImages": related_images,
             "relatedFiles": related_files
         }
