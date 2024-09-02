@@ -33,7 +33,8 @@ class AzureOpenAIClient:
         )
 
     def get_completion(self, prompt, max_tokens=800, retry_after=True):
-        logging.info(f"[aoai] Getting completion for prompt: {prompt[:100]}")
+        one_liner_prompt = prompt.replace('\n', ' ')
+        logging.info(f"[aoai] Getting completion for prompt: {one_liner_prompt[:100]}")
         self.openai_deployment = os.getenv('AZURE_OPENAI_CHATGPT_DEPLOYMENT')
 
         # truncate prompt if needed
@@ -102,7 +103,8 @@ class AzureOpenAIClient:
             handling rate limit errors, and any unexpected errors.
         """
 
-        logging.info(f"[aoai] Getting embeddings for a text: {text[:100]}")
+        one_liner_text = text.replace('\n', ' ')
+        logging.info(f"[aoai] Getting embeddings for a text: {one_liner_text[:100]}")
         self.openai_deployment = os.getenv('AZURE_OPENAI_EMBEDDING_DEPLOYMENT')
 
         # summarize in case it is larger than the maximum input tokens

@@ -14,7 +14,7 @@ class ChunkerFactory:
         docint_client = DocumentIntelligenceClient()
         self.docint_40_api = docint_client.docint_40_api
 
-    def get_chunker(extension, data):
+    def get_chunker(self, extension, data):
         """
         Get the appropriate chunker based on the file extension.
 

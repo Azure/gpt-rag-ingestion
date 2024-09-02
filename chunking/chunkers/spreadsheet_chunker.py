@@ -74,9 +74,14 @@ class SpreadsheetChunker(BaseChunker):
         return chunks
 
     def _spreadsheet_process(self):
+        # blob_data = self.blob_client.download_blob(self.file_url).readall()  # Read the blob content as bytes
+        # blob_stream = BytesIO(blob_data)
+        # workbook = load_workbook(blob_stream, data_only=True)
+
         blob_data = self.blob_client.download_blob(self.file_url)
         blob_stream = BytesIO(blob_data)
         workbook = load_workbook(blob_stream, data_only=True)
+
         # Process each sheet in the workbook
         sheets = []
         
