@@ -14,7 +14,7 @@ class ChunkerFactory:
         docint_client = DocumentIntelligenceClient()
         self.docint_40_api = docint_client.docint_40_api
 
-    def get_chunker(extension, data):
+    def get_chunker(self, extension, data):
         """
         Get the appropriate chunker based on the file extension.
 
@@ -26,7 +26,7 @@ class ChunkerFactory:
             BaseChunker: An instance of a chunker class.
         """
         filename = data['documentUrl'].split('/')[-1]
-        logging.info(f"[chunker_factory] Creating chunker for {filename}")
+        logging.info(f"[chunker_factory][{filename}] Creating chunker")
 
         if extension == 'vtt':
             return TranscriptionChunker(data)

@@ -12,7 +12,7 @@ class BlobStorageClient:
             container_name = parsed_url.path.split("/")[1]
             blob_name = parsed_url.path.split("/")[2]
 
-            logging.info(f"[blob] Connecting to blob to get {blob_name}.")
+            logging.info(f"[blob][{blob_name}] Connecting to blob.")
 
             credential = DefaultAzureCredential()
             blob_service_client = BlobServiceClient(account_url=account_url, credential=credential)
@@ -24,7 +24,7 @@ class BlobStorageClient:
             try:
                 data = blob_client.download_blob().readall()
             except Exception as e:
-                logging.info("[blob] Connection error, retrying in 10 seconds...")
+                logging.info(f"[blob][{blob_name}] Connection error, retrying in 10 seconds...")
                 time.sleep(10)
                 try:
                     data = blob_client.download_blob().readall()
@@ -33,6 +33,6 @@ class BlobStorageClient:
 
             if blob_error:
                 error_message = f"Blob client error when reading from blob storage. {blob_error}"
-                logging.info(f"[blob] {error_message}")
+                logging.info(f"[blob][{blob_name}] {error_message}")
             
             return data	

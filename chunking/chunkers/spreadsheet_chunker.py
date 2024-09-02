@@ -4,7 +4,6 @@ from io import BytesIO
 from openpyxl import load_workbook
 from tabulate import tabulate
 
-from tools import BlobStorageClient
 from .base_chunker import BaseChunker
 
 class SpreadsheetChunker(BaseChunker):
@@ -55,16 +54,15 @@ class SpreadsheetChunker(BaseChunker):
             data (str): The spreadsheet content to be chunked.
         """
         super().__init__(data)
-        self.blob_client = BlobStorageClient()
         self.max_chunk_size = max_chunk_size or 4096
 
     def get_chunks(self):           
         chunks = [] 
-        logging.info(f"[spreadsheet_chunker] Running get_chunks for {self.filename}.")
+        logging.info(f"[spreadsheet_chunker][{self.filename}] Running get_chunks.")
 
         # Extract the relevant text from the spreadsheet
         sheets = self._spreadsheet_process()
-        logging.info(f"[spreadsheet_chunker] Spreadsheet has {len(sheets)} sheets")
+        logging.info(f"[spreadsheet_chunker][{self.filename}] workbook has {len(sheets)} sheets")
 
         chunk_id = 0
         for sheet in sheets:
@@ -77,6 +75,7 @@ class SpreadsheetChunker(BaseChunker):
         blob_data = self.blob_client.download_blob(self.file_url)
         blob_stream = BytesIO(blob_data)
         workbook = load_workbook(blob_stream, data_only=True)
+
         # Process each sheet in the workbook
         sheets = []
         
