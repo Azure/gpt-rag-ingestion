@@ -19,13 +19,13 @@ To redeploy only the ingestion component (after the initial deployment of the so
 
 Then just clone this repository and reproduce the following commands within the gpt-rag-ingestion directory:  
 
-```
+```bash
 azd auth login  
 azd env refresh  
 azd deploy  
 ```
 
-> Note: when running the ```azd env refresh```, use the same environment name, subscription, and region used in the initial provisioning of the infrastructure.
+> Note: when running the `azd env refresh`, use the same environment name, subscription, and region used in the initial provisioning of the infrastructure.
 
 ## Running Locally with VS Code  
    
@@ -33,47 +33,75 @@ azd deploy
 
 ## Document Intelligence API version
 
-To use version 4.0 of Document Intelligence, it is necessary to add the property `DOCINT_API_VERSION` with the value `2024-02-29-preview` in the function app properties. It's important to check if this version is supported in the region where the service was created. More information can be found at [this link](https://learn.microsoft.com/en-us/azure/ai-services/document-intelligence/concept-layout?view=doc-intel-4.0.0). If the property has not been defined (default behavior), the version `2023-07-31` (3.1) will be used.
+To use version 4.0 of Document Intelligence, it is necessary to add the property `DOCINT_API_VERSION` with the value `2024-07-31-preview` in the function app properties. It's important to check if this version is supported in the region where the service was created. More information can be found at [this link](https://learn.microsoft.com/en-us/azure/ai-services/document-intelligence/concept-layout?view=doc-intel-4.0.0). If the property has not been defined (default behavior), the version `2023-07-31` (3.1) will be used.
 
-# Supported input formats for data ingestion
+## Document Chunking Process
+
+The `document_chunking` function is responsible for breaking down documents into smaller pieces known as chunks. 
+
+When a document is submitted, the system identifies its file extension and selects the appropriate chunker to divide it into chunks, each tailored to the specific file type.
+
+- **For `.pdf` files**, the system leverages the [DocAnalysisChunker](chunking/chunkers/doc_analysis_chunker.py) to analyze the document using the Document Intelligence API. This analysis extracts structured elements, such as tables and sections, and converts them into Markdown format. The LangChain splitters are then applied to segment the content based on sections. If the Document Intelligence API 4.0 is enabled, `.docx` and `.pptx` files are also processed using this chunker.
+
+- **For image files** such as `.bmp`, `.png`, `.jpeg`, and `.tiff`, the [DocAnalysisChunker](chunking/chunkers/doc_analysis_chunker.py) is employed. This chunker includes Optical Character Recognition (OCR) to extract text from the images before chunking.
+
+- **For specialized formats**, different chunkers are used:
+    - `.vtt` files (video transcriptions) are handled by the [TranscriptionChunker](chunking/chunkers/transcription_chunker.py), chunking content by time codes.
+    - `.xlsx` files (spreadsheets) are processed by the [SpreadsheetChunker](chunking/chunkers/spreadsheet_chunker.py), chunking by rows or sheets.
+
+- **For text-based files** like `.txt`, `.md`, `.json`, and `.csv`, the system uses the [LangChainChunker](chunking/chunkers/langchain_chunker.py), which uses LangChain splitters to divide the content based on logical separators such as paragraphs or sections. If the Document Intelligence API 4.0 is not enabled, `.docx` and `.pptx` files are also processed by this chunker.
+
+This flow ensures that each document is processed with the chunker best suited for its format, leading to efficient and accurate chunking tailored to the specific file type.
 
 
-**Document Intelligence Chunking**
+### Customization
 
-| Extension | Doc Int API version |
-|-----------|-------------------|
-| pdf       | 3.1, 4.0          |
-| bmp       | 3.1, 4.0          |
-| jpeg      | 3.1, 4.0          |
-| png       | 3.1, 4.0          |
-| tiff      | 3.1, 4.0          |
-| docx      | 4.0               |
-| pptx      | 4.0               |
-| xlsx      | 4.0               |
-| html      | 4.0               |
+The chunking process is flexible and can be customized. You can modify the existing chunkers or create new ones to suit your specific data processing needs, allowing for a more tailored and efficient processing pipeline.
 
-**Langchain text Splitters Chunking**
+### Supported Formats
 
-| Extension | Format |
-|-----------|--------|
-| txt       | text   |
-| html      | html   |
-| shtml     | html   |
-| htm       | html   |
-| py        | python |
-| pdf       | pdf    |
-| json      | json   |
-| csv       | csv    |
-| epub      | epub   |
-| rtf       | rtf    |
-| xml       | xml    |
-| xlsx      | xlsx   |
-| xls       | xls    |
-| pptx      | pptx   |
-| ppt       | ppt    |
-| msg       | msg    |
+Here are the formats supported by the chunkers. 
 
-Note: First, based on the file extension check if it can be processed with Document Intelligence and then chunked. If not, just use the content extracted by AI Search and attempt to perform chunking with Langchain text splitter.
+> [!NOTE]
+> Note that the choice of chunk is determined by the format, following the guidelines provided above.
+
+#### Doc Analysis Chunker (Document Intelligence based)
+
+| Extension | Doc Int API Version |
+|-----------|---------------------|
+| pdf       | 3.1, 4.0            |
+| bmp       | 3.1, 4.0            |
+| jpeg      | 3.1, 4.0            |
+| png       | 3.1, 4.0            |
+| tiff      | 3.1, 4.0            |
+| xslx      | 4.0                 |
+| docx      | 4.0                 |
+| pptx      | 4.0                 |
+
+#### LangChain Chunker
+
+
+| Extension | Format                                      |
+|-----------|---------------------------------------------|
+| md        | Markdown document                           |
+| txt       | Plain text file                             |
+| html      | HTML document                               |
+| shtml     | Server-side HTML document                   |
+| htm       | HTML document                               |
+| py        | Python script                               |
+| json      | JSON data file                              |
+| csv       | Comma-separated values file                 |
+| epub      | EPUB eBook                                  |
+| rtf       | Rich Text Format document                   |
+| xml       | XML data file                               |
+| xlsx      | Excel spreadsheet (Open XML format)         |
+| xls       | Excel spreadsheet (legacy format)           |
+| docx      | Word document (Open XML format)             |
+| doc       | Word document (legacy format)               |
+| pptx      | PowerPoint presentation (Open XML format)   |
+| ppt       | PowerPoint presentation (legacy format)     |
+| msg       | Outlook email message file                  |
+| pdf       | PDF document                                |
 
 ## References
 
