@@ -2,7 +2,7 @@ import logging
 import os
 import re
 
-from tools import AzureOpenAIClient, GptTokenEstimator
+from tools import AzureOpenAIClient, BlobStorageClient, GptTokenEstimator
 from utils.file_utils import get_file_extension, get_filename
 
 class BaseChunker:
@@ -76,6 +76,7 @@ class BaseChunker:
         self.extension = get_file_extension(self.url)           
         self.token_estimator = GptTokenEstimator()
         self.aoai_client = AzureOpenAIClient()
+        self.blob_client = BlobStorageClient()        
 
     def get_chunks(self):
         """Abstract method to be implemented by subclasses."""
