@@ -53,6 +53,8 @@ When a document is submitted, the system identifies its file extension and selec
 
 This flow ensures that each document is processed with the chunker best suited for its format, leading to efficient and accurate chunking tailored to the specific file type.
 
+> [!IMPORTANT]
+> Note that the choice of chunker is determined by the format, following the guidelines provided above.
 
 ### Customization
 
@@ -60,10 +62,7 @@ The chunking process is flexible and can be customized. You can modify the exist
 
 ### Supported Formats
 
-Here are the formats supported by the chunkers. 
-
-> [!NOTE]
-> Note that the choice of chunk is determined by the format, following the guidelines provided above.
+Here are the formats supported by the chunkers. Note that the decision on which chunker will be used based on the format is described earlier.
 
 #### Doc Analysis Chunker (Document Intelligence based)
 
