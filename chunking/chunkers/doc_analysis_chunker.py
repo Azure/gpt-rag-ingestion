@@ -81,7 +81,7 @@ class DocAnalysisChunker(BaseChunker):
         if self.extension not in self.supported_formats:
             raise UnsupportedFormatError(f"[doc_analysis_chunker] {self.extension} format is not supported")
 
-        logging.info(f"[doc_analysis_chunker] Analyzing {self.filename}.")
+        logging.info(f"[doc_analysis_chunker] Running get_chunks for {self.filename}.")
 
         document, analysis_errors = self._analyze_document_with_retry()
         if analysis_errors:

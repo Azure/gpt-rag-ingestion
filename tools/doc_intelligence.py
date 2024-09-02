@@ -107,62 +107,44 @@ class DocumentIntelligenceClient:
         # Set request headers
         token = DefaultAzureCredential().get_token("https://cognitiveservices.azure.com/.default")
 
-        if not self.network_isolation:
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {token.token}",
-                "x-ms-useragent": "gpt-rag/1.0.0"
-            }            
-            body = {
-                "urlSource": file_url
-            }
-            try:
-                logging.info("[docintelligence] Request endpoint: " + request_endpoint)                
-                response = requests.post(request_endpoint, headers=headers, json=body)
-            except requests.exceptions.ConnectionError:
-                logging.info("[docintelligence] Connection error, retrying in 10 seconds...")
-                time.sleep(10)
-                response = requests.post(request_endpoint, headers=headers, json=body)
-        else:
-            headers = {
-                        "Content-Type": self._get_content_type(file_ext),
-                        "Authorization": f"Bearer {token.token}",
-                        "x-ms-useragent": "gpt-rag/1.0.0"
-                    }            
-            parsed_url = urlparse(file_url)
-            account_url = parsed_url.scheme + "://" + parsed_url.netloc
-            container_name = parsed_url.path.split("/")[1]
-            blob_name = parsed_url.path.split("/")[2]
-            file_ext = blob_name.split(".")[-1]
+        headers = {
+                    "Content-Type": self._get_content_type(file_ext),
+                    "Authorization": f"Bearer {token.token}",
+                    "x-ms-useragent": "gpt-rag/1.0.0"
+                }            
+        parsed_url = urlparse(file_url)
+        account_url = parsed_url.scheme + "://" + parsed_url.netloc
+        container_name = parsed_url.path.split("/")[1]
+        blob_name = parsed_url.path.split("/")[2]
+        file_ext = blob_name.split(".")[-1]
 
-            logging.info(f"[docintelligence] Connecting to blob to get {blob_name}.")
+        logging.info(f"[docintelligence] Connecting to blob to get {blob_name}.")
 
-            credential = DefaultAzureCredential()
-            blob_service_client = BlobServiceClient(account_url=account_url, credential=credential)
-            blob_client = blob_service_client.get_blob_client(container=container_name, blob=blob_name)
+        credential = DefaultAzureCredential()
+        blob_service_client = BlobServiceClient(account_url=account_url, credential=credential)
+        blob_client = blob_service_client.get_blob_client(container=container_name, blob=blob_name)
 
-            blob_error = None
+        blob_error = None
 
+        try:
+            data = blob_client.download_blob().readall()
+            response = requests.post(request_endpoint, headers=headers, data=data)
+        except requests.exceptions.ConnectionError:
+            logging.info("[docintelligence] Connection error, retrying in 10 seconds...")
+            time.sleep(10)
             try:
                 data = blob_client.download_blob().readall()
-                logging.info("[docintelligence] Request endpoint: " + request_endpoint)   
                 response = requests.post(request_endpoint, headers=headers, data=data)
-            except requests.exceptions.ConnectionError:
-                logging.info("[docintelligence] Connection error, retrying in 10 seconds...")
-                time.sleep(10)
-                try:
-                    data = blob_client.download_blob().readall()
-                    response = requests.post(request_endpoint, headers=headers, data=data)
-                except Exception as e:
-                    blob_error = e
             except Exception as e:
                 blob_error = e
+        except Exception as e:
+            blob_error = e
 
-            if blob_error:
-                error_message = f"Blob client error when reading from blob storage. {blob_error}"
-                logging.info(f"[docintelligence] {error_message}")
-                errors.append(error_message)
-                return result, errors
+        if blob_error:
+            error_message = f"Blob client error when reading from blob storage. {blob_error}"
+            logging.info(f"[docintelligence] {error_message}")
+            errors.append(error_message)
+            return result, errors
 
         error_messages = {
             404: "Resource not found, please verify your request url. The Doc Intelligence API version you are using may not be supported in your region.",
