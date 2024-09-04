@@ -10,9 +10,8 @@ class BlobStorageClient:
             parsed_url = urlparse(file_url)
             account_url = parsed_url.scheme + "://" + parsed_url.netloc
             container_name = parsed_url.path.split("/")[1]
-            # blob_name = parsed_url.path.split("/")[2]
-            blob_name = unquote(parsed_url.path.split("/")[2])
-
+            url_decoded = unquote(parsed_url.path)
+            blob_name = url_decoded[len(container_name) + 2:]
             logging.info(f"[blob][{blob_name}] Connecting to blob.")
 
             credential = DefaultAzureCredential()
