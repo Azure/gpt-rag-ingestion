@@ -663,7 +663,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
             "base64EncodeKeys": True,
             "configuration": 
             {
-                "dataToExtract": "metadata"
+                "dataToExtract": "allMetadata"
             }
         }
     }
