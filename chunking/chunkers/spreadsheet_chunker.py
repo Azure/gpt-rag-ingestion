@@ -1,4 +1,5 @@
 import logging
+import os
 from io import BytesIO
 
 from openpyxl import load_workbook
@@ -54,7 +55,8 @@ class SpreadsheetChunker(BaseChunker):
             data (str): The spreadsheet content to be chunked.
         """
         super().__init__(data)
-        self.max_chunk_size = max_chunk_size or 4096
+        max_chunk_size = os.getenv("SPREADSHEET_NUM_TOKENS", 4096) if max_chunk_size is None else max_chunk_size
+        self.max_chunk_size = max_chunk_size
 
     def get_chunks(self):           
         chunks = [] 
@@ -88,7 +90,7 @@ class SpreadsheetChunker(BaseChunker):
             prompt = f"Summarize the html table provided.\ntable_content: \n{table} "
             summary = self.aoai_client.get_completion(prompt, max_tokens=4096)
             sheet_dict["summary"] = summary
-              
+
             if self.token_estimator.estimate_tokens(table) < self.max_chunk_size:
                 sheet_dict["table"] = table
             else:
@@ -97,6 +99,7 @@ class SpreadsheetChunker(BaseChunker):
                     sheet_dict["table"] = table
                 else:
                     sheet_dict["table"] = summary
+
             sheets.append(sheet_dict)
         
         return sheets
