@@ -70,7 +70,9 @@ class SpreadsheetChunker(BaseChunker):
         for sheet in sheets:
             chunk_id += 1
             chunk_dict = self._create_chunk(chunk_id=chunk_id, content=sheet["table"], summary=sheet["summary"], embedding_text=sheet["summary"], title=sheet["name"]) 
-            chunks.append(chunk_dict)    
+            chunks.append(chunk_dict)
+
+        logging.info(f"[spreadsheet_chunker][{self.filename}] Finished get_chunks. Created {len(chunks)} chunks.")
         return chunks
 
     def _spreadsheet_process(self):
@@ -91,13 +93,17 @@ class SpreadsheetChunker(BaseChunker):
             summary = self.aoai_client.get_completion(prompt, max_tokens=4096)
             sheet_dict["summary"] = summary
 
-            if self.token_estimator.estimate_tokens(table) < self.max_chunk_size:
+            table_tokens = self.token_estimator.estimate_tokens(table)
+            if table_tokens < self.max_chunk_size:
                 sheet_dict["table"] = table
             else:
+                logging.info(f"[spreadsheet_chunker][{self.filename}].  HTML table has {table_tokens} tokens. Converting to markdown.")
                 table = self._excel_to_markdown(sheet)
-                if self.token_estimator.estimate_tokens(table) < self.max_chunk_size:
+                table_tokens = self.token_estimator.estimate_tokens(table)
+                if table_tokens < self.max_chunk_size:
                     sheet_dict["table"] = table
                 else:
+                    logging.info(f"[spreadsheet_chunker][{self.filename}].  Markdown table has {table_tokens} tokens. Using summary as the content.")
                     sheet_dict["table"] = summary
 
             sheets.append(sheet_dict)
