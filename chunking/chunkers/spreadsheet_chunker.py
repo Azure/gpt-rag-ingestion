@@ -80,10 +80,8 @@ class SpreadsheetChunker(BaseChunker):
         logging.info(f"[spreadsheet_chunker][{self.filename}] starting blob download.")        
         blob_data = self.blob_client.download_blob(self.file_url)
         blob_stream = BytesIO(blob_data)
-        logging.info(f"[spreadsheet_chunker][{self.filename}] finished blob download.")         
         logging.info(f"[spreadsheet_chunker][{self.filename}] starting openpyxl load_workbook.")                     
         workbook = load_workbook(blob_stream, data_only=True)
-        logging.info(f"[spreadsheet_chunker][{self.filename}] finished openpyxl load_workbook.") 
 
         # Process each sheet in the workbook
         sheets = []
@@ -99,6 +97,8 @@ class SpreadsheetChunker(BaseChunker):
             sheet_dict["summary"] = summary
 
             table_tokens = self.token_estimator.estimate_tokens(table)
+            logging.info(f"[spreadsheet_chunker][{self.filename}].  HTML table has {table_tokens} tokens.")
+
             if table_tokens < self.max_chunk_size:
                 sheet_dict["table"] = table
             else:

@@ -31,7 +31,7 @@ class ChunkerFactory:
         if extension == 'vtt':
             return TranscriptionChunker(data)
         elif extension == 'xlsx':
-            return SpreadsheetChunker(data)
+            return SpreadsheetChunker(data, max_chunk_size=4096)
         elif extension in ('pdf', 'png', 'jpeg', 'jpg', 'bmp', 'tiff'):
             return DocAnalysisChunker(data)
         elif extension in ('docx', 'pptx') and self.docint_40_api:
