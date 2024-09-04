@@ -67,16 +67,17 @@ class BaseChunker:
                 - "documentContentType"
         """
         self.url = data['documentUrl']
-        self.document_content = data['documentContent']    
         self.data = data
         self.url = data['documentUrl']
         self.sas_token = data['documentSasToken']
         self.file_url = f"{self.url}{self.sas_token}"        
         self.filename = get_filename(self.url)
-        self.extension = get_file_extension(self.url)           
+        self.extension = get_file_extension(self.url)
+        document_content = data.get('documentContent') # Reserved for future use: Document content extraction with AI Search is currently not implemented.
+        self.document_content = document_content if document_content else ""
         self.token_estimator = GptTokenEstimator()
         self.aoai_client = AzureOpenAIClient(document_filename=self.filename)
-        self.blob_client = BlobStorageClient()        
+        self.blob_client = BlobStorageClient(self.file_url)
 
     def get_chunks(self):
         """Abstract method to be implemented by subclasses."""

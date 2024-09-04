@@ -6,8 +6,11 @@ import time
 
 class BlobStorageClient:
 
-    def download_blob(self, file_url):        
-            parsed_url = urlparse(file_url)
+    def __init__(self, file_url):
+        self.file_url = file_url
+
+    def download_blob(self):
+            parsed_url = urlparse(self.file_url)
             account_url = parsed_url.scheme + "://" + parsed_url.netloc
             container_name = parsed_url.path.split("/")[1]
             url_decoded = unquote(parsed_url.path)

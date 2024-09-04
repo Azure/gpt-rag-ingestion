@@ -507,11 +507,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                     {
                         "name":"documentUrl",
                         "source":"/document/metadata_storage_path"
-                    },
-                    {
-                        "name":"documentContent",
-                        "source":"/document/content"
-                    },                    
+                    },                   
                     { 
                         "name":"documentSasToken",
                         "source":"/document/metadata_storage_sas_token"
@@ -667,7 +663,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
             "base64EncodeKeys": True,
             "configuration": 
             {
-                "dataToExtract": "contentAndMetadata"
+                "dataToExtract": "metadata"
             }
         }
     }

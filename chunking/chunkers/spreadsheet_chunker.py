@@ -15,7 +15,7 @@ class SpreadsheetChunker(BaseChunker):
     ---------------
     The SpreadsheetChunker is initialized with the following parameters:
     - data (str): The spreadsheet content to be chunked.
-    - max_chunk_size (int, optional): The maximum size of each chunk in tokens. Defaults to 4096 tokens.
+    - max_chunk_size (int, optional): The maximum size of each chunk in tokens.
 
     Attributes:
     -----------
@@ -78,7 +78,7 @@ class SpreadsheetChunker(BaseChunker):
     def _spreadsheet_process(self):
 
         logging.info(f"[spreadsheet_chunker][{self.filename}] starting blob download.")        
-        blob_data = self.blob_client.download_blob(self.file_url)
+        blob_data = self.blob_client.download_blob()
         blob_stream = BytesIO(blob_data)
         logging.info(f"[spreadsheet_chunker][{self.filename}] starting openpyxl load_workbook.")                     
         workbook = load_workbook(blob_stream, data_only=True)

@@ -79,28 +79,18 @@ Here are the formats supported by the chunkers. Note that the decision on which 
 
 #### LangChain Chunker
 
+| Extension | Format              |
+|-----------|---------------------|
+| md        | Markdown document   |
+| txt       | Plain text file     |
+| html      | HTML document       |
+| shtml     | Server-side HTML document |
+| htm       | HTML document       |
+| py        | Python script       |
+| json      | JSON data file      |
+| csv       | Comma-separated values file |
+| xml       | XML data file       |
 
-| Extension | Format                                      |
-|-----------|---------------------------------------------|
-| md        | Markdown document                           |
-| txt       | Plain text file                             |
-| html      | HTML document                               |
-| shtml     | Server-side HTML document                   |
-| htm       | HTML document                               |
-| py        | Python script                               |
-| json      | JSON data file                              |
-| csv       | Comma-separated values file                 |
-| epub      | EPUB eBook                                  |
-| rtf       | Rich Text Format document                   |
-| xml       | XML data file                               |
-| xlsx      | Excel spreadsheet (Open XML format)         |
-| xls       | Excel spreadsheet (legacy format)           |
-| docx      | Word document (Open XML format)             |
-| doc       | Word document (legacy format)               |
-| pptx      | PowerPoint presentation (Open XML format)   |
-| ppt       | PowerPoint presentation (legacy format)     |
-| msg       | Outlook email message file                  |
-| pdf       | PDF document                                |
 
 ## References
 
