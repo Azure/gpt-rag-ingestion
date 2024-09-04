@@ -55,10 +55,10 @@ class SpreadsheetChunker(BaseChunker):
             data (str): The spreadsheet content to be chunked.
         """
         super().__init__(data)
-        max_chunk_size = os.getenv("SPREADSHEET_NUM_TOKENS", 4096) if max_chunk_size is None else max_chunk_size
+        max_chunk_size = os.getenv("SPREADSHEET_NUM_TOKENS", 8192) if max_chunk_size is None else max_chunk_size
         self.max_chunk_size = max_chunk_size
 
-    def get_chunks(self):           
+    def get_chunks(self):
         chunks = [] 
         logging.info(f"[spreadsheet_chunker][{self.filename}] Running get_chunks.")
 
@@ -97,18 +97,18 @@ class SpreadsheetChunker(BaseChunker):
             sheet_dict["summary"] = summary
 
             table_tokens = self.token_estimator.estimate_tokens(table)
-            logging.info(f"[spreadsheet_chunker][{self.filename}].  HTML table has {table_tokens} tokens.")
-
+    
             if table_tokens < self.max_chunk_size:
+                logging.info(f"[spreadsheet_chunker][{self.filename}][{sheet_name}].  HTML table has {table_tokens} tokens. Max tokens is {self.max_chunk_size}.")
                 sheet_dict["table"] = table
             else:
-                logging.info(f"[spreadsheet_chunker][{self.filename}].  HTML table has {table_tokens} tokens. Converting to markdown.")
+                logging.info(f"[spreadsheet_chunker][{self.filename}][{sheet_name}].  HTML table has {table_tokens} tokens. Max tokens is {self.max_chunk_size} Converting to markdown.")
                 table = self._excel_to_markdown(sheet)
                 table_tokens = self.token_estimator.estimate_tokens(table)
                 if table_tokens < self.max_chunk_size:
                     sheet_dict["table"] = table
                 else:
-                    logging.info(f"[spreadsheet_chunker][{self.filename}].  Markdown table has {table_tokens} tokens. Using summary as the content.")
+                    logging.info(f"[spreadsheet_chunker][{self.filename}][{sheet_name}].  Markdown table has {table_tokens} tokens. Max tokens is {self.max_chunk_size} Using summary as the content.")
                     sheet_dict["table"] = summary
 
             sheets.append(sheet_dict)
