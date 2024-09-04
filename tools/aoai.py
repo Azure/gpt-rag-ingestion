@@ -66,10 +66,6 @@ class AzureOpenAIClient:
             return completion
 
         except RateLimitError as e:
-            logging.error(f"[aoai]{self.document_filename} get_completion: Rate limit error occurred: {e}")
-            raise
-
-        except RateLimitError as e:
             if retry_after:
                 retry_after_ms = int(e.response.headers['retry-after-ms'])
                 logging.info(f"[aoai]{self.document_filename} get_completion: Reached rate limit retrying after {retry_after_ms} ms")
