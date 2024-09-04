@@ -62,7 +62,6 @@ class BaseChunker:
         data : dict
             A dictionary containing the following keys:
                 - "documentUrl"
-                - "documentContent"
                 - "documentSasToken"
                 - "documentContentType"
         """
