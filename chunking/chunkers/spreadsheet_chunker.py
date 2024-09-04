@@ -76,9 +76,14 @@ class SpreadsheetChunker(BaseChunker):
         return chunks
 
     def _spreadsheet_process(self):
+
+        logging.info(f"[spreadsheet_chunker][{self.filename}] starting blob download.")        
         blob_data = self.blob_client.download_blob(self.file_url)
         blob_stream = BytesIO(blob_data)
+        logging.info(f"[spreadsheet_chunker][{self.filename}] finished blob download.")         
+        logging.info(f"[spreadsheet_chunker][{self.filename}] starting openpyxl load_workbook.")                     
         workbook = load_workbook(blob_stream, data_only=True)
+        logging.info(f"[spreadsheet_chunker][{self.filename}] finished openpyxl load_workbook.") 
 
         # Process each sheet in the workbook
         sheets = []
