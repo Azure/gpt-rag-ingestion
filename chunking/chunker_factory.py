@@ -30,7 +30,7 @@ class ChunkerFactory:
 
         if extension == 'vtt':
             return TranscriptionChunker(data)
-        elif extension == 'xlsx':
+        elif extension in ('xlsx', 'xls'):
             return SpreadsheetChunker(data)
         elif extension in ('pdf', 'png', 'jpeg', 'jpg', 'bmp', 'tiff'):
             return DocAnalysisChunker(data)
