@@ -60,7 +60,7 @@ class DocumentChunker:
             if exception is not None:
                 error_message += f"Exception: {str(exception)}"
 
-        logging.info(f"[document_chunking]{f'[{filename}]' if filename else ''} Error: {error_message}, Ingested Document: {self.ingested_document}")
+        logging.info(f"[document_chunking]{f'[{filename}]' if filename else ''} Error: {error_message}, Ingested Document: {f'[{filename}]' if filename else ''}")
 
         return error_message
 

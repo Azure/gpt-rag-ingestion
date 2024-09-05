@@ -5,7 +5,7 @@ import time
 from openai import AzureOpenAI, RateLimitError
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
-MAX_RETRIES = 3 # Maximum number of retries for rate limit errors
+MAX_RETRIES = 10 # Maximum number of retries for rate limit errors
 MAX_EMBEDDINGS_MODEL_INPUT_TOKENS = 8192
 MAX_GPT_MODEL_INPUT_TOKENS = 128000 # this is gpt4o max input, if using gpt35turbo use 16385
 
@@ -14,7 +14,7 @@ class AzureOpenAIClient:
     AzureOpenAIClient uses the OpenAI SDK's built-in retry mechanism with exponential backoff.
     The number of retries is controlled by the MAX_RETRIES environment variable.
     Delays between retries start at 0.5 seconds, doubling up to 8 seconds.
-    If a rate limit error occurs after retries, the client will retry once more after the retry-after-ms header duration.
+    If a rate limit error occurs after retries, the client will retry once more after the retry-after-ms header duration (if the header is present).
     """
     def __init__(self, document_filename=""):
         """
@@ -66,17 +66,14 @@ class AzureOpenAIClient:
             return completion
 
         except RateLimitError as e:
-            logging.error(f"[aoai]{self.document_filename} get_completion: Rate limit error occurred: {e}")
-            raise
-
-        except RateLimitError as e:
-            if retry_after:
-                retry_after_ms = int(e.response.headers['retry-after-ms'])
-                logging.info(f"[aoai]{self.document_filename} get_completion: Reached rate limit retrying after {retry_after_ms} ms")
-                time.sleep(e.retry_after / 1000)
+            retry_after_ms = e.response.headers.get('retry-after-ms')
+            if retry_after_ms:
+                retry_after_ms = int(retry_after_ms)
+                logging.info(f"[aoai]{self.document_filename} get_completion: Reached rate limit, retrying after {retry_after_ms} ms")
+                time.sleep(retry_after_ms / 1000)
                 return self.get_completion(self, prompt, retry_after=False)
             else:
-                logging.error(f"[aoai]{self.document_filename} get_completion: Rate limit error occurred: {e}")
+                logging.error(f"[aoai]{self.document_filename} get_completion: Rate limit error occurred, no 'retry-after-ms' provided: {e}")
                 raise
 
         except Exception as e:
@@ -104,13 +101,14 @@ class AzureOpenAIClient:
             return embeddings
         
         except RateLimitError as e:
-            if retry_after:
-                retry_after_ms = int(e.response.headers['retry-after-ms'])
-                logging.info(f"[aoai]{self.document_filename} get_embedding: Reached rate limit retrying after {retry_after_ms} ms")
-                time.sleep(e.retry_after / 1000)
-                return self.get_embeddings(self, text, retry_after=False)
+            retry_after_ms = e.response.headers.get('retry-after-ms')
+            if retry_after_ms:
+                retry_after_ms = int(retry_after_ms)
+                logging.info(f"[aoai]{self.document_filename} get_completion: Reached rate limit, retrying after {retry_after_ms} ms")
+                time.sleep(retry_after_ms / 1000)
+                return self.get_completion(self, prompt, retry_after=False)
             else:
-                logging.error(f"[aoai]{self.document_filename} get_embedding: Rate limit error occurred: {e}")
+                logging.error(f"[aoai]{self.document_filename} get_completion: Rate limit error occurred, no 'retry-after-ms' provided: {e}")
                 raise
 
         except Exception as e:

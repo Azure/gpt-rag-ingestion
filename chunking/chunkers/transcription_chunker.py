@@ -60,13 +60,12 @@ class TranscriptionChunker(BaseChunker):
 
         # Extract the text from the vtt file
         text = self._vtt_process()
-        self.document_content = text
         logging.info(f"[transcription_chunker][{self.filename}] transcription text: {text[:100]}")
 
         # Get the summary of the text
         prompt = f"Provide clearly elaborated summary along with the keypoints and values mentioned for the transcript of a conversation: {text} "
         summary = self.aoai_client.get_completion(prompt)
-        text_chunks = self._chunk_document_content()
+        text_chunks = self._chunk_document_content(text)
         chunk_id = 0
         for text_chunk in text_chunks:
             chunk_id += 1
@@ -79,7 +78,7 @@ class TranscriptionChunker(BaseChunker):
         return chunks
 
     def _vtt_process(self):
-        blob_data = self.blob_client.download_blob(self.file_url)
+        blob_data = self.blob_client.download_blob()
         blob_stream = BytesIO(blob_data)
         vtt = webvtt.read_buffer(blob_stream)
         data, text, voice = [], "", ""
@@ -99,7 +98,7 @@ class TranscriptionChunker(BaseChunker):
 
         return "\n".join(data).strip()
 
-    def _chunk_document_content(self):
+    def _chunk_document_content(self, text):
 
         sentence_endings = [".", "!", "?"]
         word_breaks = [" ", "\n", "\t"]
@@ -108,8 +107,7 @@ class TranscriptionChunker(BaseChunker):
             chunk_size=self.max_chunk_size, 
             chunk_overlap=self.token_overlap
         )
-    
-        chunked_content_list = splitter.split_text(self.document_content)
+        chunked_content_list = splitter.split_text(text)
     
         for chunked_content in chunked_content_list:
             yield chunked_content # type: ignore

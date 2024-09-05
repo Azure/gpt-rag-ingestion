@@ -1,4 +1,5 @@
 import logging
+import os
 from io import BytesIO
 
 from openpyxl import load_workbook
@@ -14,7 +15,7 @@ class SpreadsheetChunker(BaseChunker):
     ---------------
     The SpreadsheetChunker is initialized with the following parameters:
     - data (str): The spreadsheet content to be chunked.
-    - max_chunk_size (int, optional): The maximum size of each chunk in tokens. Defaults to 4096 tokens.
+    - max_chunk_size (int, optional): The maximum size of each chunk in tokens.
 
     Attributes:
     -----------
@@ -54,9 +55,10 @@ class SpreadsheetChunker(BaseChunker):
             data (str): The spreadsheet content to be chunked.
         """
         super().__init__(data)
-        self.max_chunk_size = max_chunk_size or 4096
+        max_chunk_size = int(os.getenv("SPREADSHEET_NUM_TOKENS", 8192)) if max_chunk_size is None else int(max_chunk_size)
+        self.max_chunk_size = max_chunk_size
 
-    def get_chunks(self):           
+    def get_chunks(self):
         chunks = [] 
         logging.info(f"[spreadsheet_chunker][{self.filename}] Running get_chunks.")
 
@@ -68,12 +70,17 @@ class SpreadsheetChunker(BaseChunker):
         for sheet in sheets:
             chunk_id += 1
             chunk_dict = self._create_chunk(chunk_id=chunk_id, content=sheet["table"], summary=sheet["summary"], embedding_text=sheet["summary"], title=sheet["name"]) 
-            chunks.append(chunk_dict)    
+            chunks.append(chunk_dict)
+
+        logging.info(f"[spreadsheet_chunker][{self.filename}] Finished get_chunks. Created {len(chunks)} chunks.")
         return chunks
 
     def _spreadsheet_process(self):
-        blob_data = self.blob_client.download_blob(self.file_url)
+
+        logging.info(f"[spreadsheet_chunker][{self.filename}] starting blob download.")        
+        blob_data = self.blob_client.download_blob()
         blob_stream = BytesIO(blob_data)
+        logging.info(f"[spreadsheet_chunker][{self.filename}] starting openpyxl load_workbook.")                     
         workbook = load_workbook(blob_stream, data_only=True)
 
         # Process each sheet in the workbook
@@ -88,15 +95,22 @@ class SpreadsheetChunker(BaseChunker):
             prompt = f"Summarize the html table provided.\ntable_content: \n{table} "
             summary = self.aoai_client.get_completion(prompt, max_tokens=4096)
             sheet_dict["summary"] = summary
-              
-            if self.token_estimator.estimate_tokens(table) < self.max_chunk_size:
+
+            table_tokens = self.token_estimator.estimate_tokens(table)
+    
+            if table_tokens < self.max_chunk_size:
+                logging.info(f"[spreadsheet_chunker][{self.filename}][{sheet_name}].  HTML table has {table_tokens} tokens. Max tokens is {self.max_chunk_size}.")
                 sheet_dict["table"] = table
             else:
+                logging.info(f"[spreadsheet_chunker][{self.filename}][{sheet_name}].  HTML table has {table_tokens} tokens. Max tokens is {self.max_chunk_size} Converting to markdown.")
                 table = self._excel_to_markdown(sheet)
-                if self.token_estimator.estimate_tokens(table) < self.max_chunk_size:
+                table_tokens = self.token_estimator.estimate_tokens(table)
+                if table_tokens < self.max_chunk_size:
                     sheet_dict["table"] = table
                 else:
+                    logging.info(f"[spreadsheet_chunker][{self.filename}][{sheet_name}].  Markdown table has {table_tokens} tokens. Max tokens is {self.max_chunk_size} Using summary as the content.")
                     sheet_dict["table"] = summary
+
             sheets.append(sheet_dict)
         
         return sheets
