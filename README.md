@@ -49,7 +49,7 @@ When a document is submitted, the system identifies its file extension and selec
     - `.vtt` files (video transcriptions) are handled by the [TranscriptionChunker](chunking/chunkers/transcription_chunker.py), chunking content by time codes.
     - `.xlsx` files (spreadsheets) are processed by the [SpreadsheetChunker](chunking/chunkers/spreadsheet_chunker.py), chunking by rows or sheets.
 
-- **For text-based files** like `.txt`, `.md`, `.json`, and `.csv`, the system uses the [LangChainChunker](chunking/chunkers/langchain_chunker.py), which uses LangChain splitters to divide the content based on logical separators such as paragraphs or sections. If the Document Intelligence API 4.0 is not enabled, `.docx` and `.pptx` files are also processed by this chunker.
+- **For text-based files** like `.txt`, `.md`, `.json`, and `.csv`, the system uses the [LangChainChunker](chunking/chunkers/langchain_chunker.py), which uses LangChain splitters to divide the content based on logical separators such as paragraphs or sections.
 
 This flow ensures that each document is processed with the chunker best suited for its format, leading to efficient and accurate chunking tailored to the specific file type.
 
