@@ -12,8 +12,7 @@ class ChunkerFactory:
     
     def __init__(self):
         docint_client = DocumentIntelligenceClient()
-        self.docint_40_api = docint_client.docint_40_api
-        logging.info(f"[chunker_factory][{filename}] Doc Int API: {self.docint_40_api}")      
+        self.docint_40_api = docint_client.docint_40_api 
 
     def get_chunker(self, extension, data):
         """
