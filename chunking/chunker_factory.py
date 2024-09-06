@@ -13,6 +13,7 @@ class ChunkerFactory:
     def __init__(self):
         docint_client = DocumentIntelligenceClient()
         self.docint_40_api = docint_client.docint_40_api
+        logging.info(f"[chunker_factory][{filename}] Doc Int API: {self.docint_40_api}")      
 
     def get_chunker(self, extension, data):
         """
@@ -28,17 +29,18 @@ class ChunkerFactory:
         filename = data['documentUrl'].split('/')[-1]
         logging.info(f"[chunker_factory][{filename}] Creating chunker")
 
-        logging.info(f"[chunker_factory][{filename}] Extension: {extension}")        
-        logging.info(f"[chunker_factory][{filename}] Extension: {self.docint_40_api}")        
-
         if extension == 'vtt':
             return TranscriptionChunker(data)
         elif extension in ('xlsx', 'xls'):
             return SpreadsheetChunker(data)
         elif extension in ('pdf', 'png', 'jpeg', 'jpg', 'bmp', 'tiff'):
             return DocAnalysisChunker(data)
-        elif extension in ('docx', 'pptx') and self.docint_40_api:
-            return DocAnalysisChunker(data)        
+        elif extension in ('docx', 'pptx'):
+            if self.docint_40_api:
+                return DocAnalysisChunker(data)
+            else:
+                logging.info(f"[chunker_factory][{filename}] Processing 'pptx' and 'docx' files requires Doc Intelligence 4.0.")                
+                raise RuntimeError("Processing 'pptx' and 'docx' files requires Doc Intelligence 4.0.")
         else:
             return LangChainChunker(data)
         
