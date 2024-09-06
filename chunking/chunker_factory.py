@@ -28,6 +28,9 @@ class ChunkerFactory:
         filename = data['documentUrl'].split('/')[-1]
         logging.info(f"[chunker_factory][{filename}] Creating chunker")
 
+        logging.info(f"[chunker_factory][{filename}] Extension: {extension}")        
+        logging.info(f"[chunker_factory][{filename}] Extension: {self.docint_40_api}")        
+
         if extension == 'vtt':
             return TranscriptionChunker(data)
         elif extension in ('xlsx', 'xls'):
