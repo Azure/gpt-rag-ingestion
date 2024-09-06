@@ -3,7 +3,7 @@ import time
 import json
 import logging
 import requests
-from urllib.parse import urlparse
+from urllib.parse import urlparse, unquote
 from azure.identity import DefaultAzureCredential
 from azure.storage.blob import BlobServiceClient
 
@@ -37,7 +37,7 @@ class DocumentIntelligenceClient:
         self.DEFAULT_API_VERSION = '2023-07-31'
         self.api_version = os.getenv('FORM_REC_API_VERSION', os.getenv('DOCINT_API_VERSION', self.DEFAULT_API_VERSION))
         self.docint_40_api = self.api_version >= self.DOCINT_40_API
-
+                
         # Network isolation
         network_isolation = os.getenv('NETWORK_ISOLATION', self.DEFAULT_API_VERSION)
         self.network_isolation = True if network_isolation.lower() == 'true' else False
@@ -123,7 +123,8 @@ class DocumentIntelligenceClient:
         parsed_url = urlparse(file_url)
         account_url = parsed_url.scheme + "://" + parsed_url.netloc
         container_name = parsed_url.path.split("/")[1]
-        blob_name = parsed_url.path.split("/")[2]
+        url_decoded = unquote(parsed_url.path)
+        blob_name = url_decoded[len(container_name) + 2:]
         file_ext = blob_name.split(".")[-1]
 
         logging.info(f"[docintelligence]{self.document_filename} Connecting to blob.")
