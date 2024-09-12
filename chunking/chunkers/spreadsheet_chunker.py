@@ -1,5 +1,7 @@
 import logging
 import os
+import time
+
 from io import BytesIO
 
 from openpyxl import load_workbook
@@ -60,58 +62,98 @@ class SpreadsheetChunker(BaseChunker):
 
     def get_chunks(self):
         chunks = [] 
-        logging.info(f"[spreadsheet_chunker][{self.filename}] Running get_chunks.")
+        logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks] Running get_chunks.")
+        total_start_time = time.time()
 
         # Extract the relevant text from the spreadsheet
         sheets = self._spreadsheet_process()
-        logging.info(f"[spreadsheet_chunker][{self.filename}] workbook has {len(sheets)} sheets")
+        logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks] workbook has {len(sheets)} sheets")
 
         chunk_id = 0
-        for sheet in sheets:
+        for sheet in sheets:      
+            start_time = time.time()
             chunk_id += 1
-            chunk_dict = self._create_chunk(chunk_id=chunk_id, content=sheet["table"], summary=sheet["summary"], embedding_text=sheet["summary"], title=sheet["name"]) 
+            logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Starting processing chunk {chunk_id} sheet.")            
+            chunk_dict = self._create_chunk(
+                chunk_id=chunk_id,
+                content=sheet["table"],
+                summary=sheet["summary"],
+                embedding_text=sheet["summary"] if sheet["summary"] else sheet["table"],
+                title=sheet["name"]
+            )            
             chunks.append(chunk_dict)
+            elapsed_time = time.time() - start_time
+            logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Processed chunk {chunk_id} in {elapsed_time:.2f} seconds.")            
 
-        logging.info(f"[spreadsheet_chunker][{self.filename}] Finished get_chunks. Created {len(chunks)} chunks.")
+        total_elapsed_time = time.time() - total_start_time
+        logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks] Finished get_chunks. Created {len(chunks)} chunks in {total_elapsed_time:.2f} seconds.")
+
         return chunks
 
     def _spreadsheet_process(self):
-
-        logging.info(f"[spreadsheet_chunker][{self.filename}] starting blob download.")        
+        logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process] starting blob download.")        
         blob_data = self.blob_client.download_blob()
         blob_stream = BytesIO(blob_data)
-        logging.info(f"[spreadsheet_chunker][{self.filename}] starting openpyxl load_workbook.")                     
+        logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process] starting openpyxl load_workbook.")                     
         workbook = load_workbook(blob_stream, data_only=True)
 
         # Process each sheet in the workbook
         sheets = []
+        total_start_time = time.time()
         
         for sheet_name in workbook.sheetnames:
+            logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_name}] started processing.")                   
+            start_time = time.time()
             sheet_dict = {}            
             sheet_dict['name'] = sheet_name
             sheet = workbook[sheet_name]
             
-            table = self._excel_to_html(sheet)
-            prompt = f"Summarize the html table provided.\ntable_content: \n{table} "
-            summary = self.aoai_client.get_completion(prompt, max_tokens=4096)
+            # initialize field logic variables
+            html_table = self._excel_to_html(sheet)
+            html_table_tokens = self.token_estimator.estimate_tokens(html_table)
+            markdown_table = ""
+            markdown_table_tokens = 0
+            summary = ""
+
+            # summary field logic
+            if html_table_tokens > self.aoai_client.max_embeddings_model_input_tokens:
+                logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_name}]. HTML table has {html_table_tokens} tokens. Max embeddings tokens is {self.aoai_client.max_embeddings_model_input_tokens}. Generating markdown.")
+                markdown_table = self._excel_to_markdown(sheet)     
+                markdown_table_tokens = self.token_estimator.estimate_tokens(markdown_table)                
+                if markdown_table_tokens > self.aoai_client.max_embeddings_model_input_tokens:
+                    logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_name}]. Markdown table has {markdown_table_tokens} tokens. Generating summary.")
+                    prompt = f"Summarize the markdown table provided.\ntable_content: \n{markdown_table} "
+                    summary = self.aoai_client.get_completion(prompt, max_tokens=4096)
+                else:
+                    logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_name}]. Markdown table has {markdown_table_tokens} tokens. No summary needed.")                
+                    summary = ""
+            else:
+                logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_name}]. HTML table has {html_table_tokens} tokens. No summary needed.")                
+                summary = ""
             sheet_dict["summary"] = summary
 
-            table_tokens = self.token_estimator.estimate_tokens(table)
-    
-            if table_tokens < self.max_chunk_size:
-                logging.info(f"[spreadsheet_chunker][{self.filename}][{sheet_name}].  HTML table has {table_tokens} tokens. Max tokens is {self.max_chunk_size}.")
-                sheet_dict["table"] = table
+            # table field logic
+            if html_table_tokens < self.max_chunk_size:
+                logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_name}].  HTML table has {html_table_tokens} tokens. Max tokens is {self.max_chunk_size}.")
+                sheet_dict["table"] = html_table
             else:
-                logging.info(f"[spreadsheet_chunker][{self.filename}][{sheet_name}].  HTML table has {table_tokens} tokens. Max tokens is {self.max_chunk_size} Converting to markdown.")
-                table = self._excel_to_markdown(sheet)
-                table_tokens = self.token_estimator.estimate_tokens(table)
-                if table_tokens < self.max_chunk_size:
-                    sheet_dict["table"] = table
+                logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_name}].  HTML table has {html_table_tokens} tokens. Max tokens is {self.max_chunk_size} Converting to markdown.")
+                markdown_table = self._excel_to_markdown(sheet) if markdown_table == "" else markdown_table
+                markdown_table_tokens = self.token_estimator.estimate_tokens(markdown_table) if markdown_table_tokens == 0 else markdown_table_tokens
+                if markdown_table_tokens < self.max_chunk_size:
+                    sheet_dict["table"] = markdown_table
                 else:
-                    logging.info(f"[spreadsheet_chunker][{self.filename}][{sheet_name}].  Markdown table has {table_tokens} tokens. Max tokens is {self.max_chunk_size} Using summary as the content.")
+                    logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_name}].  Markdown table has {markdown_table_tokens} tokens. Max tokens is {self.max_chunk_size} Using summary as the content.")
+                    prompt = f"Summarize the markdown table provided.\ntable_content: \n{markdown_table} "
+                    summary = self.aoai_client.get_completion(prompt, max_tokens=4096) if summary == "" else summary
                     sheet_dict["table"] = summary
 
+            elapsed_time = time.time() - start_time
+            logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_dict['name']}] processed in {elapsed_time:.2f} seconds.")
             sheets.append(sheet_dict)
+        
+        total_elapsed_time = time.time() - total_start_time
+        logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process] Total processing time: {total_elapsed_time:.2f} seconds.")
         
         return sheets
 
@@ -175,4 +217,3 @@ class SpreadsheetChunker(BaseChunker):
         html += '</table>'
         html = html.replace('\n', '').replace('\t', '')
         return html
-
