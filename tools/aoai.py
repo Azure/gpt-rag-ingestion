@@ -5,10 +5,6 @@ import time
 from openai import AzureOpenAI, RateLimitError
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
-MAX_RETRIES = 10 # Maximum number of retries for rate limit errors
-MAX_EMBEDDINGS_MODEL_INPUT_TOKENS = 8192
-MAX_GPT_MODEL_INPUT_TOKENS = 128000 # this is gpt4o max input, if using gpt35turbo use 16385
-
 class AzureOpenAIClient:
     """
     AzureOpenAIClient uses the OpenAI SDK's built-in retry mechanism with exponential backoff.
@@ -23,10 +19,16 @@ class AzureOpenAIClient:
         Parameters:
         document_filename (str, optional): Additional attribute for improved log traceability.
         """        
+        self.max_retries = 10 # Maximum number of retries for rate limit errors
+        self.max_embeddings_model_input_tokens = 8192
+        self.max_gpt_model_input_tokens = 128000 # this is gpt4o max input, if using gpt35turbo use 16385
+
         self.document_filename = f"[{document_filename}]" if document_filename else ""
         self.openai_service_name = os.getenv('AZURE_OPENAI_SERVICE_NAME')
         self.openai_api_base = f"https://{self.openai_service_name}.openai.azure.com"
         self.openai_api_version = os.getenv('AZURE_OPENAI_API_VERSION')
+        self.openai_embeddings_deployment = os.getenv('AZURE_OPENAI_EMBEDDING_DEPLOYMENT')
+        self.openai_gpt_deployment = os.getenv('AZURE_OPENAI_CHATGPT_DEPLOYMENT')
 
         token_provider = get_bearer_token_provider(
             DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default"
@@ -36,16 +38,15 @@ class AzureOpenAIClient:
             api_version=self.openai_api_version,
             azure_endpoint=self.openai_api_base,
             azure_ad_token_provider=token_provider,
-            max_retries=MAX_RETRIES
+            max_retries=self.max_retries
         )
 
     def get_completion(self, prompt, max_tokens=800, retry_after=True):
         one_liner_prompt = prompt.replace('\n', ' ')
         logging.info(f"[aoai]{self.document_filename} Getting completion for prompt: {one_liner_prompt[:100]}")
-        self.openai_deployment = os.getenv('AZURE_OPENAI_CHATGPT_DEPLOYMENT')
 
         # truncate prompt if needed
-        prompt = self._truncate_input(prompt, MAX_GPT_MODEL_INPUT_TOKENS)
+        prompt = self._truncate_input(prompt, self.max_gpt_model_input_tokens)
 
         try:
             input_messages = [
@@ -55,7 +56,7 @@ class AzureOpenAIClient:
 
             response = self.client.chat.completions.create(
                 messages=input_messages,
-                model=self.openai_deployment,
+                model=self.openai_gpt_deployment,
                 temperature=0.7,
                 top_p=0.95,
                 max_tokens=max_tokens
@@ -83,19 +84,14 @@ class AzureOpenAIClient:
     def get_embeddings(self, text, retry_after=True):
         one_liner_text = text.replace('\n', ' ')
         logging.info(f"[aoai]{self.document_filename} Getting embeddings for text: {one_liner_text[:100]}")        
-        self.openai_deployment = os.getenv('AZURE_OPENAI_EMBEDDING_DEPLOYMENT')
-
-        # summarize in case it is larger than the maximum input tokens
-        num_tokens = GptTokenEstimator().estimate_tokens(text)
-        if (num_tokens > MAX_EMBEDDINGS_MODEL_INPUT_TOKENS):
-            prompt = f"Rewrite the text to be coherent and meaningful, reducing it to {MAX_EMBEDDINGS_MODEL_INPUT_TOKENS} tokens: {text}"
-            text = self.get_completion(prompt)
-            logging.info(f"[aoai]{self.document_filename} get_embeddings: rewriting text to fit in {MAX_EMBEDDINGS_MODEL_INPUT_TOKENS} tokens")
+        
+        # truncate in case it is larger than the maximum input tokens
+        text = self._truncate_input(text, self.max_embeddings_model_input_tokens)
 
         try:
             response = self.client.embeddings.create(
                 input=text,
-                model=self.openai_deployment
+                model=self.openai_embeddings_deployment
             )
             embeddings = response.data[0].embedding
             return embeddings
