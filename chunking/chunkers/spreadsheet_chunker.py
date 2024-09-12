@@ -57,7 +57,7 @@ class SpreadsheetChunker(BaseChunker):
             data (str): The spreadsheet content to be chunked.
         """
         super().__init__(data)
-        max_chunk_size = int(os.getenv("SPREADSHEET_NUM_TOKENS", 8192)) if max_chunk_size is None else int(max_chunk_size)
+        max_chunk_size = int(os.getenv("SPREADSHEET_NUM_TOKENS", 20000)) if max_chunk_size is None else int(max_chunk_size)
         self.max_chunk_size = max_chunk_size
 
     def get_chunks(self):
