@@ -11,7 +11,8 @@ from .base_chunker import BaseChunker
 
 class SpreadsheetChunker(BaseChunker):
     """
-    SpreadsheetChunker is a class designed to process and chunk spreadsheet content, such as Excel files, into manageable pieces. The class handles different spreadsheet structures, converting them into formats suitable for chunking and summarization.
+    SpreadsheetChunker processes and chunks spreadsheet content, such as Excel files, into manageable pieces. It handles 
+    various spreadsheet structures and converts them into formats suitable for chunking and summarization.
 
     Initialization:
     ---------------
@@ -21,34 +22,38 @@ class SpreadsheetChunker(BaseChunker):
 
     Attributes:
     -----------
-    - blob_client (BlobStorageClient): An instance of the BlobStorageClient used to download the spreadsheet data from a blob storage.
-    - max_chunk_size (int): Maximum allowed tokens per chunk, used to ensure that chunks do not exceed a specified size.
-    - document_content (str): The content of the spreadsheet document after processing.
+    - blob_client (BlobStorageClient): Used to download the spreadsheet data from blob storage.
+    - max_chunk_size (int): Maximum allowed tokens per chunk to ensure chunks do not exceed a specified size.
+    - document_content (str): The content of the spreadsheet after processing.
 
     Methods:
     --------
     - get_chunks():
-        Splits the spreadsheet content into chunks, converting each sheet into an appropriate format 
-        (HTML, Markdown, or a summary) based on its size. The method logs the process and creates 
-        chunks that include the sheet's table content, summary, and title.
+        Splits the spreadsheet content into chunks. Each sheet is converted into an appropriate format 
+        (HTML, Markdown, or summary) based on its size. The method logs the process and creates chunks 
+        that include the sheet's table content, summary, and title.
 
     - _spreadsheet_process():
-        Processes each sheet in the spreadsheet, converting it to HTML or Markdown, depending on the 
-        token size. If the sheet content is too large, a summary is generated instead. This method 
-        returns a list of dictionaries, each containing the sheet name, table content, and a summary.
+        Processes each sheet in the spreadsheet. Converts the content to HTML or Markdown depending on 
+        token size. If the content exceeds token limits, a summary is generated. The method returns a 
+        list of dictionaries, where each dictionary represents a sheet and is used as the basis for a 
+        chunk. Each dictionary contains the sheet name, table content, and summary.
 
     - _excel_to_markdown():
-        Converts a given sheet from the spreadsheet into Markdown format. It reads the data from each 
-        row and cell, handling empty values and formatting the content into a Markdown table using the 
-        `tabulate` library.
+        Converts a sheet from the spreadsheet into Markdown format. It reads the data from each row and 
+        cell, handling empty values and formatting the content into a Markdown table using the `tabulate` library.
 
     - _excel_to_html():
-        Converts a given sheet from the spreadsheet into HTML format. This method handles merged cells 
-        by mapping them to the appropriate `rowspan` and `colspan` attributes in the HTML table. 
-        The method processes each row and cell to generate a well-formatted HTML table representation.
+        Converts a sheet from the spreadsheet into HTML format. Handles merged cells by mapping them to the 
+        appropriate `rowspan` and `colspan` attributes. Processes each row and cell to generate a well-formatted 
+        HTML table.
 
-    The SpreadsheetChunker class is useful for breaking down large spreadsheet documents into smaller, more manageable pieces, allowing for efficient processing, analysis, and summarization. It ensures that even complex spreadsheet structures, such as merged cells, are handled correctly during the chunking process.
+    The SpreadsheetChunker class is designed to break down large spreadsheet documents into smaller, more manageable 
+    pieces for efficient processing, analysis, and summarization. It ensures that even complex spreadsheet structures, 
+    such as merged cells, are correctly handled during chunking, and that each resulting dictionary is ready to be 
+    used as the basis for a chunk.
     """
+
     def __init__(self, data, max_chunk_size=None):
         """
         Initializes the SpreadsheetChunker with the given data and sets up chunking parameters from environment variables.
@@ -91,6 +96,31 @@ class SpreadsheetChunker(BaseChunker):
         return chunks
 
     def _spreadsheet_process(self):
+        """
+        Downloads a spreadsheet from Azure Blob Storage, processes each sheet into HTML or markdown tables, and generates 
+        summaries if token limits are exceeded. Each sheet's processed data is stored in a dictionary, which will be used as 
+        the basis for a chunk.
+
+        Steps:
+        1. Download and load the spreadsheet with `openpyxl`.
+        2. For each sheet:
+            - Convert the content to an HTML table and estimate token count.
+            - If the HTML exceeds token limits, convert to markdown or generate a summary.
+            - Store the resulting HTML, markdown, or summary in the `table` field and any generated summary in `summary`.
+
+        Returns:
+            list[dict]: A list of dictionaries for each sheet:
+            - `name`: Sheet name.
+            - `table`: The HTML, markdown, or summary.
+            - `summary`: A summary if needed, otherwise empty.
+
+        Fields/Attributes:
+        - `blob_client`: For downloading the spreadsheet.
+        - `token_estimator`: For estimating token counts.
+        - `aoai_client`: For generating summaries with OpenAI.
+        - `max_chunk_size`: Maximum tokens per chunk.
+        - `max_embeddings_model_input_tokens`: Maximum tokens for embedding models.
+        """        
         logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process] starting blob download.")        
         blob_data = self.blob_client.download_blob()
         blob_stream = BytesIO(blob_data)
