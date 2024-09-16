@@ -1,5 +1,7 @@
 import logging
 import os
+import time
+
 from io import BytesIO
 
 from openpyxl import load_workbook
@@ -9,7 +11,8 @@ from .base_chunker import BaseChunker
 
 class SpreadsheetChunker(BaseChunker):
     """
-    SpreadsheetChunker is a class designed to process and chunk spreadsheet content, such as Excel files, into manageable pieces. The class handles different spreadsheet structures, converting them into formats suitable for chunking and summarization.
+    SpreadsheetChunker processes and chunks spreadsheet content, such as Excel files, into manageable pieces. It handles 
+    various spreadsheet structures and converts them into formats suitable for chunking and summarization.
 
     Initialization:
     ---------------
@@ -19,34 +22,38 @@ class SpreadsheetChunker(BaseChunker):
 
     Attributes:
     -----------
-    - blob_client (BlobStorageClient): An instance of the BlobStorageClient used to download the spreadsheet data from a blob storage.
-    - max_chunk_size (int): Maximum allowed tokens per chunk, used to ensure that chunks do not exceed a specified size.
-    - document_content (str): The content of the spreadsheet document after processing.
+    - blob_client (BlobStorageClient): Used to download the spreadsheet data from blob storage.
+    - max_chunk_size (int): Maximum allowed tokens per chunk to ensure chunks do not exceed a specified size.
+    - document_content (str): The content of the spreadsheet after processing.
 
     Methods:
     --------
     - get_chunks():
-        Splits the spreadsheet content into chunks, converting each sheet into an appropriate format 
-        (HTML, Markdown, or a summary) based on its size. The method logs the process and creates 
-        chunks that include the sheet's table content, summary, and title.
+        Splits the spreadsheet content into chunks. Each sheet is converted into an appropriate format 
+        (HTML, Markdown, or summary) based on its size. The method logs the process and creates chunks 
+        that include the sheet's table content, summary, and title.
 
     - _spreadsheet_process():
-        Processes each sheet in the spreadsheet, converting it to HTML or Markdown, depending on the 
-        token size. If the sheet content is too large, a summary is generated instead. This method 
-        returns a list of dictionaries, each containing the sheet name, table content, and a summary.
+        Processes each sheet in the spreadsheet. Converts the content to HTML or Markdown depending on 
+        token size. If the content exceeds token limits, a summary is generated. The method returns a 
+        list of dictionaries, where each dictionary represents a sheet and is used as the basis for a 
+        chunk. Each dictionary contains the sheet name, table content, and summary.
 
     - _excel_to_markdown():
-        Converts a given sheet from the spreadsheet into Markdown format. It reads the data from each 
-        row and cell, handling empty values and formatting the content into a Markdown table using the 
-        `tabulate` library.
+        Converts a sheet from the spreadsheet into Markdown format. It reads the data from each row and 
+        cell, handling empty values and formatting the content into a Markdown table using the `tabulate` library.
 
     - _excel_to_html():
-        Converts a given sheet from the spreadsheet into HTML format. This method handles merged cells 
-        by mapping them to the appropriate `rowspan` and `colspan` attributes in the HTML table. 
-        The method processes each row and cell to generate a well-formatted HTML table representation.
+        Converts a sheet from the spreadsheet into HTML format. Handles merged cells by mapping them to the 
+        appropriate `rowspan` and `colspan` attributes. Processes each row and cell to generate a well-formatted 
+        HTML table.
 
-    The SpreadsheetChunker class is useful for breaking down large spreadsheet documents into smaller, more manageable pieces, allowing for efficient processing, analysis, and summarization. It ensures that even complex spreadsheet structures, such as merged cells, are handled correctly during the chunking process.
+    The SpreadsheetChunker class is designed to break down large spreadsheet documents into smaller, more manageable 
+    pieces for efficient processing, analysis, and summarization. It ensures that even complex spreadsheet structures, 
+    such as merged cells, are correctly handled during chunking, and that each resulting dictionary is ready to be 
+    used as the basis for a chunk.
     """
+
     def __init__(self, data, max_chunk_size=None):
         """
         Initializes the SpreadsheetChunker with the given data and sets up chunking parameters from environment variables.
@@ -55,63 +62,128 @@ class SpreadsheetChunker(BaseChunker):
             data (str): The spreadsheet content to be chunked.
         """
         super().__init__(data)
-        max_chunk_size = int(os.getenv("SPREADSHEET_NUM_TOKENS", 8192)) if max_chunk_size is None else int(max_chunk_size)
+        max_chunk_size = int(os.getenv("SPREADSHEET_NUM_TOKENS", 20000)) if max_chunk_size is None else int(max_chunk_size)
         self.max_chunk_size = max_chunk_size
 
     def get_chunks(self):
         chunks = [] 
-        logging.info(f"[spreadsheet_chunker][{self.filename}] Running get_chunks.")
+        logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks] Running get_chunks.")
+        total_start_time = time.time()
 
         # Extract the relevant text from the spreadsheet
         sheets = self._spreadsheet_process()
-        logging.info(f"[spreadsheet_chunker][{self.filename}] workbook has {len(sheets)} sheets")
+        logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks] workbook has {len(sheets)} sheets")
 
         chunk_id = 0
-        for sheet in sheets:
+        for sheet in sheets:      
+            start_time = time.time()
             chunk_id += 1
-            chunk_dict = self._create_chunk(chunk_id=chunk_id, content=sheet["table"], summary=sheet["summary"], embedding_text=sheet["summary"], title=sheet["name"]) 
+            logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Starting processing chunk {chunk_id} sheet.")            
+            chunk_dict = self._create_chunk(
+                chunk_id=chunk_id,
+                content=sheet["table"],
+                summary=sheet["summary"],
+                embedding_text=sheet["summary"] if sheet["summary"] else sheet["table"],
+                title=sheet["name"]
+            )            
             chunks.append(chunk_dict)
+            elapsed_time = time.time() - start_time
+            logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Processed chunk {chunk_id} in {elapsed_time:.2f} seconds.")            
 
-        logging.info(f"[spreadsheet_chunker][{self.filename}] Finished get_chunks. Created {len(chunks)} chunks.")
+        total_elapsed_time = time.time() - total_start_time
+        logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks] Finished get_chunks. Created {len(chunks)} chunks in {total_elapsed_time:.2f} seconds.")
+
         return chunks
 
     def _spreadsheet_process(self):
+        """
+        Downloads a spreadsheet from Azure Blob Storage, processes each sheet into HTML or markdown tables, and generates 
+        summaries if token limits are exceeded. Each sheet's processed data is stored in a dictionary, which will be used as 
+        the basis for a chunk.
 
-        logging.info(f"[spreadsheet_chunker][{self.filename}] starting blob download.")        
+        Steps:
+        1. Download and load the spreadsheet with `openpyxl`.
+        2. For each sheet:
+            - Convert the content to an HTML table and estimate token count.
+            - If the HTML exceeds token limits, convert to markdown or generate a summary.
+            - Store the resulting HTML, markdown, or summary in the `table` field and any generated summary in `summary`.
+
+        Returns:
+            list[dict]: A list of dictionaries for each sheet:
+            - `name`: Sheet name.
+            - `table`: The HTML, markdown, or summary.
+            - `summary`: A summary if needed, otherwise empty.
+
+        Fields/Attributes:
+        - `blob_client`: For downloading the spreadsheet.
+        - `token_estimator`: For estimating token counts.
+        - `aoai_client`: For generating summaries with OpenAI.
+        - `max_chunk_size`: Maximum tokens per chunk.
+        - `max_embeddings_model_input_tokens`: Maximum tokens for embedding models.
+        """        
+        logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process] starting blob download.")        
         blob_data = self.blob_client.download_blob()
         blob_stream = BytesIO(blob_data)
-        logging.info(f"[spreadsheet_chunker][{self.filename}] starting openpyxl load_workbook.")                     
+        logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process] starting openpyxl load_workbook.")                     
         workbook = load_workbook(blob_stream, data_only=True)
 
         # Process each sheet in the workbook
         sheets = []
+        total_start_time = time.time()
         
         for sheet_name in workbook.sheetnames:
+            logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_name}] started processing.")                   
+            start_time = time.time()
             sheet_dict = {}            
             sheet_dict['name'] = sheet_name
             sheet = workbook[sheet_name]
             
-            table = self._excel_to_html(sheet)
-            prompt = f"Summarize the html table provided.\ntable_content: \n{table} "
-            summary = self.aoai_client.get_completion(prompt, max_tokens=4096)
+            # initialize field logic variables
+            html_table = self._excel_to_html(sheet)
+            html_table_tokens = self.token_estimator.estimate_tokens(html_table)
+            markdown_table = ""
+            markdown_table_tokens = 0
+            summary = ""
+
+            # summary field logic
+            if html_table_tokens > self.aoai_client.max_embeddings_model_input_tokens:
+                logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_name}]. HTML table has {html_table_tokens} tokens. Max embeddings tokens is {self.aoai_client.max_embeddings_model_input_tokens}. Generating markdown.")
+                markdown_table = self._excel_to_markdown(sheet)     
+                markdown_table_tokens = self.token_estimator.estimate_tokens(markdown_table)                
+                if markdown_table_tokens > self.aoai_client.max_embeddings_model_input_tokens:
+                    logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_name}]. Markdown table has {markdown_table_tokens} tokens. Generating summary.")
+                    prompt = f"Summarize the markdown table provided.\ntable_content: \n{markdown_table} "
+                    summary = self.aoai_client.get_completion(prompt, max_tokens=4096)
+                else:
+                    logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_name}]. Markdown table has {markdown_table_tokens} tokens. No summary needed.")                
+                    summary = ""
+            else:
+                logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_name}]. HTML table has {html_table_tokens} tokens. No summary needed.")                
+                summary = ""
             sheet_dict["summary"] = summary
 
-            table_tokens = self.token_estimator.estimate_tokens(table)
-    
-            if table_tokens < self.max_chunk_size:
-                logging.info(f"[spreadsheet_chunker][{self.filename}][{sheet_name}].  HTML table has {table_tokens} tokens. Max tokens is {self.max_chunk_size}.")
-                sheet_dict["table"] = table
+            # table field logic
+            if html_table_tokens < self.max_chunk_size:
+                logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_name}].  HTML table has {html_table_tokens} tokens. Max tokens is {self.max_chunk_size}.")
+                sheet_dict["table"] = html_table
             else:
-                logging.info(f"[spreadsheet_chunker][{self.filename}][{sheet_name}].  HTML table has {table_tokens} tokens. Max tokens is {self.max_chunk_size} Converting to markdown.")
-                table = self._excel_to_markdown(sheet)
-                table_tokens = self.token_estimator.estimate_tokens(table)
-                if table_tokens < self.max_chunk_size:
-                    sheet_dict["table"] = table
+                logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_name}].  HTML table has {html_table_tokens} tokens. Max tokens is {self.max_chunk_size} Converting to markdown.")
+                markdown_table = self._excel_to_markdown(sheet) if markdown_table == "" else markdown_table
+                markdown_table_tokens = self.token_estimator.estimate_tokens(markdown_table) if markdown_table_tokens == 0 else markdown_table_tokens
+                if markdown_table_tokens < self.max_chunk_size:
+                    sheet_dict["table"] = markdown_table
                 else:
-                    logging.info(f"[spreadsheet_chunker][{self.filename}][{sheet_name}].  Markdown table has {table_tokens} tokens. Max tokens is {self.max_chunk_size} Using summary as the content.")
+                    logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_name}].  Markdown table has {markdown_table_tokens} tokens. Max tokens is {self.max_chunk_size} Using summary as the content.")
+                    prompt = f"Summarize the markdown table provided.\ntable_content: \n{markdown_table} "
+                    summary = self.aoai_client.get_completion(prompt, max_tokens=4096) if summary == "" else summary
                     sheet_dict["table"] = summary
 
+            elapsed_time = time.time() - start_time
+            logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_dict['name']}] processed in {elapsed_time:.2f} seconds.")
             sheets.append(sheet_dict)
+        
+        total_elapsed_time = time.time() - total_start_time
+        logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process] Total processing time: {total_elapsed_time:.2f} seconds.")
         
         return sheets
 
@@ -175,4 +247,3 @@ class SpreadsheetChunker(BaseChunker):
         html += '</table>'
         html = html.replace('\n', '').replace('\t', '')
         return html
-
