@@ -94,20 +94,7 @@ class SpreadsheetChunker(BaseChunker):
 
     def get_chunks(self):
         """
-        Processes the spreadsheet and splits its content into chunks, returning a list of dictionaries 
-        where each dictionary represents a chunk of the spreadsheet.
-
-        The method iterates over each sheet in the workbook, converting it to a table format (using Markdown-like 
-        grid tables). Depending on the `chunking_by_row` flag, it either creates a single chunk per sheet or 
-        multiple chunks per row. If chunking by sheet and the table content exceeds the maximum chunk size, 
-        a summary is generated for the chunk. When chunking by row, no summaries are generated.
-
-        Returns:
-            list: A list of dictionaries where each dictionary represents a chunk containing:
-                  - title (str): The sheet name or sheet name with row number.
-                  - table (str): The table content of the sheet or individual row (with headers if configured).
-                  - summary (str): A summary of the table content (only for sheet-based chunks).
-                  - embedding_text (str): The text used for embeddings, either the table content or the summary if available.
+        [Existing docstring]
         """
         chunks = [] 
         logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks] Running get_chunks.")
@@ -125,6 +112,10 @@ class SpreadsheetChunker(BaseChunker):
                 chunk_id += 1
                 logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Starting processing chunk {chunk_id} (sheet).")
                 table_content = sheet["table"]
+
+                # Clean the table to reduce whitespace
+                table_content = self._clean_markdown_table(table_content)
+
                 table_tokens = self.token_estimator.estimate_tokens(table_content)
                 # If max_chunk_size is defined and the table content exceeds the maximum chunk size, use the summary instead
                 if self.max_chunk_size > 0 and table_tokens > self.max_chunk_size:
@@ -154,32 +145,33 @@ class SpreadsheetChunker(BaseChunker):
                     logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Processing chunk {chunk_id} for row {row_index}.")
                     
                     if self.include_header_in_chunks:
-                        # Include headers explicitly, you can combine headers and row
-                        row = tabulate([headers, row], headers="firstrow", tablefmt="grid")
-                        row = self._reduce_whitespace(row)                        
+                        # Include headers in the chunk
+                        table = tabulate([headers, row], headers="firstrow", tablefmt="github")
                     else:
                         # Include only the row in the chunk
-                        row = tabulate([row], headers=headers, tablefmt="grid")
-                        row = self._reduce_whitespace(row) 
-                                            
-                    # No summary generation for row chunks
+                        table = tabulate([row], headers=headers, tablefmt="github")
+                    
+                    # Clean the table to reduce whitespace
+                    table = self._clean_markdown_table(table)
+                    
+                    # No summary generation for row chunks (performance reasons)
                     summary = ""
                     
                     # Estimate tokens for the table
-                    table_tokens = self.token_estimator.estimate_tokens(row)
+                    table_tokens = self.token_estimator.estimate_tokens(table)
                     if self.max_chunk_size > 0 and table_tokens > self.max_chunk_size:
                         logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Row table has {table_tokens} tokens. Max tokens is {self.max_chunk_size}. Truncating content.")
                         # Optionally, handle truncation here if necessary
                         # For simplicity, we'll keep the table as is
-                        row_content = row
-                        embedding_text = row
+                        content = table
+                        embedding_text = table
                     else:
-                        row_content = row
-                        embedding_text = row
+                        content = table
+                        embedding_text = table
 
                     chunk_dict = self._create_chunk(
                         chunk_id=chunk_id,
-                        content=row_content,
+                        content=content,
                         summary=summary,  # Empty summary
                         embedding_text=embedding_text,
                         title=f"{sheet['name']} - Row {row_index}"
@@ -195,17 +187,7 @@ class SpreadsheetChunker(BaseChunker):
 
     def _spreadsheet_process(self):
         """
-        Downloads the spreadsheet from blob storage and processes each sheet, converting it into a grid-like table format.
-
-        If chunking by sheet, summaries are generated for each sheet if necessary. If chunking by row, summaries are not generated.
-
-        Returns:
-            list: A list of dictionaries, each representing a processed sheet. Each dictionary contains:
-                  - name (str): The name of the sheet.
-                  - table (str): The table content in a grid format.
-                  - summary (str): A generated summary of the table content, if chunking by sheet.
-                  - headers (list): List of header values extracted from the first row of the sheet.
-                  - data (list): List of row data where each row is represented as a list of cell values.
+        [Existing docstring]
         """
         logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process] Starting blob download.")        
         blob_data = self.blob_client.download_blob()
@@ -227,8 +209,12 @@ class SpreadsheetChunker(BaseChunker):
             sheet_dict["headers"] = headers
             sheet_dict["data"] = data
             table = tabulate(data, headers=headers, tablefmt="grid")
+            
+            # Clean the table to reduce whitespace
+            table = self._clean_markdown_table(table)
+            
             sheet_dict["table"] = table
-            table = self._reduce_whitespace(table)
+            
             if not self.chunking_by_row:
                 # Generate summary only if not chunking by row
                 prompt = f"Summarize the table with data in it, by understanding the information clearly.\n table_data:{table}"
@@ -243,7 +229,7 @@ class SpreadsheetChunker(BaseChunker):
             elapsed_time = time.time() - start_time
             logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_dict['name']}] Processed in {elapsed_time:.2f} seconds.")
             sheets.append(sheet_dict)
-        
+    
         total_elapsed_time = time.time() - total_start_time
         logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process] Total processing time: {total_elapsed_time:.2f} seconds.")
 
@@ -251,15 +237,7 @@ class SpreadsheetChunker(BaseChunker):
 
     def _get_sheet_data(self, sheet):
         """
-        Retrieves data from the provided Excel sheet and returns it in a list format, along with headers.
-
-        Args:
-            sheet (openpyxl.worksheet.worksheet.Worksheet): The worksheet to extract data from.
-        
-        Returns:
-            tuple: A tuple containing:
-                   - data (list): List of row data where each row is represented as a list of cell values.
-                   - headers (list): List of header values extracted from the first row of the sheet.
+        [Existing docstring]
         """
         data = []
         for row in sheet.iter_rows(min_row=2):  # Start from the second row to skip headers
@@ -277,41 +255,36 @@ class SpreadsheetChunker(BaseChunker):
         headers = [cell.value if cell.value is not None else "" for cell in sheet[1]]
 
         return data, headers
-
-    def _reduce_whitespace(self,table_str):
+    
+    def _clean_markdown_table(self, table_str):
         """
-        Reduces excessive whitespace in a grid-formatted table string.
+        Cleans up a Markdown table string by removing excessive whitespace from each cell.
 
         Args:
-            table_str (str): The table string generated by tabulate with tablefmt="grid".
+            table_str (str): The Markdown table string to be cleaned.
 
         Returns:
-            str: The cleaned table string with reduced whitespace.
+            str: The cleaned Markdown table string with reduced whitespace.
         """
-        lines = table_str.split('\n')
-        processed_lines = []
-        
+        cleaned_lines = []
+        lines = table_str.splitlines()
+
         for line in lines:
-            if line.startswith('+'):
-                # Separator line, keep as is
-                processed_lines.append(line)
-            elif line.startswith('|'):
-                # Data line
-                # Split by | and process each cell
-                parts = line.split('|')
-                # The first part is always empty due to leading |
-                new_parts = ['']
-                for cell in parts[1:-1]:
-                    stripped = cell.strip()
-                    # Replace the cell content with stripped content
-                    new_parts.append(f" {stripped} ")
-                # The last part is also empty due to trailing |
-                new_parts.append('')
-                # Reconstruct the line
-                new_line = '|'.join(new_parts)
-                processed_lines.append(new_line)
-            else:
-                # Any other lines (if any), keep as is
-                processed_lines.append(line)
-        
-        return '\n'.join(processed_lines)
+            # Identify the separator line (e.g., |---|---|) and keep it unchanged
+            if set(line.strip()) <= set('-| '):
+                cleaned_lines.append(line)
+                continue
+
+            # Split the line into cells based on the '|' delimiter
+            cells = line.split('|')
+
+            # Strip leading and trailing whitespace from each cell
+            # Exclude the first and last elements if they are empty (due to leading/trailing '|')
+            stripped_cells = [cell.strip() for cell in cells[1:-1]]
+
+            # Reconstruct the line with single space padding around each cell
+            cleaned_line = '| ' + ' | '.join(stripped_cells) + ' |'
+            cleaned_lines.append(cleaned_line)
+
+        # Join all cleaned lines back into a single string
+        return '\n'.join(cleaned_lines)
