@@ -428,13 +428,60 @@ def execute_setup(
                 "retrievable": True,
             },
             {
-                "name": "ParentKey",
+                "name": "parent_id",
+                "type": "Edm.String",
+                "key": False,
+                "searchable": False,
+                "retrievable": True,
+            },
+            {
+                "name": "metadata_storage_path",
+                "type": "Edm.String",
+                "searchable": False,
+                "sortable": False,
+                "filterable": False,
+                "facetable": False,
+            },
+            {
+                "name": "metadata_storage_name",
+                "type": "Edm.String",
+                "searchable": False,
+                "sortable": False,
+                "filterable": False,
+                "facetable": False,
+            },
+            {
+                "name": "chunk_id",
+                "type": "Edm.Int32",
+                "searchable": False,
+                "retrievable": True,
+            },
+            {
+                "name": "content",
                 "type": "Edm.String",
                 "searchable": True,
                 "retrievable": True,
-                "facetable": False,
-                "filterable": True,
-                "sortable": False,
+                "analyzer": search_analyzer_name,
+            },
+            {
+                "name": "page",
+                "type": "Edm.Int32",
+                "searchable": False,
+                "retrievable": True,
+            },
+            {
+                "name": "offset",
+                "type": "Edm.Int64",
+                "filterable": False,
+                "searchable": False,
+                "retrievable": True,
+            },
+            {
+                "name": "length",
+                "type": "Edm.Int32",
+                "filterable": False,
+                "searchable": False,
+                "retrievable": True,
             },
             {
                 "name": "title",
@@ -445,43 +492,76 @@ def execute_setup(
                 "analyzer": search_analyzer_name,
             },
             {
-                "name": "name",
+                "name": "category",
                 "type": "Edm.String",
+                "filterable": True,
                 "searchable": True,
                 "retrievable": True,
-                "sortable": False,
-                "filterable": False,
-                "facetable": False,
+                "analyzer": search_analyzer_name,
             },
             {
-                "name": "location",
+                "name": "filepath",
                 "type": "Edm.String",
-                "searchable": True,
-                "retrievable": True,
-                "sortable": False,
                 "filterable": False,
-                "facetable": False,
+                "searchable": False,
+                "retrievable": True,
             },
             {
-                "name": "chunk",
+                "name": "url",
                 "type": "Edm.String",
-                "searchable": True,
-                "retrievable": True,
-                "sortable": False,
                 "filterable": False,
-                "facetable": False,
+                "searchable": False,
+                "retrievable": True,
             },
             {
-                "name": "chunkVector",
+                "name": "vector",
                 "type": "Collection(Edm.Single)",
-                "dimensions": 1536,  # IMPORTANT: Make sure these dimmensions match your embedding model name
-                "vectorSearchProfile": "myHnswProfile",
                 "searchable": True,
                 "retrievable": True,
+                "dimensions": 1536,
+                "vectorSearchProfile": "myHnswProfile",
+            },
+            {
+                "name": "keyPhrases",
+                "type": "Collection(Edm.String)",
+                "searchable": True,
                 "filterable": False,
+                "retrievable": True,
+                "stored": True,
                 "sortable": False,
                 "facetable": False,
+                "analyzer": "standard.lucene",
             },
+            {
+                "name": "languageCode",
+                "type": "Edm.String",
+                "searchable": True,
+                "filterable": True,
+                "retrievable": True,
+                "stored": True,
+                "sortable": False,
+                "facetable": False,
+                "key": False,
+            },
+            {
+                "name": "languageName",
+                "type": "Edm.String",
+                "searchable": True,
+                "filterable": True,
+                "retrievable": True,
+                "stored": True,
+                "sortable": False,
+                "facetable": False,
+                "key": False,
+            },
+        ],
+        "scoringProfiles": [
+            {
+                "name": "ragindex-scoring-profile",
+                "functionAggregation": "sum",
+                "text": {"weights": {"content": 45, "keyPhrases": 45, "title": 5}},
+                "functions": [],
+            }
         ],
         "corsOptions": {"allowedOrigins": ["*"], "maxAgeInSeconds": 60},
         "vectorSearch": {
@@ -516,9 +596,8 @@ def execute_setup(
                 {
                     "name": "my-semantic-config",
                     "prioritizedFields": {
-                        "titleField": {"fieldName": "title"},
-                        "prioritizedContentFields": [{"fieldName": "chunk"}],
-                        "prioritizedKeywordsFields": [],
+                        "prioritizedContentFields": [{"fieldName": "content"}],
+                        "prioritizedKeywordsFields": [{"fieldName": "category"}],
                     },
                 }
             ]
@@ -547,37 +626,44 @@ def execute_setup(
         "description": "Skillset to do document chunking",
         "skills": [
             {
-                "@odata.type": "#Microsoft.Skills.Vision.OcrSkill",
-                "description": "Extract text (plain and structured) from image.",
-                "context": "/document/normalized_images/*",
-                "defaultLanguageCode": "en",
-                "detectOrientation": True,
+                "@odata.type": "#Microsoft.Skills.Custom.WebApiSkill",
+                "name": "docint-processing",
+                "description": "Process content with document intelligence markdown notation",
+                "httpMethod": "POST",
+                "timeout": "PT230S",
+                "context": "/document",
+                "batchSize": 1,
                 "inputs": [
-                    {"name": "image", "source": "/document/normalized_images/*"}
+                    {
+                        "name": "documentUrl",
+                        "source": "/document/metadata_storage_path",
+                    },
+                    {"name": "documentContent", "source": "/document/content"},
+                    {
+                        "name": "documentSasToken",
+                        "source": "/document/metadata_storage_sas_token",
+                    },
+                    {
+                        "name": "documentContentType",
+                        "source": "/document/metadata_content_type",
+                    },
                 ],
-                "outputs": [
-                    {"name": "text", "targetName": "images_text"},
-                    {"name": "layoutText", "targetName": "myLayoutText"},
-                ],
+                "outputs": [{"name": "docintContent", "targetName": "docintContent"}],
             },
             {
-                "@odata.type": "#Microsoft.Skills.Text.MergeSkill",
-                "description": "Create merged_text, which includes all the textual representation of each image inserted at the right location in the content field. This is useful for PDF and other file formats that supported embedded images.",
-                "context": "/document",
-                "insertPreTag": " ",
-                "insertPostTag": " ",
+                "@odata.type": "#Microsoft.Skills.Text.SplitSkill",
+                "name": "Split skill",
+                "description": "Split skill to handle document",
+                "context": "/document/docintContent",
+                "defaultLanguageCode": "en",
+                "textSplitMode": "pages",
+                "maximumPageLength": 1500,
+                "pageOverlapLength": 375,
+                "maximumPagesToTake": 0,
                 "inputs": [
-                    {"name": "text", "source": "/document/content"},
-                    {
-                        "name": "itemsToInsert",
-                        "source": "/document/normalized_images/*/images_text",
-                    },
-                    {
-                        "name": "offsets",
-                        "source": "/document/normalized_images/*/contentOffset",
-                    },
+                    {"name": "text", "source": "/document/docintContent/content"}
                 ],
-                "outputs": [{"name": "mergedText", "targetName": "merged_text"}],
+                "outputs": [{"name": "textItems", "targetName": "pages"}],
             },
             {
                 "@odata.type": "#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill",
@@ -596,14 +682,34 @@ def execute_setup(
                 "authIdentity": None,
             },
             {
-                "@odata.type": "#Microsoft.Skills.Text.SplitSkill",
-                "context": "/document",
-                "textSplitMode": "pages",  # although it says "pages" it actally means chunks, not actual pages
-                "maximumPageLength": 1000,  #
-                "pageOverlapLength": 150,  # 15% overlap among chunks
+                "@odata.type": "#Microsoft.Skills.Text.LanguageDetectionSkill",
+                "name": "Lenguage Detection",
+                "description": "Skill to get the language of the document",
+                "context": "/document/docintContent/pages/*",
+                "inputs": [
+                    {"name": "text", "source": "/document/docintContent/pages/*"}
+                ],
+                "outputs": [
+                    {"name": "languageCode", "targetName": "languageCode"},
+                    {"name": "languageName", "targetName": "languageName"},
+                    {"name": "score", "targetName": "score"},
+                ],
+            },
+            {
+                "@odata.type": "#Microsoft.Skills.Text.KeyPhraseExtractionSkill",
+                "name": "Key Phrase Extraction",
+                "description": "Skill to get the key phrases of the document",
+                "context": "/document/docintContent/pages/*",
                 "defaultLanguageCode": "en",
-                "inputs": [{"name": "text", "source": "/document/merged_text"}],
-                "outputs": [{"name": "textItems", "targetName": "chunks"}],
+                "maxKeyPhraseCount": 10,
+                "inputs": [
+                    {"name": "text", "source": "/document/docintContent/pages/*"},
+                    {
+                        "name": "languageCode",
+                        "source": "/document/docintContent/pages/*/languageCode",
+                    },
+                ],
+                "outputs": [{"name": "keyPhrases", "targetName": "keyPhrases"}],
             },
         ],
         "cognitiveServices": {
@@ -614,14 +720,84 @@ def execute_setup(
             "selectors": [
                 {
                     "targetIndexName": f"{search_index_name}",
-                    "parentKeyFieldName": "ParentKey",
-                    "sourceContext": "/document/chunks/*",
+                    "parentKeyFieldName": "parent_id",
+                    "sourceContext": "/document/docintContent/pages/*",
                     "mappings": [
-                        {"name": "title", "source": "/document/title"},
-                        {"name": "name", "source": "/document/name"},
-                        {"name": "location", "source": "/document/location"},
-                        {"name": "chunk", "source": "/document/chunks/*"},
-                        {"name": "chunkVector", "source": "/document/chunks/*/vector"},
+                        # {
+                        # "name": "chunk_id",
+                        # "source": "/document/docintContent/*/chunk_id",
+                        # "inputs": []
+                        # },
+                        # {
+                        #     "name": "offset",
+                        #     "source": "/document/docintContent/*/offset",
+                        #     "inputs": []
+                        # },
+                        # {
+                        #     "name": "length",
+                        #     "source": "/document/docintContent/*/length",
+                        #     "inputs": []
+                        # },
+                        # {
+                        #     "name": "page",
+                        #     "source": "/document/docintContent/page/*",
+                        #     "inputs": []
+                        # },
+                        # {
+                        #     "name": "title",
+                        #     "source": "/document/docintContent/*/title",
+                        #     "inputs": []
+                        # },
+                        # {
+                        #     "name": "category",
+                        #     "source": "/document/docintContent/*/category",
+                        #     "inputs": []
+                        # },
+                        {
+                            "name": "url",
+                            "source": "/document/docintContent/url",
+                            "inputs": [],
+                        },
+                        {
+                            "name": "filepath",
+                            "source": "/document/docintContent/url",
+                            "inputs": [],
+                        },
+                        {
+                            "name": "content",
+                            "source": "/document/docintContent/pages/*",
+                            "inputs": [],
+                        },
+                        {
+                            "name": "vector",
+                            "source": "/document/docintContent/pages/*/vector",
+                            "inputs": [],
+                        },
+                        {
+                            "name": "metadata_storage_path",
+                            "source": "/document/metadata_storage_path",
+                            "inputs": [],
+                        },
+                        {
+                            "name": "metadata_storage_name",
+                            "source": "/document/metadata_storage_name",
+                            "inputs": [],
+                        },
+                        {
+                            "name": "keyPhrases",
+                            "source": "/document/docintContent/pages/*/keyPhrases",
+                            "inputs": [],
+                        },
+                        {
+                            "name": "languageCode",
+                            "source": "/document/docintContent/pages/*/languageCode",
+                            "inputs": [],
+                        },
+                        {
+                            "name": "languageName",
+                            "source": "/document/docintContent/pages/*/languageName",
+                            "inputs": [],
+                        },
                     ],
                 }
             ],
@@ -629,8 +805,12 @@ def execute_setup(
         },
     }
     if azure_search_use_mis:
+        body["skills"][0]["uri"] = f"{function_endpoint}/api/document-chunking"
         body["skills"][0]["authResourceId"] = f"api://{search_principal_id}"
-
+    else:
+        body["skills"][0][
+            "uri"
+        ] = f"{function_endpoint}/api/document-chunking?code={function_key}"
 
     # first delete to enforce web api skillset to be updated
     call_search_api(
@@ -667,27 +847,18 @@ def execute_setup(
         "schedule": {"interval": f"{search_index_interval}"},
         "fieldMappings": [
             {
-          "sourceFieldName" : "metadata_title",
-          "targetFieldName" : "title"
-        },
-        {
-          "sourceFieldName" : "metadata_storage_name",
-          "targetFieldName" : "name"
-        },
-        {
-          "sourceFieldName" : "metadata_storage_path",
-          "targetFieldName" : "location"
-        }
+                "sourceFieldName": "metadata_storage_path",
+                "targetFieldName": "id",
+                "mappingFunction": {"name": "base64Encode"},
+            }
         ],
         "outputFieldMappings": [],
         "parameters": {
+            "batchSize": 1,
             "maxFailedItems": -1,
-        "maxFailedItemsPerBatch": -1,
-        "configuration":
-        {
-            "dataToExtract": "contentAndMetadata",
-            "imageAction": "generateNormalizedImages"
-        }
+            "maxFailedItemsPerBatch": -1,
+            "base64EncodeKeys": True,
+            "configuration": {"dataToExtract": "contentAndMetadata"},
         },
     }
     if network_isolation:
