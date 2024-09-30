@@ -4,6 +4,7 @@ from .chunkers.doc_analysis_chunker import DocAnalysisChunker
 from .chunkers.langchain_chunker import LangChainChunker
 from .chunkers.spreadsheet_chunker import SpreadsheetChunker
 from .chunkers.transcription_chunker import TranscriptionChunker
+from .chunkers.nl2sql_chunker import NL2SQLChunker
 
 from tools import DocumentIntelligenceClient
 
@@ -40,6 +41,8 @@ class ChunkerFactory:
             else:
                 logging.info(f"[chunker_factory][{filename}] Processing 'pptx' and 'docx' files requires Doc Intelligence 4.0.")                
                 raise RuntimeError("Processing 'pptx' and 'docx' files requires Doc Intelligence 4.0.")
+        elif extension in ('nl2sql'):
+            return NL2SQLChunker(data)
         else:
             return LangChainChunker(data)
         

@@ -1,10 +1,10 @@
-# GPT on your data Ingestion
+# GPT on your data Ingestion 
 
 Part of [GPT-RAG](https://github.com/Azure/gpt-rag)
 
 ## Getting started
 
-You can provision the infrastructure and deploy the whole solution using the GPT-RAG template, as instructed at: https://aka.ms/gpt-rag.
+You can provision the infrastructure and deploy the whole solution using the GPT-RAG template, as instructed at: [https://aka.ms/gpt-rag](https://aka.ms/gpt-rag).
 
 ## What if I want to redeploy just the ingestion component?
 
@@ -12,12 +12,12 @@ Eventually, you may want to make some adjustments to the data ingestion code and
 
 To redeploy only the ingestion component (after the initial deployment of the solution), you will need:
 
- - Azure Developer CLI: [Download azd for Windows](https://azdrelease.azureedge.net/azd/standalone/release/1.5.0/azd-windows-amd64.msi), [Other OS's](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/install-azd).
- - Powershell (Windows only): [Powershell](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows?view=powershell-7.4#installing-the-msi-package)
- - Git: [Download Git](https://git-scm.com/downloads)
- - Python 3.11: [Download Python](https://www.python.org/downloads/release/python-3118/)
+- **Azure Developer CLI**: [Download azd for Windows](https://azdrelease.azureedge.net/azd/standalone/release/1.5.0/azd-windows-amd64.msi), [Other OS's](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/install-azd).
+- **Powershell** (Windows only): [Powershell](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows?view=powershell-7.4#installing-the-msi-package)
+- **Git**: [Download Git](https://git-scm.com/downloads)
+- **Python 3.11**: [Download Python](https://www.python.org/downloads/release/python-3118/)
 
-Then just clone this repository and reproduce the following commands within the gpt-rag-ingestion directory:  
+Then just clone this repository and reproduce the following commands within the `gpt-rag-ingestion` directory:  
 
 ```bash
 azd auth login  
@@ -25,7 +25,7 @@ azd env refresh
 azd deploy  
 ```
 
-> Note: when running the `azd env refresh`, use the same environment name, subscription, and region used in the initial provisioning of the infrastructure.
+> **Note:** When running the `azd env refresh`, use the same environment name, subscription, and region used in the initial provisioning of the infrastructure.
 
 ## Running Locally with VS Code  
    
@@ -48,6 +48,7 @@ When a document is submitted, the system identifies its file extension and selec
 - **For specialized formats**, different chunkers are used:
     - `.vtt` files (video transcriptions) are handled by the [TranscriptionChunker](chunking/chunkers/transcription_chunker.py), chunking content by time codes.
     - `.xlsx` files (spreadsheets) are processed by the [SpreadsheetChunker](chunking/chunkers/spreadsheet_chunker.py), chunking by rows or sheets.
+    - `.nl2sql` files are processed by the [NL2SQLChunker](chunking/chunkers/nl2sql_chunker.py), which handles JSON content containing natural language questions and their corresponding SQL queries. Click here to see a sample [.nl2sql](https://github.com/Azure/gpt-rag-agentic/blob/main/config/queries.nl2sql) file.
 
 - **For text-based files** like `.txt`, `.md`, `.json`, and `.csv`, the system uses the [LangChainChunker](chunking/chunkers/langchain_chunker.py), which uses LangChain splitters to divide the content based on logical separators such as paragraphs or sections.
 
@@ -79,24 +80,40 @@ Here are the formats supported by the chunkers. Note that the decision on which 
 
 #### LangChain Chunker
 
+| Extension | Format                        |
+|-----------|-------------------------------|
+| md        | Markdown document             |
+| txt       | Plain text file               |
+| html      | HTML document                 |
+| shtml     | Server-side HTML document     |
+| htm       | HTML document                 |
+| py        | Python script                 |
+| json      | JSON data file                |
+| csv       | Comma-separated values file   |
+| xml       | XML data file                 |
+
+#### Transcription Chunker
+
 | Extension | Format              |
 |-----------|---------------------|
-| md        | Markdown document   |
-| txt       | Plain text file     |
-| html      | HTML document       |
-| shtml     | Server-side HTML document |
-| htm       | HTML document       |
-| py        | Python script       |
-| json      | JSON data file      |
-| csv       | Comma-separated values file |
-| xml       | XML data file       |
+| vtt       | Video transcription |
 
+#### Spreadsheet Chunker
+
+| Extension | Format      |
+|-----------|-------------|
+| xlsx      | Spreadsheet |
+
+#### NL2SQL Chunker
+
+| Extension | Description                                                                 |
+|-----------|-----------------------------------------------------------------------------|
+| nl2sql    | JSON files containing natural language questions and corresponding SQL queries |
 
 ## References
 
-[AI Search Enrichment Pipeline](https://learn.microsoft.com/en-us/azure/search/cognitive-search-concept-intro)
-
-[Azure Open AI Embeddings Generator](https://github.com/Azure-Samples/azure-search-power-skills/tree/57214f6e8773029a638a8f56840ab79fd38574a2/Vector/EmbeddingGenerator)
+- [AI Search Enrichment Pipeline](https://learn.microsoft.com/en-us/azure/search/cognitive-search-concept-intro)
+- [Azure Open AI Embeddings Generator](https://github.com/Azure-Samples/azure-search-power-skills/tree/57214f6e8773029a638a8f56840ab79fd38574a2/Vector/EmbeddingGenerator)
 
 ## Contributing
 
