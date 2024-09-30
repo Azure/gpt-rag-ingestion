@@ -1,17 +1,20 @@
 from azure.identity import DefaultAzureCredential
 from azure.storage.blob import BlobServiceClient
-from urllib.parse import urlparse
+from urllib.parse import urlparse, unquote
 import logging
 import time
 
 class BlobStorageClient:
 
-    def download_blob(self, file_url):        
-            parsed_url = urlparse(file_url)
+    def __init__(self, file_url):
+        self.file_url = file_url
+
+    def download_blob(self):
+            parsed_url = urlparse(self.file_url)
             account_url = parsed_url.scheme + "://" + parsed_url.netloc
             container_name = parsed_url.path.split("/")[1]
-            blob_name = parsed_url.path.split("/")[2]
-
+            url_decoded = unquote(parsed_url.path)
+            blob_name = url_decoded[len(container_name) + 2:]
             logging.info(f"[blob][{blob_name}] Connecting to blob.")
 
             credential = DefaultAzureCredential()

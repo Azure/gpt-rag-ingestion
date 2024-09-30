@@ -62,32 +62,43 @@ class BaseChunker:
         data : dict
             A dictionary containing the following keys:
                 - "documentUrl"
-                - "documentContent"
                 - "documentSasToken"
                 - "documentContentType"
         """
         self.url = data['documentUrl']
-        self.document_content = data['documentContent']    
         self.data = data
         self.url = data['documentUrl']
         self.sas_token = data['documentSasToken']
         self.file_url = f"{self.url}{self.sas_token}"        
         self.filename = get_filename(self.url)
-        self.extension = get_file_extension(self.url)           
+        self.extension = get_file_extension(self.url)
+        document_content = data.get('documentContent') # Reserved for future use: Document content extraction with AI Search is currently not implemented.
+        self.document_content = document_content if document_content else ""
         self.token_estimator = GptTokenEstimator()
         self.aoai_client = AzureOpenAIClient(document_filename=self.filename)
-        self.blob_client = BlobStorageClient()        
+        self.blob_client = BlobStorageClient(self.file_url)
 
     def get_chunks(self):
         """Abstract method to be implemented by subclasses."""
         pass
 
-    def _create_chunk(self, chunk_id, content, summary="", embedding_text="", title="", page=0, offset=0, related_images=[], related_files=[]):
+    def _create_chunk(
+        self,
+        chunk_id,
+        content,
+        summary="",
+        embedding_text="",
+        title="",
+        page=0,
+        offset=0,
+        related_images=None,
+        related_files=None
+    ):
         """
-        Initialize a chunk dictionary.
+        Initialize a chunk dictionary with truncated content if necessary.
 
-        This method creates a chunk dictionary with various attributes, including an embedding vector. 
-        If an embedding_text is provided, it will use the embedding_text to generate the embedding. 
+        This method creates a chunk dictionary with various attributes, including an embedding vector.
+        If an embedding_text is provided, it will use the embedding_text to generate the embedding.
         If no embedding_text is available, it will fall back to using the content text.
 
         Args:
@@ -104,18 +115,45 @@ class BaseChunker:
         Returns:
             dict: A dictionary representing the chunk with all the attributes, including the embedding vector.
         """
-        # Use summary for embedding if available; otherwise, use content
-        embedding_text = embedding_text if embedding_text else content
+        # Initialize related_images and related_files if they are None
+        if related_images is None:
+            related_images = []
+        if related_files is None:
+            related_files = []
+
+        # Define the maximum allowed byte size for the content field
+        MAX_CONTENT_BYTES = 32766
+
+        # Function to truncate content to fit within the byte limit without breaking UTF-8 characters
+        def truncate_content(content_str, max_bytes):
+            encoded_content = content_str.encode('utf-8')
+            if len(encoded_content) <= max_bytes:
+                return content_str  # No truncation needed
+            # Truncate the byte array to the maximum allowed size
+            truncated_bytes = encoded_content[:max_bytes]
+            # Decode back to string, ignoring any incomplete characters at the end
+            return truncated_bytes.decode('utf-8', 'ignore')
+
+        # Truncate the content if it exceeds the maximum byte size
+        truncated_content = truncate_content(content, MAX_CONTENT_BYTES)
+
+        # Optionally, you can log or handle the truncation event here
+        # For example:
+        # if truncated_content != content:
+        #     self.logger.warning(f"Content truncated from {len(content.encode('utf-8'))} to {MAX_CONTENT_BYTES} bytes.")
+
+        # Use summary for embedding if available; otherwise, use truncated content
+        embedding_text = embedding_text if embedding_text else truncated_content
         content_vector = self.aoai_client.get_embeddings(embedding_text)
-        
+
         return {
             "chunk_id": chunk_id,
             "url": self.url,
             "filepath": self.filename,
-            "content": content,
+            "content": truncated_content,
             "summary": summary,
-            "category": "",  
-            "length": len(content),                             
+            "category": "",
+            "length": len(truncated_content),  # Length in characters
             "contentVector": content_vector,
             "title": self._extract_title_from_filename(self.filename) if not title else title,
             "page": page,

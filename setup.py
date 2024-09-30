@@ -90,6 +90,7 @@ def get_function_key(subscription_id, resource_group, function_app_name, credent
     accessToken = f"Bearer {credential.get_token('https://management.azure.com/.default').token}"
     # Get key
     requestUrl = f"https://management.azure.com/subscriptions/{subscription_id}/resourceGroups/{resource_group}/providers/Microsoft.Web/sites/{function_app_name}/functions/document_chunking/keys/mykey?api-version=2022-03-01"
+    print(requestUrl)
     requestHeaders = {
         "Authorization": accessToken,
         "Content-Type": "application/json"
@@ -197,7 +198,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
         None
     """    
     logging.info(f"Getting function app {function_app_name} properties.") 
-    credential = DefaultAzureCredential(logging_enable=True, exclude_managed_identity_credential=not enable_managed_identities, exclude_environment_credential=not enable_env_credentials)
+    credential = DefaultAzureCredential()
     web_mgmt_client = WebSiteManagementClient(credential, subscription_id)
     function_app_settings = web_mgmt_client.web_apps.list_application_settings(resource_group, function_app_name)
     function_endpoint = f"https://{function_app_name}.azurewebsites.net"
@@ -507,11 +508,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                     {
                         "name":"documentUrl",
                         "source":"/document/metadata_storage_path"
-                    },
-                    {
-                        "name":"documentContent",
-                        "source":"/document/content"
-                    },                    
+                    },                   
                     { 
                         "name":"documentSasToken",
                         "source":"/document/metadata_storage_sas_token"
@@ -667,7 +664,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
             "base64EncodeKeys": True,
             "configuration": 
             {
-                "dataToExtract": "contentAndMetadata"
+                "dataToExtract": "allMetadata"
             }
         }
     }

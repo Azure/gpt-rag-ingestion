@@ -54,19 +54,9 @@ class LangChainChunker(BaseChunker):
             "shtml": "html",
             "htm": "html",
             "py": "python",
-            "pdf": "pdf",
             "json": "json",
             "csv": "csv",
-            "epub": "epub",
-            "rtf": "rtf",
-            "xml": "xml",
-            "xlsx": "xlsx",
-            "xls": "xls",
-            "docx": "docx",
-            "doc": "doc",
-            "pptx": "pptx",
-            "ppt": "ppt",
-            "msg": "msg"
+            "xml": "xml"
         }
 
     def get_chunks(self):
@@ -80,7 +70,13 @@ class LangChainChunker(BaseChunker):
     
         if self.extension not in self.supported_formats:
             raise UnsupportedFormatError(f"[langchain_chunker] {self.filename} {self.extension} format is not supported")
-        text_chunks = self._chunk_content()
+        
+        # Download the blob as bytes
+        blob_data = self.blob_client.download_blob()
+        # Decode the bytes into text (assuming it's UTF-8 encoded)
+        text = blob_data.decode('utf-8')
+
+        text_chunks = self._chunk_content(text)
         skipped_chunks = 0
         chunk_id = 0
         for text_chunk, num_tokens in text_chunks:
@@ -100,7 +96,7 @@ class LangChainChunker(BaseChunker):
     
         return chunks
     
-    def _chunk_content(self):
+    def _chunk_content(self, text):
         """
         Splits the document content into chunks according to the specified format and token limits.
 
@@ -137,7 +133,7 @@ class LangChainChunker(BaseChunker):
                 chunk_overlap=self.token_overlap
             )
     
-        chunked_content_list = splitter.split_text(self.document_content)
+        chunked_content_list = splitter.split_text(text)
     
         for chunked_content in chunked_content_list:
             chunk_size = self.token_estimator.estimate_tokens(chunked_content)

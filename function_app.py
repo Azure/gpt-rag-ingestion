@@ -41,7 +41,7 @@ def document_chunking(req: func.HttpRequest) -> func.HttpResponse:
             logging.info(f'[document_chunking] Invoked document_chunking skill. Number of items: {len(body["values"])}.')
             for i, item in enumerate(body["values"]):
                 data = item["data"]
-                logging.info(f'[document_chunking] Item {i + 1}: File {data["documentUrl"].split("/")[-1]}, Content Type {data["documentContentType"]}, Content Length {len(data["documentContent"])} chars.')
+                logging.info(f'[document_chunking] Item {i + 1}: File {data["documentUrl"].split("/")[-1]}, Content Type {data["documentContentType"]}.')
             start_time = time.time()
             # Chunk the documents
             result = _chunk_documents(body)
@@ -212,12 +212,11 @@ def _get_request_schema():
                         "data": {
                             "type": "object",
                             "properties": {
-                                "documentUrl": {"type": "string", "minLength": 1}, 
-                                "documentContent": {"type": "string"},
+                                "documentUrl": {"type": "string", "minLength": 1},
                                 "documentSasToken": {"type": "string", "minLength": 1},
                                 "documentContentType": {"type": "string", "minLength": 1}
                             },
-                            "required": ["documentContent", "documentUrl", "documentSasToken", "documentContentType"],
+                            "required": ["documentUrl", "documentSasToken", "documentContentType"],
                         },
                     },
                     "required": ["recordId", "data"],
