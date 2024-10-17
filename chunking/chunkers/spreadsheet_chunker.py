@@ -1,4 +1,4 @@
-import logging
+import logging 
 import os
 import time
 
@@ -11,85 +11,143 @@ from .base_chunker import BaseChunker
 
 class SpreadsheetChunker(BaseChunker):
     """
-    SpreadsheetChunker processes and chunks spreadsheet content, such as Excel files, into manageable pieces. It handles 
-    various spreadsheet structures and converts them into formats suitable for chunking and summarization.
+    SpreadsheetChunker processes and chunks spreadsheet content, such as Excel files, into manageable pieces for analysis and summarization. 
+    It handles both chunking by rows or sheets, allowing users to specify whether to include header rows in each chunk, and ensures that 
+    the content size does not exceed a specified token limit.
 
-    Initialization:
-    ---------------
-    The SpreadsheetChunker is initialized with the following parameters:
-    - data (str): The spreadsheet content to be chunked.
-    - max_chunk_size (int, optional): The maximum size of each chunk in tokens.
-
+    The class supports the following operations:
+    - Converts spreadsheets into chunkable content.
+    - Provides options to chunk either by row or by sheet.
+    - Includes optional header rows in chunks.
+    - Summarizes large sheets if the content exceeds the maximum chunk size.
+    
     Attributes:
     -----------
-    - blob_client (BlobStorageClient): Used to download the spreadsheet data from blob storage.
-    - max_chunk_size (int): Maximum allowed tokens per chunk to ensure chunks do not exceed a specified size.
-    - document_content (str): The content of the spreadsheet after processing.
+    max_chunk_size (int): Maximum allowed size of each chunk in tokens.
+    chunking_by_row (bool): Whether to chunk by row instead of by sheet.
+    include_header_in_chunks (bool): Whether to include header rows in each row-based chunk.
+    document_content (str): Processed spreadsheet content ready for chunking.
+    blob_client (BlobStorageClient): Client for downloading spreadsheet data from blob storage.
 
     Methods:
     --------
-    - get_chunks():
-        Splits the spreadsheet content into chunks. Each sheet is converted into an appropriate format 
-        (HTML, Markdown, or summary) based on its size. The method logs the process and creates chunks 
-        that include the sheet's table content, summary, and title.
-
-    - _spreadsheet_process():
-        Processes each sheet in the spreadsheet. Converts the content to HTML or Markdown depending on 
-        token size. If the content exceeds token limits, a summary is generated. The method returns a 
-        list of dictionaries, where each dictionary represents a sheet and is used as the basis for a 
-        chunk. Each dictionary contains the sheet name, table content, and summary.
-
-    - _excel_to_markdown():
-        Converts a sheet from the spreadsheet into Markdown format. It reads the data from each row and 
-        cell, handling empty values and formatting the content into a Markdown table using the `tabulate` library.
-
-    - _excel_to_html():
-        Converts a sheet from the spreadsheet into HTML format. Handles merged cells by mapping them to the 
-        appropriate `rowspan` and `colspan` attributes. Processes each row and cell to generate a well-formatted 
-        HTML table.
-
-    The SpreadsheetChunker class is designed to break down large spreadsheet documents into smaller, more manageable 
-    pieces for efficient processing, analysis, and summarization. It ensures that even complex spreadsheet structures, 
-    such as merged cells, are correctly handled during chunking, and that each resulting dictionary is ready to be 
-    used as the basis for a chunk.
+    - get_chunks(): Splits the spreadsheet content into manageable chunks, based on the configuration.
+    - _spreadsheet_process(): Extracts and processes data from each sheet, including summaries if necessary.
+    - _get_sheet_data(sheet): Retrieves data and headers from the given sheet, handling empty cells.
+    - _clean_markdown_table(table_str): Cleans up Markdown table strings by removing excessive whitespace.
     """
 
-    def __init__(self, data, max_chunk_size=None):
+    def __init__(self, data, max_chunk_size=None, chunking_by_row=None, include_header_in_chunks=None):
         """
-        Initializes the SpreadsheetChunker with the given data and sets up chunking parameters from environment variables.
+        Initializes the SpreadsheetChunker with the provided data and environment configurations.
         
         Args:
             data (str): The spreadsheet content to be chunked.
+            max_chunk_size (int, optional): Maximum allowed size of each chunk in tokens. Defaults to an environment variable 'SPREADSHEET_NUM_TOKENS' or 0 if not set.
+            chunking_by_row (bool, optional): Whether to chunk by row instead of by sheet. Defaults to an environment variable 'CHUNKING_BY_ROW' or False.
+            include_header_in_chunks (bool, optional): Whether to include the header row in each chunk if chunking by row. Defaults to 'INCLUDE_HEADER_IN_CHUNKS' environment variable or False.
         """
         super().__init__(data)
-        max_chunk_size = int(os.getenv("SPREADSHEET_NUM_TOKENS", 20000)) if max_chunk_size is None else int(max_chunk_size)
-        self.max_chunk_size = max_chunk_size
+        
+        if max_chunk_size is None:
+            self.max_chunk_size = int(os.getenv("SPREADSHEET_NUM_TOKENS", 0))
+        else:
+            self.max_chunk_size = int(max_chunk_size)
+        
+        if chunking_by_row is None:
+            chunking_env = os.getenv("SPREADSHEET_CHUNKING_BY_ROW", "false").lower()
+            self.chunking_by_row = chunking_env in ["true", "1", "yes"]
+        else:
+            self.chunking_by_row = bool(chunking_by_row)
+        
+        if include_header_in_chunks is None:
+            include_header_env = os.getenv("SPREADSHEET_CHUNKING_BY_ROW_INCLUDE_HEADER", "false").lower()
+            self.include_header_in_chunks = include_header_env in ["true", "1", "yes"]
+        else:
+            self.include_header_in_chunks = bool(include_header_in_chunks)
 
     def get_chunks(self):
+        """
+        Splits the spreadsheet content into smaller chunks. Depending on the configuration, chunks can be created by sheet or by row.
+        - If chunking by sheet, the method summarizes content that exceeds the maximum chunk size.
+        - If chunking by row, each row is processed into its own chunk, optionally including the header row.
+        
+        Returns:
+            List[dict]: A list of dictionaries representing the chunks created from the spreadsheet.
+        """
         chunks = [] 
         logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks] Running get_chunks.")
         total_start_time = time.time()
 
-        # Extract the relevant text from the spreadsheet
         sheets = self._spreadsheet_process()
-        logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks] workbook has {len(sheets)} sheets")
+        logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks] Workbook has {len(sheets)} sheets")
 
         chunk_id = 0
-        for sheet in sheets:      
-            start_time = time.time()
-            chunk_id += 1
-            logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Starting processing chunk {chunk_id} sheet.")            
-            chunk_dict = self._create_chunk(
-                chunk_id=chunk_id,
-                content=sheet["table"],
-                summary=sheet["summary"],
-                embedding_text=sheet["summary"] if sheet["summary"] else sheet["table"],
-                title=sheet["name"]
-            )            
-            chunks.append(chunk_dict)
-            elapsed_time = time.time() - start_time
-            logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Processed chunk {chunk_id} in {elapsed_time:.2f} seconds.")            
+        for sheet in sheets:
+            if not self.chunking_by_row:
+                # Original behavior: Chunk per sheet
+                start_time = time.time()
+                chunk_id += 1
+                logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Starting processing chunk {chunk_id} (sheet).")
+                table_content = sheet["table"]
 
+                table_content = self._clean_markdown_table(table_content)
+                table_tokens = self.token_estimator.estimate_tokens(table_content)
+                
+                if self.max_chunk_size > 0 and table_tokens > self.max_chunk_size:
+                    logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Table has {table_tokens} tokens. Max tokens is {self.max_chunk_size}. Using summary.")
+                    table_content = sheet["summary"]
+
+                chunk_dict = self._create_chunk(
+                    chunk_id=chunk_id,
+                    content=table_content,
+                    summary=sheet["summary"] if not self.chunking_by_row else "",
+                    embedding_text=sheet["summary"] if (sheet["summary"] and not self.chunking_by_row) else table_content,
+                    title=sheet["name"]
+                )            
+                chunks.append(chunk_dict)
+                elapsed_time = time.time() - start_time
+                logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Processed chunk {chunk_id} in {elapsed_time:.2f} seconds.")            
+            else:
+                # New behavior: Chunk per row
+                logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Starting row-wise chunking.")
+                headers = sheet.get("headers", [])
+                rows = sheet.get("data", [])
+                for row_index, row in enumerate(rows, start=1):
+                    if not any(cell.strip() for cell in row):
+                        continue
+                    chunk_id += 1
+                    start_time = time.time()
+                    logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Processing chunk {chunk_id} for row {row_index}.")
+                    
+                    if self.include_header_in_chunks:
+                        table = tabulate([headers, row], headers="firstrow", tablefmt="github")
+                    else:
+                        table = tabulate([row], headers=headers, tablefmt="github")
+                    
+                    table = self._clean_markdown_table(table)
+                    summary = ""
+                    
+                    table_tokens = self.token_estimator.estimate_tokens(table)
+                    if self.max_chunk_size > 0 and table_tokens > self.max_chunk_size:
+                        logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Row table has {table_tokens} tokens. Max tokens is {self.max_chunk_size}. Truncating content.")
+                        content = table
+                        embedding_text = table
+                    else:
+                        content = table
+                        embedding_text = table
+
+                    chunk_dict = self._create_chunk(
+                        chunk_id=chunk_id,
+                        content=content,
+                        summary=summary,
+                        embedding_text=embedding_text,
+                        title=f"{sheet['name']} - Row {row_index}"
+                    )
+                    chunks.append(chunk_dict)
+                    elapsed_time = time.time() - start_time
+                    logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Processed chunk {chunk_id} in {elapsed_time:.2f} seconds.")
+        
         total_elapsed_time = time.time() - total_start_time
         logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks] Finished get_chunks. Created {len(chunks)} chunks in {total_elapsed_time:.2f} seconds.")
 
@@ -97,100 +155,64 @@ class SpreadsheetChunker(BaseChunker):
 
     def _spreadsheet_process(self):
         """
-        Downloads a spreadsheet from Azure Blob Storage, processes each sheet into HTML or markdown tables, and generates 
-        summaries if token limits are exceeded. Each sheet's processed data is stored in a dictionary, which will be used as 
-        the basis for a chunk.
-
-        Steps:
-        1. Download and load the spreadsheet with `openpyxl`.
-        2. For each sheet:
-            - Convert the content to an HTML table and estimate token count.
-            - If the HTML exceeds token limits, convert to markdown or generate a summary.
-            - Store the resulting HTML, markdown, or summary in the `table` field and any generated summary in `summary`.
+        Extracts and processes each sheet from the spreadsheet, converting the content into Markdown table format. 
+        If chunking by sheet, a summary is generated if the sheet's content exceeds the maximum token size.
 
         Returns:
-            list[dict]: A list of dictionaries for each sheet:
-            - `name`: Sheet name.
-            - `table`: The HTML, markdown, or summary.
-            - `summary`: A summary if needed, otherwise empty.
-
-        Fields/Attributes:
-        - `blob_client`: For downloading the spreadsheet.
-        - `token_estimator`: For estimating token counts.
-        - `aoai_client`: For generating summaries with OpenAI.
-        - `max_chunk_size`: Maximum tokens per chunk.
-        - `max_embeddings_model_input_tokens`: Maximum tokens for embedding models.
-        """        
-        logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process] starting blob download.")        
+            List[dict]: A list of dictionaries, where each dictionary contains sheet metadata, headers, rows, table content, and a summary if applicable.
+        """
+        logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process] Starting blob download.")        
         blob_data = self.blob_client.download_blob()
         blob_stream = BytesIO(blob_data)
-        logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process] starting openpyxl load_workbook.")                     
+        logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process] Starting openpyxl load_workbook.")                    
         workbook = load_workbook(blob_stream, data_only=True)
 
-        # Process each sheet in the workbook
         sheets = []
         total_start_time = time.time()
-        
+    
         for sheet_name in workbook.sheetnames:
-            logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_name}] started processing.")                   
+            logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_name}] Started processing.")                  
             start_time = time.time()
             sheet_dict = {}            
             sheet_dict['name'] = sheet_name
             sheet = workbook[sheet_name]
+            data, headers = self._get_sheet_data(sheet)
+            sheet_dict["headers"] = headers
+            sheet_dict["data"] = data
+            table = tabulate(data, headers=headers, tablefmt="grid")
+            table = self._clean_markdown_table(table)
+            sheet_dict["table"] = table
             
-            # initialize field logic variables
-            html_table = self._excel_to_html(sheet)
-            html_table_tokens = self.token_estimator.estimate_tokens(html_table)
-            markdown_table = ""
-            markdown_table_tokens = 0
-            summary = ""
-
-            # summary field logic
-            if html_table_tokens > self.aoai_client.max_embeddings_model_input_tokens:
-                logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_name}]. HTML table has {html_table_tokens} tokens. Max embeddings tokens is {self.aoai_client.max_embeddings_model_input_tokens}. Generating markdown.")
-                markdown_table = self._excel_to_markdown(sheet)     
-                markdown_table_tokens = self.token_estimator.estimate_tokens(markdown_table)                
-                if markdown_table_tokens > self.aoai_client.max_embeddings_model_input_tokens:
-                    logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_name}]. Markdown table has {markdown_table_tokens} tokens. Generating summary.")
-                    prompt = f"Summarize the markdown table provided.\ntable_content: \n{markdown_table} "
-                    summary = self.aoai_client.get_completion(prompt, max_tokens=4096)
-                else:
-                    logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_name}]. Markdown table has {markdown_table_tokens} tokens. No summary needed.")                
-                    summary = ""
+            if not self.chunking_by_row:
+                prompt = f"Summarize the table with data in it, by understanding the information clearly.\n table_data:{table}"
+                summary = self.aoai_client.get_completion(prompt, max_tokens=2048)
+                sheet_dict["summary"] = summary
+                logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_dict['name']}] Generated summary.")
             else:
-                logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_name}]. HTML table has {html_table_tokens} tokens. No summary needed.")                
-                summary = ""
-            sheet_dict["summary"] = summary
-
-            # table field logic
-            if html_table_tokens < self.max_chunk_size:
-                logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_name}].  HTML table has {html_table_tokens} tokens. Max tokens is {self.max_chunk_size}.")
-                sheet_dict["table"] = html_table
-            else:
-                logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_name}].  HTML table has {html_table_tokens} tokens. Max tokens is {self.max_chunk_size} Converting to markdown.")
-                markdown_table = self._excel_to_markdown(sheet) if markdown_table == "" else markdown_table
-                markdown_table_tokens = self.token_estimator.estimate_tokens(markdown_table) if markdown_table_tokens == 0 else markdown_table_tokens
-                if markdown_table_tokens < self.max_chunk_size:
-                    sheet_dict["table"] = markdown_table
-                else:
-                    logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_name}].  Markdown table has {markdown_table_tokens} tokens. Max tokens is {self.max_chunk_size} Using summary as the content.")
-                    prompt = f"Summarize the markdown table provided.\ntable_content: \n{markdown_table} "
-                    summary = self.aoai_client.get_completion(prompt, max_tokens=4096) if summary == "" else summary
-                    sheet_dict["table"] = summary
-
+                sheet_dict["summary"] = ""
+                logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_dict['name']}] Skipped summary generation (chunking by row).")
+            
             elapsed_time = time.time() - start_time
-            logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_dict['name']}] processed in {elapsed_time:.2f} seconds.")
+            logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_dict['name']}] Processed in {elapsed_time:.2f} seconds.")
             sheets.append(sheet_dict)
-        
+    
         total_elapsed_time = time.time() - total_start_time
         logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process] Total processing time: {total_elapsed_time:.2f} seconds.")
-        
+
         return sheets
 
-    def _excel_to_markdown(self, sheet):
-        # Read the data and determine cell colors
+    def _get_sheet_data(self, sheet):
+        """
+        Retrieves data and headers from the given sheet. Each row's data is processed into a list format, ensuring that empty rows are excluded.
+
+        Args:
+            sheet (Worksheet): The worksheet object to extract data from.
+
+        Returns:
+            Tuple[List[List[str]], List[str]]: A tuple containing a list of row data and a list of headers.
+        """
         data = []
-        for row in sheet.iter_rows():
+        for row in sheet.iter_rows(min_row=2):  # Start from the second row to skip headers
             row_data = []
             for cell in row:
                 cell_value = cell.value
@@ -198,52 +220,33 @@ class SpreadsheetChunker(BaseChunker):
                     cell_value = ""
                 cell_text = str(cell_value)
                 row_data.append(cell_text)
-            if "".join(row_data)!="":
+            if "".join(row_data).strip() != "":
                 data.append(row_data)
 
-        # Get the header from the first row
         headers = [cell.value if cell.value is not None else "" for cell in sheet[1]]
-        table = tabulate(data, headers, tablefmt="pipe")
-        return table
+        return data, headers
     
-    def _excel_to_html(self, sheet):
-        html = '<table border="1">'
-        
-        # Dictionary to track merged cells
-        merged_cells = {}
-        
-        # Process merged cells to map them to colspan and rowspan
-        for merged_cell in sheet.merged_cells.ranges:
-            min_col, min_row, max_col, max_row = merged_cell.min_col, merged_cell.min_row, merged_cell.max_col, merged_cell.max_row
-            merged_cells[(min_row, min_col)] = (max_row - min_row + 1, max_col - min_col + 1)
-        
-        # Iterate over rows and columns to build the HTML
-        for row in sheet.iter_rows():
-            html += '  <tr>'
-            for cell in row:
-                row_num = cell.row
-                col_num = cell.column
-                
-                # Check if the cell is the top-left of a merged cell
-                if (row_num, col_num) in merged_cells:
-                    rowspan, colspan = merged_cells[(row_num, col_num)]
-                    cell_value = '' if cell.value is None else cell.value
-                    html += f'    <td rowspan="{rowspan}" colspan="{colspan}">{cell_value}</td>'
-                else:
-                    # Skip cells that are part of a merged range but not the top-left
-                    is_merged = False
-                    for key, (rspan, cspan) in merged_cells.items():
-                        start_row, start_col = key
-                        if start_row <= row_num < start_row + rspan and start_col <= col_num < start_col + cspan:
-                            is_merged = True
-                            break
-                    
-                    if not is_merged:
-                        cell_value = '' if cell.value is None else cell.value
-                        html += f'    <td>{cell_value}</td>'
-                    
-            html += '  </tr>'
-        
-        html += '</table>'
-        html = html.replace('\n', '').replace('\t', '')
-        return html
+    def _clean_markdown_table(self, table_str):
+        """
+        Cleans up a Markdown table string by removing excessive whitespace from each cell.
+
+        Args:
+            table_str (str): The Markdown table string to be cleaned.
+
+        Returns:
+            str: The cleaned Markdown table string with reduced whitespace.
+        """
+        cleaned_lines = []
+        lines = table_str.splitlines()
+
+        for line in lines:
+            if set(line.strip()) <= set('-| '):
+                cleaned_lines.append(line)
+                continue
+
+            cells = line.split('|')
+            stripped_cells = [cell.strip() for cell in cells[1:-1]]
+            cleaned_line = '| ' + ' | '.join(stripped_cells) + ' |'
+            cleaned_lines.append(cleaned_line)
+
+        return '\n'.join(cleaned_lines)
