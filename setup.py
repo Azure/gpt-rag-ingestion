@@ -565,7 +565,13 @@ def execute_setup(
         ],
         "corsOptions": {"allowedOrigins": ["*"], "maxAgeInSeconds": 60},
         "vectorSearch": {
-            "profiles": [{"name": "myHnswProfile", "algorithm": "myHnswConfig"}],
+            "profiles": [
+                {
+                    "name": "myHnswProfile",
+                    "algorithm": "myHnswConfig",
+                    "vectorizer": "vector-ce-vectorizer",
+                }
+            ],
             "algorithms": [
                 {
                     "name": "myHnswConfig",
