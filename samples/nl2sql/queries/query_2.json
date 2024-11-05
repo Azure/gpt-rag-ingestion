@@ -1,0 +1,12 @@
+{
+    "question": "How many customers have placed orders in the last month?",
+    "query": "SELECT COUNT(DISTINCT CustomerID) AS NumberOfCustomers FROM SalesLT.SalesOrderHeader WHERE OrderDate >= DATEADD(month, -1, GETDATE())",
+    "selected_tables": [
+        "SalesLT.SalesOrderHeader"
+    ],
+    "selected_columns": [
+        "SalesLT.SalesOrderHeader-CustomerID",
+        "SalesLT.SalesOrderHeader-OrderDate"
+    ],
+    "reasoning": "This query counts the number of unique customers who have placed orders in the past month. It uses the SalesLT.SalesOrderHeader table to filter orders based on the OrderDate within the last month."
+}

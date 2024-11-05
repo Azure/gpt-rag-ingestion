@@ -1,0 +1,4 @@
+{
+    "table_name": "SalesLT.SalesOrderDetail",
+    "description": "Details of each product line item associated with a sales order."
+}

@@ -1,0 +1,5 @@
+{
+    "table_name": "SalesLT.SalesOrderHeader",
+    "column_name": "Status",
+    "description": "Order current status. 1 = In process; 2 = Approved; 3 = Backordered; 4 = Rejected; 5 = Shipped; 6 = Cancelled."
+}
