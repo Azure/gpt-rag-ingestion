@@ -1,0 +1,5 @@
+{
+    "table_name": "SalesLT.ProductDescription",
+    "column_name": "Description",
+    "description": "Description of the product."
+}

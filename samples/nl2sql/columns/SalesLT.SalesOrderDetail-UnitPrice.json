@@ -1,0 +1,5 @@
+{
+    "table_name": "SalesLT.SalesOrderDetail",
+    "column_name": "UnitPrice",
+    "description": "Selling price of a single product."
+}

@@ -1,0 +1,5 @@
+{
+    "table_name": "SalesLT.SalesOrderHeader",
+    "column_name": "OnlineOrderFlag",
+    "description": "0 = Order placed by salesperson, 1 = Order placed online by customer."
+}

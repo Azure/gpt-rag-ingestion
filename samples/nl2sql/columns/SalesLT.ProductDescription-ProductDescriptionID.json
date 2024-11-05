@@ -1,0 +1,5 @@
+{
+    "table_name": "SalesLT.ProductDescription",
+    "column_name": "ProductDescriptionID",
+    "description": "Primary key for ProductDescription records."
+}

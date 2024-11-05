@@ -1,0 +1,4 @@
+{
+    "table_name": "SalesLT.ProductDescription",
+    "description": "Contains descriptions for products, with multilingual support."
+}
