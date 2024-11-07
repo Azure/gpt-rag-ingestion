@@ -214,8 +214,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     azure_openai_service_name = function_app_settings.properties["AZURE_OPENAI_SERVICE_NAME"]
     search_service = function_app_settings.properties["SEARCH_SERVICE"]
     search_analyzer_name= function_app_settings.properties["SEARCH_ANALYZER_NAME"]
-    search_api_version = function_app_settings.properties.get("SEARCH_API_VERSION", "2024-05-01-preview")
-    # search_api_version = '2024-07-01' # enforced, to support indexProjections and also if the version is lower than 2023-10-01-Preview it wont work with MIS authResourceId parameter.   
+    search_api_version = function_app_settings.properties.get("SEARCH_API_VERSION", "2024-07-01") 
     search_index_interval = function_app_settings.properties["SEARCH_INDEX_INTERVAL"]
     search_index_name = function_app_settings.properties["SEARCH_INDEX_NAME"]
     storage_container = function_app_settings.properties["STORAGE_CONTAINER"]
@@ -259,45 +258,12 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     approve_search_shared_private_access(subscription_id, resource_group, function_app_name, storage_account_name, azure_openai_service_name, credential)
 
     ###########################################################################
-    # 01 Creating blob containers (if needed)
+    # Creating blob containers
     ###########################################################################
-    def create_container(blob_service_client, container_name):
-        container_client = blob_service_client.get_container_client(container_name)
-        try:
-            if not container_client.exists():
-                container_client.create_container()
-                logging.info(f"Container '{container_name}' created successfully.")
-            else:
-                logging.info(f"Container '{container_name}' already exists.")
-        except azure.core.exceptions.ClientAuthenticationError as e:
-            error_message = str(e)
-            logging.error(f"Error connecting with storage account, you may need to restart the computer. Error: {error_message}")
-            exit(1)
-        except azure.core.exceptions.HttpResponseError as e:
-            error_message = str(e)
-            logging.error(f"Error when creating container. {error_message}")
-            logging.error(f"If you are in a network isolation scenario please run the script when connected to the solution vnet.")
-            exit(1)
-
-    logging.info("01 Creating containers step.")    
-
-    logging.info(f"Getting {storage_account_name} storage connection string.")
-    storage_client = StorageManagementClient(credential, subscription_id)
-    keys = storage_client.storage_accounts.list_keys(resource_group, storage_account_name)
-    storage_connection_string = f"DefaultEndpointsProtocol=https;EndpointSuffix=core.windows.net;AccountName={storage_account_name};AccountKey={keys.keys[0].value}"
-
-    start_time = time.time()
-    blob_service_client = BlobServiceClient.from_connection_string(storage_connection_string)
-
-    # Create containers
-    create_container(blob_service_client, storage_container)
-    create_container(blob_service_client, storage_container_nl2sql)
-
-    response_time = time.time() - start_time
-    logging.info(f"01 Create containers step. {round(response_time, 2)} seconds")
+    # Note: this ste[] was removed since the storage account and container are already created by azd provision
 
     ###############################################################################
-    # 02 Creating AI Search datasource
+    # Creating AI Search datasource
     ###############################################################################
     
     def create_datasource(search_service, search_api_version, datasource_name, storage_connection_string, container_name, credential, subfolder=None):
@@ -317,8 +283,11 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
         }
         call_search_api(search_service, search_api_version, "datasources", f"{datasource_name}-datasource", "put", credential, body)
 
-    logging.info("02 Creating datasources step.")
+    logging.info("Creating datasources step.")
     start_time = time.time()
+
+    # Define storage connection string without account key
+    storage_connection_string = f"ResourceId=/subscriptions/{subscription_id}/resourceGroups/{resource_group}/providers/Microsoft.Storage/storageAccounts/{storage_account_name}/;"
 
     # Creating main datasource
     create_datasource(search_service, search_api_version, f"{search_index_name}", storage_connection_string, storage_container, credential)
@@ -334,7 +303,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
         create_datasource(search_service, search_api_version, index_name, storage_connection_string, "nl2sql", credential, subfolder=subfolder)
 
     response_time = time.time() - start_time
-    logging.info(f"02 Create datastores step. {round(response_time, 2)} seconds")
+    logging.info(f"Create datastores step. {round(response_time, 2)} seconds")
 
 
     ###############################################################################
