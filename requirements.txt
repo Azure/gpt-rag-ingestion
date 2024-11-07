@@ -15,7 +15,7 @@ openai
 azure-identity
 azure-keyvault-secrets
 tenacity
-aiohttp==3.9.0b0
+aiohttp==3.8.5
 
 langchain-community
 langchain-openai
