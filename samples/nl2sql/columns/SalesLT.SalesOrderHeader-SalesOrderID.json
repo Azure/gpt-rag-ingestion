@@ -1,0 +1,5 @@
+{
+    "table_name": "SalesLT.SalesOrderHeader",
+    "column_name": "SalesOrderID",
+    "description": "Primary key for SalesOrderHeader records."
+}

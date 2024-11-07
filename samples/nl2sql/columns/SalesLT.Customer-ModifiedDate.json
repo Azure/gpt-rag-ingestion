@@ -1,0 +1,5 @@
+{
+    "table_name": "SalesLT.Customer",
+    "column_name": "ModifiedDate",
+    "description": "Date and time the record was last updated."
+}

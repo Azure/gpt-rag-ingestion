@@ -1,0 +1,5 @@
+{
+    "table_name": "SalesLT.Product",
+    "column_name": "SellEndDate",
+    "description": "Date the product was no longer available for sale."
+}

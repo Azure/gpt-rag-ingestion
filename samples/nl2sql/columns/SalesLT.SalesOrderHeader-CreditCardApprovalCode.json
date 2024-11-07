@@ -1,0 +1,5 @@
+{
+    "table_name": "SalesLT.SalesOrderHeader",
+    "column_name": "CreditCardApprovalCode",
+    "description": "Approval code provided by the credit card company."
+}
