@@ -216,7 +216,7 @@ def _get_request_schema():
                                 "documentSasToken": {"type": "string", "minLength": 1},
                                 "documentContentType": {"type": "string", "minLength": 1}
                             },
-                            "required": ["documentUrl", "documentSasToken", "documentContentType"],
+                            "required": ["documentUrl", "documentContentType"],
                         },
                     },
                     "required": ["recordId", "data"],
