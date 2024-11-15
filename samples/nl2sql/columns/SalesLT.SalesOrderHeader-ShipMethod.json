@@ -1,0 +1,5 @@
+{
+    "table_name": "SalesLT.SalesOrderHeader",
+    "column_name": "ShipMethod",
+    "description": "Shipping method. Foreign key to ShipMethod.ShipMethodID."
+}

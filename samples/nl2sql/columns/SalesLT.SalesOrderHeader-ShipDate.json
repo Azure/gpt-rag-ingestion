@@ -1,0 +1,5 @@
+{
+    "table_name": "SalesLT.SalesOrderHeader",
+    "column_name": "ShipDate",
+    "description": "Date the order was shipped to the customer."
+}

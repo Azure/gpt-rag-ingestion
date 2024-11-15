@@ -1,0 +1,5 @@
+{
+    "table_name": "SalesLT.Address",
+    "column_name": "City",
+    "description": "Name of the city."
+}

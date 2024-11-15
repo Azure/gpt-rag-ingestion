@@ -213,10 +213,10 @@ def _get_request_schema():
                             "type": "object",
                             "properties": {
                                 "documentUrl": {"type": "string", "minLength": 1},
-                                "documentSasToken": {"type": "string", "minLength": 1},
+                                "documentSasToken": {"type": "string"},
                                 "documentContentType": {"type": "string", "minLength": 1}
                             },
-                            "required": ["documentUrl", "documentSasToken", "documentContentType"],
+                            "required": ["documentUrl", "documentContentType"],
                         },
                     },
                     "required": ["recordId", "data"],

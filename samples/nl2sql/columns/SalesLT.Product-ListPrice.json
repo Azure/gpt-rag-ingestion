@@ -1,0 +1,5 @@
+{
+    "table_name": "SalesLT.Product",
+    "column_name": "ListPrice",
+    "description": "Selling price."
+}

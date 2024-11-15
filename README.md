@@ -1,72 +1,166 @@
-# GPT on your data Ingestion 
+# GPT-RAG - Data Ingestion Component
 
 Part of [GPT-RAG](https://github.com/Azure/gpt-rag)
 
-## Getting started
+## Table of Contents
 
-You can provision the infrastructure and deploy the whole solution using the GPT-RAG template, as instructed at: [https://aka.ms/gpt-rag](https://aka.ms/gpt-rag).
+1. [**GPT-RAG - Data Ingestion Component**](#gpt-rag---data-ingestion-component)
+   - [1.1 Document Ingestion Process](#document-ingestion-process)
+   - [1.2 Document Chunking Process](#document-chunking-process)
+   - [1.3 NL2SQL Data Ingestion](#nl2sql-ingestion-process)
+2. [**How-to: Developer**](#how-to-developer)
+   - [2.1 Redeploying the Ingestion Component](#redeploying-the-ingestion-component)
+   - [2.2 Running Locally](#running-locally)
+3. [**How-to: User**](#how-to-user)
+   - [3.1 Uploading Documents for Ingestion](#uploading-documents-for-ingestion)
+   - [3.2 Reindexing Documents in AI Search](#reindexing-documents-in-ai-search)
+4. [**Reference**](#reference)
+   - [4.1 Supported Formats and Chunkers](#supported-formats-and-chunkers)
+   - [4.2 External Resources](#external-resources)
 
-## What if I want to redeploy just the ingestion component?
+## Concepts
 
-Eventually, you may want to make some adjustments to the data ingestion code and redeploy the component.
+### Document Ingestion Process
 
-To redeploy only the ingestion component (after the initial deployment of the solution), you will need:
+The diagram below provides an overview of the document ingestion pipeline, which handles various document types, preparing them for indexing and retrieval.
 
-- **Azure Developer CLI**: [Download azd for Windows](https://azdrelease.azureedge.net/azd/standalone/release/1.5.0/azd-windows-amd64.msi), [Other OS's](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/install-azd).
-- **Powershell** (Windows only): [Powershell](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows?view=powershell-7.4#installing-the-msi-package)
-- **Git**: [Download Git](https://git-scm.com/downloads)
-- **Python 3.11**: [Download Python](https://www.python.org/downloads/release/python-3118/)
+![Document Ingestion Pipeline](media/document_ingestion_pipeline.png)  
+*Document Ingestion Pipeline*
 
-Then just clone this repository and reproduce the following commands within the `gpt-rag-ingestion` directory:  
+**Workflow**
 
-```bash
-azd auth login  
-azd env refresh  
-azd deploy  
-```
+1) The `ragindex-indexer-chunk-documents` indexer reads new documents from the `documents` blob container.
 
-> **Note:** When running the `azd env refresh`, use the same environment name, subscription, and region used in the initial provisioning of the infrastructure.
+2) For each document, it calls the `document-chunking` function app to segment the content into chunks and generate embeddings using the ADA model.
 
-## Running Locally with VS Code  
-   
-[How can I test the data ingestion component locally in VS Code?](docs/LOCAL_DEPLOYMENT.md)
+3) Finally, each chunk is indexed in the AI Search Index.
 
-## Document Intelligence API version
+### Document Chunking Process
 
-To use version 4.0 of Document Intelligence, it is necessary to add the property `DOCINT_API_VERSION` with the value `2024-07-31-preview` in the function app properties. It's important to check if this version is supported in the region where the service was created. More information can be found at [this link](https://learn.microsoft.com/en-us/azure/ai-services/document-intelligence/concept-layout?view=doc-intel-4.0.0). If the property has not been defined (default behavior), the version `2023-07-31` (3.1) will be used.
+The `document_chunking` function breaks documents into smaller segments called chunks.
 
-## Document Chunking Process
+When a document is submitted, the system identifies its file type and selects the appropriate chunker to divide it into chunks suitable for that specific type.
 
-The `document_chunking` function is responsible for breaking down documents into smaller pieces known as chunks. 
+- **For `.pdf` files**, the system uses the [DocAnalysisChunker](chunking/chunkers/doc_analysis_chunker.py) with the Document Intelligence API, which extracts structured elements, like tables and sections, converting them into Markdown. LangChain splitters then segment the content based on sections. When Document Intelligence API 4.0 is enabled, `.docx` and `.pptx` files are processed with this chunker as well.
 
-When a document is submitted, the system identifies its file extension and selects the appropriate chunker to divide it into chunks, each tailored to the specific file type.
+- **For image files** such as `.bmp`, `.png`, `.jpeg`, and `.tiff`, the [DocAnalysisChunker](chunking/chunkers/doc_analysis_chunker.py) performs Optical Character Recognition (OCR) to extract text before chunking.
 
-- **For `.pdf` files**, the system leverages the [DocAnalysisChunker](chunking/chunkers/doc_analysis_chunker.py) to analyze the document using the Document Intelligence API. This analysis extracts structured elements, such as tables and sections, and converts them into Markdown format. The LangChain splitters are then applied to segment the content based on sections. If the Document Intelligence API 4.0 is enabled, `.docx` and `.pptx` files are also processed using this chunker.
-
-- **For image files** such as `.bmp`, `.png`, `.jpeg`, and `.tiff`, the [DocAnalysisChunker](chunking/chunkers/doc_analysis_chunker.py) is employed. This chunker includes Optical Character Recognition (OCR) to extract text from the images before chunking.
-
-- **For specialized formats**, different chunkers are used:
+- **For specialized formats**, specific chunkers are applied:
     - `.vtt` files (video transcriptions) are handled by the [TranscriptionChunker](chunking/chunkers/transcription_chunker.py), chunking content by time codes.
     - `.xlsx` files (spreadsheets) are processed by the [SpreadsheetChunker](chunking/chunkers/spreadsheet_chunker.py), chunking by rows or sheets.
-    - `.nl2sql` files are processed by the [NL2SQLChunker](chunking/chunkers/nl2sql_chunker.py), which handles JSON content containing natural language questions and their corresponding SQL queries. Click here to see a sample [.nl2sql](https://github.com/Azure/gpt-rag-agentic/blob/main/config/queries.nl2sql) file.
 
-- **For text-based files** like `.txt`, `.md`, `.json`, and `.csv`, the system uses the [LangChainChunker](chunking/chunkers/langchain_chunker.py), which uses LangChain splitters to divide the content based on logical separators such as paragraphs or sections.
+- **For text-based files** like `.txt`, `.md`, `.json`, and `.csv`, the [LangChainChunker](chunking/chunkers/langchain_chunker.py) uses LangChain splitters to divide the content by paragraphs or sections.
 
-This flow ensures that each document is processed with the chunker best suited for its format, leading to efficient and accurate chunking tailored to the specific file type.
+This setup ensures each document is processed by the most suitable chunker, leading to efficient and accurate chunking.
 
-> [!IMPORTANT]
-> Note that the choice of chunker is determined by the format, following the guidelines provided above.
+> **Important:** The file extension determines the choice of chunker as outlined above.
 
-### Customization
+**Customization**
 
-The chunking process is flexible and can be customized. You can modify the existing chunkers or create new ones to suit your specific data processing needs, allowing for a more tailored and efficient processing pipeline.
+The chunking process is customizable. You can modify existing chunkers or create new ones to meet specific data processing needs, optimizing the pipeline.
 
-### Supported Formats
+### NL2SQL Ingestion Process
 
-Here are the formats supported by the chunkers. Note that the decision on which chunker will be used based on the format is described earlier.
+If you are using the **few-shot** or **few-shot scaled** NL2SQL strategies in your orchestration component, you may want to index NL2SQL content for use during the retrieval step. The idea is that this content will aid in SQL query creation with these strategies. More details about these NL2SQL strategies can be found in the [orchestrator repository](https://github.com/azure/gpt-rag-agentic).
+
+The NL2SQL Ingestion Process indexes three content types:
+
+- **query**: Examples of queries for both **few-shot** and **few-shot scaled** strategies.
+- **table**: Descriptions of tables for the **few-shot scaled** scenario.
+- **column**: Descriptions of columns for the **few-shot scaled** scenario.
+
+> [!NOTE] 
+> If you are using the **few-shot** strategy, you will only need to index queries.
+
+Each item—whether a query, table, or column—is represented in a JSON file with information specific to the query, table, or column, respectively.
+
+Here’s an example of a query file:
+
+```json
+{
+    "question": "What are the top 5 most expensive products currently available for sale?",
+    "query": "SELECT TOP 5 ProductID, Name, ListPrice FROM SalesLT.Product WHERE SellEndDate IS NULL ORDER BY ListPrice DESC",
+    "selected_tables": [
+        "SalesLT.Product"
+    ],
+    "selected_columns": [
+        "SalesLT.Product-ProductID",
+        "SalesLT.Product-Name",
+        "SalesLT.Product-ListPrice",
+        "SalesLT.Product-SellEndDate"
+    ],
+    "reasoning": "This query retrieves the top 5 products with the highest selling prices that are currently available for sale. It uses the SalesLT.Product table, selects relevant columns, and filters out products that are no longer available by checking that SellEndDate is NULL."
+}
+```
+
+In the [**nl2sql**](samples/nl2sql) directory of this repository, you can find additional examples of queries, tables, and columns for the following Adventure Works sample SQL Database tables.
+
+![Document Ingestion Pipeline](media/nl2sql_adventure_works.png)  
+*Sample Adventure Works Database Tables*
+
+> [!NOTE]  
+> You can deploy this sample database in your [Azure SQL Database](https://learn.microsoft.com/en-us/sql/samples/adventureworks-install-configure?view=sql-server-ver16&tabs=ssms#deploy-to-azure-sql-database).
+
+The diagram below illustrates the NL2SQL data ingestion pipeline.
+
+![NL2SQL Ingestion Pipeline](media/nl2sql_ingestion_pipeline.png)  
+*NL2SQL Ingestion Pipeline*
+
+**Workflow**
+
+This outlines the ingestion workflow for **query** elements.
+
+> **Note:**  
+> The workflow for tables and columns is similar; just replace **queries** with **tables** or **columns** in the steps below.
+
+1. The AI Search `queries-indexer` scans for new query files (each containing a single query) within the `queries` folder in the `nl2sql` storage container.
+
+   > **Note:**  
+   > Files are stored in the `queries` folder, not in the root of the `nl2sql` container. This setup also applies to `tables` and `columns`.
+
+2. The `queries-indexer` then uses the `#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill` to create a vectorized representation of the question text using the Azure OpenAI Embeddings model.
+
+   > **Note:**  
+   > For query items, the question itself is vectorized. For tables and columns, their descriptions are vectorized.
+
+3. Finally, the indexed content is added to the `nl2sql-queries` index.
+
+## How-to: Developer
+
+### Redeploying the Ingestion Component
+- Provision the infrastructure and deploy the solution using the [GPT-RAG](https://aka.ms/gpt-rag) template.
+
+- **Redeployment Steps**:
+  - Prerequisites: 
+    - **Azure Developer CLI**
+    - **PowerShell** (Windows only)
+    - **Git**
+    - **Python 3.11**
+  - Redeployment commands:
+    ```bash
+    azd auth login  
+    azd env refresh  
+    azd deploy  
+    ```
+    > **Note:** Use the same environment name, subscription, and region as the initial deployment when running `azd env refresh`.
+
+### Running Locally
+- Instructions for testing the data ingestion component locally using in VS Code. See [Local Deployment Guide](docs/LOCAL_DEPLOYMENT.md).
+
+## How-to: User
+
+### Uploading Documents for Ingestion
+- Refer to the [GPT-RAG Admin & User Guide](https://github.com/Azure/GPT-RAG/blob/main/docs/GUIDE.md#uploading-documents-for-ingestion) for instructions.
+
+### Reindexing Documents in AI Search
+- See [GPT-RAG Admin & User Guide](https://github.com/Azure/GPT-RAG/blob/main/docs/GUIDE.md#reindexing-documents-in-ai-search) for reindexing instructions.
+
+## Reference
+
+### Supported Formats and Chunkers
+Here are the formats supported by each chunker. The file extension determines which chunker is used.
 
 #### Doc Analysis Chunker (Document Intelligence based)
-
 | Extension | Doc Int API Version |
 |-----------|---------------------|
 | pdf       | 3.1, 4.0            |
@@ -74,12 +168,11 @@ Here are the formats supported by the chunkers. Note that the decision on which 
 | jpeg      | 3.1, 4.0            |
 | png       | 3.1, 4.0            |
 | tiff      | 3.1, 4.0            |
-| xslx      | 4.0                 |
+| xlsx      | 4.0                 |
 | docx      | 4.0                 |
 | pptx      | 4.0                 |
 
 #### LangChain Chunker
-
 | Extension | Format                        |
 |-----------|-------------------------------|
 | md        | Markdown document             |
@@ -93,38 +186,15 @@ Here are the formats supported by the chunkers. Note that the decision on which 
 | xml       | XML data file                 |
 
 #### Transcription Chunker
-
 | Extension | Format              |
 |-----------|---------------------|
 | vtt       | Video transcription |
 
 #### Spreadsheet Chunker
-
 | Extension | Format      |
 |-----------|-------------|
 | xlsx      | Spreadsheet |
 
-#### NL2SQL Chunker
-
-| Extension | Description                                                                 |
-|-----------|-----------------------------------------------------------------------------|
-| nl2sql    | JSON files containing natural language questions and corresponding SQL queries |
-
-## References
-
+### External Resources
 - [AI Search Enrichment Pipeline](https://learn.microsoft.com/en-us/azure/search/cognitive-search-concept-intro)
 - [Azure Open AI Embeddings Generator](https://github.com/Azure-Samples/azure-search-power-skills/tree/57214f6e8773029a638a8f56840ab79fd38574a2/Vector/EmbeddingGenerator)
-
-## Contributing
-
-We appreciate your interest in contributing to this project! Please refer to the [CONTRIBUTING.md](https://github.com/Azure/GPT-RAG/blob/main/CONTRIBUTING.md) page for detailed guidelines on how to contribute, including information about the Contributor License Agreement (CLA), code of conduct, and the process for submitting pull requests.
-
-Thank you for your support and contributions!
-
-## Trademarks
-
-This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft
-trademarks or logos is subject to and must follow
-[Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks/usage/general).
-Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship.
-Any use of third-party trademarks or logos are subject to those third-party's policies.
