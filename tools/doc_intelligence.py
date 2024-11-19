@@ -1,3 +1,5 @@
+# DocumentIntelligenceClient.py
+
 import os
 import time
 import json
@@ -17,7 +19,7 @@ class DocumentIntelligenceClient:
         network_isolation (bool): Flag to indicate if network isolation is enabled.
 
     Methods:
-        analyze_document(filepath, model):
+        analyze_document(file_url, model):
             Analyzes a document using the specified model.
     """
     def __init__(self, document_filename=""):
@@ -181,6 +183,98 @@ class DocumentIntelligenceClient:
                 break
 
             if result_json["status"] == "succeeded":
+                result = result_json['analyzeResult']
+                break
+
+            time.sleep(2)
+
+        return result, errors
+
+    def analyze_document_from_bytes(self, file_bytes: bytes, model='prebuilt-layout'):
+        """
+        Analyzes a document using the specified model, with input as bytes.
+
+        Args:
+            file_bytes (bytes): The bytes of the document to be analyzed.
+            model (str): The model to use for document analysis.
+
+        Returns:
+            tuple: A tuple containing the analysis result and any errors encountered.
+        """
+        result = {}
+        errors = []
+
+        # Get the file extension from the filename
+        if self.document_filename:
+            file_ext = self.document_filename.split('.')[-1].lower()
+        else:
+            error_message = "Document filename is not provided, cannot determine file extension."
+            logging.error(f"[docintelligence] {error_message}")
+            errors.append(error_message)
+            return result, errors
+
+        if file_ext not in self.file_extensions:
+            error_message = f"File extension '{file_ext}' is not supported."
+            logging.error(f"[docintelligence] {error_message}")
+            errors.append(error_message)
+            return result, errors
+
+        content_type = self._get_content_type(file_ext)
+
+        if file_ext in ["pdf"]:
+            self.docint_features = "ocr.highResolution"
+
+        # Set request endpoint
+        request_endpoint = f"https://{self.service_name}.cognitiveservices.azure.com/{self.ai_service_type}/documentModels/{model}:analyze?api-version={self.api_version}"
+        if self.docint_features:
+            request_endpoint += f"&features={self.docint_features}" 
+        if self.output_content_format:
+            request_endpoint += f"&outputContentFormat={self.output_content_format}"
+        if self.analyse_output_options:
+            request_endpoint += f"&output={self.analyse_output_options}"
+
+        # Set request headers
+        token = DefaultAzureCredential().get_token("https://cognitiveservices.azure.com/.default")
+
+        headers = {
+            "Content-Type": content_type,
+            "Authorization": f"Bearer {token.token}",
+            "x-ms-useragent": "gpt-rag/1.0.0"
+        }
+
+        try:
+            response = requests.post(request_endpoint, headers=headers, data=file_bytes)
+        except Exception as e:
+            error_message = f"Error when sending request to Document Intelligence API. {e}"
+            logging.error(f"[docintelligence][{self.document_filename}] {error_message}")
+            errors.append(error_message)
+            return result, errors
+
+        error_messages = {
+            404: "Resource not found, please verify your request URL. The Document Intelligence API version you are using may not be supported in your region.",
+        }
+        
+        if response.status_code != 202:
+            error_message = error_messages.get(response.status_code, f"Document Intelligence request error, code {response.status_code}: {response.text}")
+            logging.error(f"[docintelligence][{self.document_filename}] {error_message}")
+            errors.append(error_message)
+            return result, errors
+
+        get_url = response.headers["Operation-Location"]
+        result_headers = headers.copy()
+        result_headers["Content-Type"] = "application/json-patch+json"
+
+        while True:
+            result_response = requests.get(get_url, headers=result_headers)
+            result_json = result_response.json()
+
+            if result_response.status_code != 200 or result_json.get("status") == "failed":
+                error_message = f"Document Intelligence polling error, code {result_response.status_code}: {result_response.text}"
+                logging.error(f"[docintelligence][{self.document_filename}] {error_message}")
+                errors.append(error_message)
+                break
+
+            if result_json.get("status") == "succeeded":
                 result = result_json['analyzeResult']
                 break
 
