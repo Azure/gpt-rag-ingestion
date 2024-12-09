@@ -2,8 +2,8 @@ import logging
 import os
 import re
 
-from tools import AzureOpenAIClient, BlobStorageClient, GptTokenEstimator
-from utils.file_utils import get_file_extension, get_filename
+from tools import AzureOpenAIClient, GptTokenEstimator
+from utils.file_utils import get_file_extension
 
 class BaseChunker:
     """
@@ -13,14 +13,33 @@ class BaseChunker:
 
     Initialization:
     ---------------
-    The BaseChunker class is initialized with a data dictionary containing the document's metadata
-    and content. Key attributes include:
+    The BaseChunker class is initialized with a `data` dictionary containing the document's metadata
+    and content. The dictionary can include the following keys:
 
-    - `url`: The document's URL.
-    - `document_content`: The raw content of the document.
-    - `sas_token`: The SAS token for accessing the document.
-    - `filename`: The name of the file extracted from the URL.
-    - `extension`: The file extension extracted from the URL.
+    Required Keys:
+    --------------
+    - `documentUrl` (str): The document's URL.
+    - `documentContentType` (str): The MIME type of the document content.
+
+    Optional Keys:
+    --------------
+    - `documentSasToken` (str): The SAS token for accessing the document. Can be an empty string
+      if not using storage account or key-based storage access.
+    - `documentContent` (str): The raw content of the document. Defaults to an empty string if not provided.
+    - `documentBytes` (bytes): The binary content of the document. If not provided, `document_bytes` is set to `None`,
+      and a warning is logged.
+
+    Key Attributes:
+    ---------------
+    - `url` (str): The document's URL.
+    - `sas_token` (str): The SAS token for accessing the document. May be empty if not required.
+    - `file_url` (str): The full URL constructed by concatenating `url` and `sas_token`.
+    - `filename` (str): The name of the file extracted from the URL.
+    - `extension` (str): The file extension extracted from the URL.
+    - `document_content` (str): The raw content of the document.
+    - `document_bytes` (bytes or None): The binary content of the document if provided; otherwise, `None`.
+    - `token_estimator` (GptTokenEstimator): An instance for estimating token counts.
+    - `aoai_client` (AzureOpenAIClient): An instance of the Azure OpenAI client initialized with the filename.
 
     Abstract Method:
     ----------------
@@ -50,33 +69,71 @@ class BaseChunker:
     ---------------
     - Comprehensive error handling is implemented in the `_extract_title_from_filename` method,
       logging any issues encountered during title extraction.
-    
+    - If `document_bytes` is not provided during initialization, a warning is logged to inform
+      the user.
+
     Logging:
     --------
     - The class includes logging for truncation warnings and title extraction errors to facilitate
       debugging and monitoring of the chunking process.
-    """    
+    """
 
     def __init__(self, data):
         """
+        Initializes the BaseChunker with the provided data dictionary.
+
+        Parameters
+        ----------
         data : dict
             A dictionary containing the following keys:
-                - "documentUrl"
-                - "documentSasToken"
-                - "documentContentType"
+
+            Required:
+                - "documentUrl" (str): The URL of the document.
+                - "documentContentType" (str): The MIME type of the document content.
+                - "documentBytes" (bytes): The binary content of the document.
+
+            Optional:
+                - "documentSasToken" (str): The SAS token for accessing the document. Can be an empty string
+                  if not using storage account or key-based storage access.
+                - "documentContent" (str): The raw content of the document.
+        
+        Attributes
+        ----------
+        url : str
+            The document's URL.
+        sas_token : str
+            The SAS token for accessing the document. May be empty if not required.
+        file_url : str
+            The full URL constructed by concatenating `url` and `sas_token`.
+        filename : str
+            The name of the file extracted from the URL.
+        extension : str
+            The file extension extracted from the URL.
+        document_content : str
+            The raw content of the document.
+        document_bytes : bytes or None
+            The binary content of the document if provided; otherwise, `None`.
+        token_estimator : GptTokenEstimator
+            An instance for estimating token counts.
+        aoai_client : AzureOpenAIClient
+            An instance of the Azure OpenAI client initialized with the filename.
         """
-        self.url = data['documentUrl']
         self.data = data
         self.url = data['documentUrl']
-        self.sas_token = data['documentSasToken']
-        self.file_url = f"{self.url}{self.sas_token}"        
-        self.filename = get_filename(self.url)
+        self.sas_token = data.get('documentSasToken', "")
+        self.file_url = f"{self.url}{self.sas_token}"
+        self.filename = data['fileName']
         self.extension = get_file_extension(self.url)
-        document_content = data.get('documentContent') # Reserved for future use: Document content extraction with AI Search is currently not implemented.
+        document_content = data.get('documentContent') 
         self.document_content = document_content if document_content else ""
         self.token_estimator = GptTokenEstimator()
         self.aoai_client = AzureOpenAIClient(document_filename=self.filename)
-        self.blob_client = BlobStorageClient(self.file_url)
+        document_bytes = data.get('documentBytes') 
+        if document_bytes:
+            self.document_bytes = document_bytes 
+        else:
+            self.document_bytes = None
+            logging.warning(f"[base_chunker][{self.filename}] Document bytes not provided.")
 
     def get_chunks(self):
         """Abstract method to be implemented by subclasses."""
@@ -84,7 +141,7 @@ class BaseChunker:
 
     def _create_chunk(
         self,
-        chunk_id,
+        chunk_number,
         content,
         summary="",
         embedding_text="",
@@ -102,7 +159,7 @@ class BaseChunker:
         If no embedding_text is available, it will fall back to using the content text.
 
         Args:
-            chunk_id (str): Unique identifier for the chunk.
+            chunk_number (str): Sequential number for the chunk.
             content (str): The main content of the chunk.
             summary (str, optional): A brief summary of the content. Defaults to an empty string.
             embedding_text (str, optional): Text used to generate the embedding. Defaults to an empty string.
@@ -147,7 +204,7 @@ class BaseChunker:
         content_vector = self.aoai_client.get_embeddings(embedding_text)
 
         return {
-            "chunk_id": chunk_id,
+            "chunk_number": chunk_number,
             "url": self.url,
             "filepath": self.filename,
             "content": truncated_content,
@@ -158,9 +215,8 @@ class BaseChunker:
             "title": self._extract_title_from_filename(self.filename) if not title else title,
             "page": page,
             "offset": offset,
-            "security_id": [],
             "relatedImages": related_images,
-            "relatedFiles": related_files
+            "relatedFiles": related_files          
         }
 
 

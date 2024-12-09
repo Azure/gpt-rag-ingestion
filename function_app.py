@@ -1,138 +1,158 @@
 import logging
-import jsonschema
 import json
-import os
+import asyncio
 import time
-import azure.functions as func
 import datetime
-from chunking import DocumentChunker
 from json import JSONEncoder
-from connectors import SharePointDataExtractor
-from tools import KeyVaultClient
 
-
-import logging
-import json
-import os
-import time
+import jsonschema
 import azure.functions as func
+
+from chunking import DocumentChunker
+from connectors import SharepointFilesIndexer, SharepointDeletedFilesPurger
+from tools import BlobStorageClient
+from utils.file_utils import get_filename
 
 ###############################################################################
-# Pipeline Functions
+# Azure Functions
 ###############################################################################
 
 app = func.FunctionApp()
 
-        
-###################################################################################
-# Orchestator function (HTTP Triggered by AI Search)
-###################################################################################
+# ###################################################################################
+# # SharePoint Connector Functions (Timer Triggered)
+# ###################################################################################
 
-        
-@app.route(route="orc", auth_level=func.AuthLevel.FUNCTION)
-async def orc(req: func.HttpRequest) -> func.HttpResponse:
-    req_body = req.get_json()
-
-    # Get input parameters
-    conversation_id = req_body.get('conversation_id')
-    question = req_body.get('question')
-
-    # Get client principal information
-    client_principal_id = req_body.get('client_principal_id')
-    client_principal_name = req_body.get('client_principal_name') 
-    if not client_principal_id or client_principal_id == '':
-        client_principal_id = '00000000-0000-0000-0000-000000000000'
-        client_principal_name = 'anonymous'    
-    client_principal = {
-        'id': client_principal_id,
-        'name': client_principal_name
-    }
-
-    # Call orchestrator
-    if question:
-        result = "{oi}"
-        return func.HttpResponse(json.dumps(result), mimetype="application/json", status_code=200)
-    else:
-        return func.HttpResponse('{"error": "no question found in json input"}', mimetype="application/json", status_code=200)
-
-
-
-###############################################################################
-# Pipeline Functions
-###############################################################################
-
-# app = func.FunctionApp()
-
-# @app.route(route="sharepoint-connector", auth_level=func.AuthLevel.FUNCTION)
-# async def sharepoint_connector(req: func.HttpRequest) -> func.HttpResponse:
-# @app.function_name(name="sharepoint_connector")
+# @app.function_name(name="sharepoint_index_files")
 # @app.schedule(
-#     schedule="0 */5 * * * *",  # Every 5 minutes
-#     arg_name="sharepoint_connector",           # Specify the name of the parameter
+#     schedule="0 */10 * * * *", 
+#     arg_name="sharepoint_index_files", 
 #     run_on_startup=True
 # )
-# async def sharepoint_connector(timer: func.TimerRequest) -> None:
-    # logging.info("[sharepoint_connector] Triggered sharepoint connector function.")
-    # return func.HttpResponse("{oi}", mimetype="application/json")
-    # connector_enabled=os.getenv("SHAREPOINT_CONNECTOR_ENABLED", "false")
+# async def sharepoint_index_files(timer: func.TimerRequest) -> None:
+#     logging.info("[sharepoint_index_files] Started sharepoint files indexing function.")
+#     try:
+#         indexer = SharepointFilesIndexer()
+#         asyncio.run(indexer.run())
+#     except Exception as e:
+#         logging.error(f"[main] An unexpected error occurred: {e}")
 
-    # if connector_enabled.lower() != "true":
-    #     logging.info("[sharepoint_connector] SharePoint connector is disabled. Set SHAREPOINT_CONNECTOR_ENABLED to 'true' to enable the connector.")
+# @app.function_name(name="sharepoint_purge_deleted_files")
+# @app.schedule(
+#     schedule="0 */10 * * * *", 
+#     arg_name="sharepoint_purge_deleted_files", 
+#     run_on_startup=False
+# )
+# async def sharepoint_purge_deleted_files(timer: func.TimerRequest) -> None:
+#     logging.info("[sharepoint_purge_deleted_files] Started sharepoint purge deleted files function.")
+#     try:
+#         purger = SharepointDeletedFilesPurger()
+#         asyncio.run(purger.run())
+#     except Exception as e:
+#         logging.error(f"[main] An unexpected error occurred: {e}")
 
-    # else:
-    #     # initialize variables from environment
-    #     tenant_id = os.getenv("SHAREPOINT_TENANT_ID")
-    #     client_id = os.getenv("SHAREPOINT_CLIENT_ID")
-    #     site_domain = os.getenv("SHAREPOINT_SITE_DOMAIN")
-    #     site_name = os.getenv("SHAREPOINT_SITE_NAME")
-    #     folder_path = os.getenv("SHAREPOINT_SITE_FOLDER", "/")
-    #     file_formats = os.getenv("SHAREPOINT_FILES_FORMAT", "pdf,docx").split(",")
-    #     # initialize secret from Key Vault
-    #     keyvault_client = KeyVaultClient()
-    #     client_secret = await keyvault_client.get_secret("sharepointClientSecret")
+###################################################################################
+# Document Chunking Function (HTTP Triggered by AI Search)
+###################################################################################
 
-    #     # check we have variables and secret neeeded
-    #     missing_env_vars = [var for var, value in {
-    #         "SHAREPOINT_TENANT_ID": tenant_id,
-    #         "SHAREPOINT_CLIENT_ID": client_id,
-    #         "SHAREPOINT_SITE_DOMAIN": site_domain,
-    #         "SHAREPOINT_SITE_NAME": site_name
-    #     }.items() if not value]
+# Document Chunking Function (HTTP Triggered by AI Search)
+@app.route(route="document-chunking", auth_level=func.AuthLevel.FUNCTION)
+def document_chunking(req: func.HttpRequest) -> func.HttpResponse:
+    try:
+        body = req.get_json()
+        jsonschema.validate(body, schema=get_request_schema())
+
+        if body:
+            # Log the incoming request
+            logging.info(f'[document_chunking] Invoked document_chunking skill. Number of items: {len(body["values"])}.')
+
+            input_data = {}
+
+            # Processing one item at a time to avoid exceeding the AI Search custom skill timeout (230 seconds)
+            # BatchSize should be set to 1 in the Skillset definition, if it is not set, will process just the last item
+            count_items = len(body["values"])
+            if count_items > 1:
+                logging.warning('BatchSize should be set to 1 in the Skillset definition. Processing only the last item.')
+            for i, item in enumerate(body["values"]):
+                input_data = item["data"]
+                logging.info(f'[document_chunking] Chunking document: File {input_data["documentUrl"].split("/")[-1]}, Content Type {input_data["documentContentType"]}.')
+                logging.info(f'Input data: {json.dumps(input_data, indent=4)}')
+            
+            start_time = time.time()
+
+            # Enrich the input data with the document bytes and file name
+            blob_client = BlobStorageClient(input_data["documentUrl"])
+            document_bytes = blob_client.download_blob()
+            input_data['documentBytes'] = document_bytes          
+            input_data['fileName'] = get_filename(input_data["documentUrl"])
+
+            # Chunk the document
+            chunks, errors, warnings = DocumentChunker().chunk_documents(input_data)
+
+            # enrich chunks with metadata to be indexed
+            for chunk in chunks: chunk["source"] = "blob"
+         
+            # Format results
+            values = {
+                "recordId": item['recordId'],
+                "data": {"chunks": chunks},
+                "errors": errors,
+                "warnings": warnings
+            }
+            
+            results = {"values": [values]}
+            result = json.dumps(results, ensure_ascii=False, cls=DateTimeEncoder)
+
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            
+            logging.info(f'[document_chunking] Finished document_chunking skill in {elapsed_time:.2f} seconds.')
+            return func.HttpResponse(result, mimetype="application/json")
+        else:
+            error_message = "Invalid body."
+            logging.error(f"[document_chunking] {error_message}")
+            return func.HttpResponse(error_message, status_code=400)
+    except ValueError as e:
+        error_message = f"Invalid body: {e}"
+        logging.error(f"[document_chunking] {error_message}")
+        return func.HttpResponse(error_message, status_code=400)
+    except jsonschema.exceptions.ValidationError as e:
+        error_message = f"Invalid request: {e}"
+        logging.error(f"[document_chunking] {error_message}")
+        return func.HttpResponse(error_message, status_code=400)
     
-    #     if missing_env_vars:
-    #         logging.error(f"[sharepoint_connector] SharePoint connector variables are not properly configured. Missing environment variables: {', '.join(missing_env_vars)}. Please set all required environment variables.")
+class DateTimeEncoder(JSONEncoder):
+    # Override the default method
+    def default(self, obj):
+        if isinstance(obj, (datetime.date, datetime.datetime)):
+            return obj.isoformat()
+        return super().default(obj)    
     
-    #     if not client_secret:
-    #         logging.error("[sharepoint_connector] SharePoint connector secret is not properly configured. Missing secret: sharepointClientSecret. Please set the required secret in Key Vault.")
-    
-    #     if not missing_env_vars and client_secret:
-    #         # Instantiate the SharePointDataExtractor class with credentials
-    #         extractor = SharePointDataExtractor(
-    #             tenant_id=tenant_id,
-    #             client_id=client_id,
-    #             client_secret = client_secret       
-    #         )
-
-    #         # Authenticate with Microsoft Graph
-    #         extractor.msgraph_auth()
-
-    #         try:
-    #             # Call the retrieve_sharepoint_files_content method5
-    #             files_content = extractor.retrieve_sharepoint_files_content(
-    #                 site_domain=site_domain,
-    #                 site_name=site_name,
-    #                 folder_path=folder_path,
-    #                 file_formats=file_formats
-    #             )
-
-    #             # If files_content is not None, iterate over files and print the file name
-    #             if files_content:
-    #                 for file_data in files_content:
-    #                     file_name = file_data.get("name")
-    #                     if file_name:
-    #                         logging.info(f"File Name: {file_name}")
-    #             else:
-    #                 logging.info("No files retrieved from SharePoint.")
-
-    #         except Exception as e:
-    #             logging.error(f"Error in sharepoint_connector: {e}")
+def get_request_schema():
+    return {
+        "$schema": "http://json-schema.org/draft-04/schema#",
+        "type": "object",
+        "properties": {
+            "values": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "recordId": {"type": "string"},
+                        "data": {
+                            "type": "object",
+                            "properties": {
+                                "documentUrl": {"type": "string", "minLength": 1},
+                                "documentSasToken": {"type": "string", "minLength": 0},
+                                "documentContentType": {"type": "string", "minLength": 1}
+                            },
+                            "required": ["documentUrl", "documentContentType"],
+                        },
+                    },
+                    "required": ["recordId", "data"],
+                },
+            }
+        },
+        "required": ["values"],
+    }

@@ -52,14 +52,12 @@ class DocAnalysisChunker(BaseChunker):
     and handling general exceptions.
     - The chunking process's progress and outcomes, including the number of chunks created or skipped, are logged.
     """
-
-
     def __init__(self, data, max_chunk_size=None, minimum_chunk_size=None, token_overlap=None):
-        super().__init__(data)
+        super().__init__(data)       
         self.max_chunk_size = max_chunk_size or int(os.getenv("NUM_TOKENS", "2048"))
         self.minimum_chunk_size = minimum_chunk_size or int(os.getenv("MIN_CHUNK_SIZE", "100"))
         self.token_overlap = token_overlap or int(os.getenv("TOKEN_OVERLAP", "100"))
-        self.docint_client = DocumentIntelligenceClient(document_filename=self.filename)
+        self.docint_client = DocumentIntelligenceClient()
         self.supported_formats = self.docint_client.file_extensions
 
     def get_chunks(self):
@@ -104,10 +102,10 @@ class DocAnalysisChunker(BaseChunker):
 
         Raises:
             Exception: If the document analysis fails after the specified number of retries.
-        """
+        """  
         for attempt in range(retries):
             try:
-                document, analysis_errors = self.docint_client.analyze_document(self.file_url)
+                document, analysis_errors = self.docint_client.analyze_document_from_bytes(file_bytes=self.document_bytes, filename=self.filename)
                 return document, analysis_errors
             except Exception as e:
                 logging.error(f"[doc_analysis_chunker][{self.filename}] docint analyze document failed on attempt {attempt + 1}/{retries}: {str(e)}")
@@ -137,7 +135,7 @@ class DocAnalysisChunker(BaseChunker):
         document_content = self._number_pagebreaks(document_content)
 
         text_chunks = self._chunk_content(document_content)
-        chunk_id = 0
+        chunk_number = 0
         skipped_chunks = 0
         current_page = 1
 
@@ -145,9 +143,9 @@ class DocAnalysisChunker(BaseChunker):
             current_page = self._update_page(text_chunk, current_page)
             chunk_page = self._determine_chunk_page(text_chunk, current_page)
             if num_tokens >= self.minimum_chunk_size:
-                chunk_id += 1
+                chunk_number += 1
                 chunk = self._create_chunk(
-                    chunk_id=chunk_id,
+                    chunk_number=chunk_number,
                     content=text_chunk,
                     page=chunk_page
                 )

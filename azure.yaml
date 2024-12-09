@@ -8,14 +8,14 @@ services:
     project: .
     language: python
     host: function
-    hooks:
-      postdeploy:
-        posix:
-          run: scripts/postdeploy.sh
-          interactive: false
-        windows:
-          run: scripts/postdeploy.ps1
-          interactive: false          
+    # hooks:
+    #   postdeploy:
+    #     posix:
+    #       run: scripts/postdeploy.sh
+    #       interactive: false
+    #     windows:
+    #       run: scripts/postdeploy.ps1
+    #       interactive: false          
 # infrastructure is pulled from the main azure-gpt-rag repo with a hook.
 # If you previously provisioned infrastructure, use the same azd-env name, subscription and location to deploy data ingest to that infrastructure.        
 hooks:

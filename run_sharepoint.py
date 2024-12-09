@@ -1,0 +1,74 @@
+"""
+SharePoint Indexer
+
+This script indexes files from a SharePoint folder into Azure AI Search 
+and removes deleted files from the index. It uses asynchronous workflows for 
+efficient operation.
+
+Features:
+- File Indexing: Reads SharePoint files and uploads metadata to Azure AI Search.
+- File Purging: Removes metadata for deleted files to maintain index consistency.
+- Asynchronous Execution: Utilizes `asyncio` for network efficiency.
+
+Prerequisites:
+1. Environment Variables (set in `.env` or environment):
+   - General:
+     - SHAREPOINT_CONNECTOR_ENABLED: 'true' to enable the connector (default: 'false').
+     - SHAREPOINT_TENANT_ID, SHAREPOINT_CLIENT_ID: For SharePoint authentication.
+     - KEYVAULT_SHAREPOINT_SECRET_NAME: Azure Key Vault secret name (default: 'sharepointClientSecret').
+     - AZURE_SEARCH_SHAREPOINT_INDEX_NAME: Name of the Azure AI Search index (default: 'ragindex').
+   - SharePoint Config:
+     - SHAREPOINT_SITE_DOMAIN, SHAREPOINT_SITE_NAME: SharePoint site details.
+     - SHAREPOINT_SITE_FOLDER: Folder path (default: '/').
+     - SHAREPOINT_FILES_FORMAT: Comma-separated list of file formats (e.g., 'pdf,docx').
+
+2. Azure Config:
+   - Azure Key Vault: Contains the SharePoint client secret.
+   - Azure AI Search: Preconfigured with an appropriate schema.
+
+Usage:
+- Run the script: `python run.py`.
+
+"""
+
+import logging
+import asyncio
+from dotenv import load_dotenv
+from connectors import SharepointFilesIndexer, SharepointDeletedFilesPurger
+from typing import Any, Dict, List, Optional
+
+load_dotenv()
+
+# -------------------------------
+# Main Method
+# -------------------------------
+
+def main():
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    # Index sharepoint files
+    try:
+        indexer = SharepointFilesIndexer()
+        asyncio.run(indexer.run())
+    except Exception as e:
+        logging.error(f"[main] An unexpected error occurred: {e}")
+
+    # Purge deleted files
+    try:
+        purger = SharepointDeletedFilesPurger()
+        asyncio.run(purger.run())
+    except Exception as e:
+        logging.error(f"[main] An unexpected error occurred: {e}")
+
+
+# -------------------------------
+# Entry Point
+# -------------------------------
+
+if __name__ == "__main__":
+    main()

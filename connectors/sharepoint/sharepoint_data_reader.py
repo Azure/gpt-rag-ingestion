@@ -4,8 +4,6 @@ Copyright (c) 2023 Liam Cavanagh
 This code is an adaptation of the original code available at https://github.com/liamca/sharepoint-indexing-azure-cognitive-search, licensed under the MIT License.
 """
 
-import io
-import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Union, Tuple
 
@@ -15,7 +13,7 @@ from dotenv import load_dotenv
 import logging
 
 
-class SharePointDataExtractor:
+class SharePointDataReader:
     """This class facilitates the extraction of data from SharePoint using Microsoft Graph API.
     It supports authentication and data retrieval from SharePoint sites, lists, and libraries.
     """
@@ -47,47 +45,45 @@ class SharePointDataExtractor:
         self.scope = ["https://graph.microsoft.com/.default"]
         self.access_token = None
 
-    def load_environment_variables_from_env_file(self):
+    def retrieve_sharepoint_files_content(
+        self,
+        site_domain: str,
+        site_name: str,
+        folder_path: Optional[str] = None,
+        file_names: Optional[Union[str, List[str]]] = None,
+        minutes_ago: Optional[int] = None,
+        file_formats: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
         """
-        Loads required environment variables for the application from a .env file.
+        Retrieve contents of files from a specified SharePoint location, optionally filtering by last modification time and file formats.
 
-        This method should be called explicitly if environment variables are to be loaded from a .env file.
+        :param site_domain: The domain of the site in Microsoft Graph.
+        :param site_name: The name of the site in Microsoft Graph.
+        :param folder_path: Path to the folder within the drive, can include subfolders like 'test1/test2'.
+        :param file_names: Optional; the name or names of specific files to retrieve. If provided, only these files' content will be fetched.
+        :param minutes_ago: Optional; filter for files modified within the specified number of minutes.
+        :param file_formats: Optional; list of desired file formats to include.
+        :return: List of dictionaries with file metadata and content in bytes.
         """
-        load_dotenv()
+        if self._are_required_variables_missing():
+            return None
 
-        self.tenant_id = os.getenv("TENANT_ID")
-        self.client_id = os.getenv("CLIENT_ID")
-        self.client_secret = os.getenv("CLIENT_SECRET")
-        self.authority = f"https://login.microsoftonline.com/{self.tenant_id}"
+        site_id, drive_id = self._get_site_and_drive_ids(site_domain, site_name)
+        if not site_id or not drive_id:
+            return None
 
-        # Check for any missing required environment variables
-        missing_vars = [
-            var_name
-            for var_name, var in [
-                ("TENANT_ID", self.tenant_id),
-                ("CLIENT_ID", self.client_id),
-                ("CLIENT_SECRET", self.client_secret),
-            ]
-            if not var
-        ]
+        files = self._get_files(
+            site_id, drive_id, folder_path, minutes_ago, file_formats
+        )
+        if not files:
+            logging.error("[sharepoint_files_reader] No files found in the site's drive")
+            return None
 
-        if missing_vars:
-            raise EnvironmentError(
-                f"Missing required environment variables: {', '.join(missing_vars)}"
-            )
+        return self._process_files(
+            site_id, drive_id, folder_path, file_names, files, file_formats
+        )
 
-        # Log the success of loading each environment variable
-        loaded_vars = [
-            var_name
-            for var_name in ["TENANT_ID", "CLIENT_ID", "CLIENT_SECRET"]
-            if var_name not in missing_vars
-        ]
-        if loaded_vars:
-            logging.info(
-                f"Successfully loaded environment variables: {', '.join(loaded_vars)}"
-            )
-
-    def msgraph_auth(
+    def _msgraph_auth(
         self,
         client_id: Optional[str] = None,
         client_secret: Optional[str] = None,
@@ -115,19 +111,19 @@ class SharePointDataExtractor:
             if not access_token:
                 access_token = app.acquire_token_for_client(scopes=self.scope)
                 if "access_token" in access_token:
-                    logging.info("New access token retrieved.")
+                    logging.info("[sharepoint_files_reader] New access token retrieved.")
                 else:
-                    logging.error("Error acquiring authorization token.")
+                    logging.error("[sharepoint_files_reader] Error acquiring authorization token.")
                     return None
             else:
-                logging.info("Token retrieved from MSAL Cache.")
+                logging.info("[sharepoint_files_reader] Token retrieved from MSAL Cache.")
 
             # Store the access token in the instance
             self.access_token = access_token["access_token"]
             return self.access_token
 
         except Exception as err:
-            logging.error(f"Error in msgraph_auth: {err}")
+            logging.error(f"[sharepoint_files_reader] Error in msgraph_auth: {err}")
             raise
 
     @staticmethod
@@ -166,13 +162,13 @@ class SharePointDataExtractor:
             response.raise_for_status()
             return response.json()
         except requests.exceptions.HTTPError as err:
-            logging.error(f"HTTP Error: {err}")
+            logging.error(f"[sharepoint_files_reader] HTTP Error: {err}")
             raise
         except Exception as err:
-            logging.error(f"Error in _make_ms_graph_request: {err}")
+            logging.error(f"[sharepoint_files_reader] Error in _make_ms_graph_request: {err}")
             raise
 
-    def get_site_id(
+    def _get_site_id(
         self, site_domain: str, site_name: str, access_token: Optional[str] = None
     ) -> Optional[str]:
         """
@@ -184,17 +180,17 @@ class SharePointDataExtractor:
         access_token = access_token or self.access_token
 
         try:
-            logging.info("Getting the Site ID...")
+            logging.info("[sharepoint_files_reader] Getting the Site ID...")
             result = self._make_ms_graph_request(endpoint, access_token)
             site_id = result.get("id")
             if site_id:
-                logging.info(f"Site ID retrieved: {site_id}")
+                logging.info(f"[sharepoint_files_reader] Site ID retrieved: {site_id}")
                 return site_id
         except Exception as err:
-            logging.error(f"Error retrieving Site ID: {err}")
+            logging.error(f"[sharepoint_files_reader] Error retrieving Site ID: {err}")
             return None
 
-    def get_drive_id(self, site_id: str, access_token: Optional[str] = None) -> str:
+    def _get_drive_id(self, site_id: str, access_token: Optional[str] = None) -> str:
         """
         Get the drive ID from a Microsoft Graph site.
         """
@@ -205,13 +201,13 @@ class SharePointDataExtractor:
         try:
             json_response = self._make_ms_graph_request(url, access_token)
             drive_id = json_response.get("id")
-            logging.info(f"Successfully retrieved drive ID: {drive_id}")
+            logging.info(f"[sharepoint_files_reader] Successfully retrieved drive ID: {drive_id}")
             return drive_id
         except Exception as err:
-            logging.error(f"Error in get_drive_id: {err}")
+            logging.error(f"[sharepoint_files_reader] Error in get_drive_id: {err}")
             raise
 
-    def get_files_in_site(
+    def _get_files_in_site(
         self,
         site_id: str,
         drive_id: str,
@@ -244,10 +240,10 @@ class SharePointDataExtractor:
             url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drives/{drive_id}/root/children"
 
         try:
-            logging.info("Making request to Microsoft Graph API")
+            logging.info("[sharepoint_files_reader] Making request to Microsoft Graph API")
             json_response = self._make_ms_graph_request(url, access_token)
             files = json_response["value"]
-            logging.info("Received response from Microsoft Graph API")
+            logging.info("[sharepoint_files_reader] Received response from Microsoft Graph API")
 
             time_limit = (
                 datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
@@ -279,10 +275,10 @@ class SharePointDataExtractor:
 
             return filtered_files
         except Exception as err:
-            logging.error(f"Error in get_files_in_site: {err}")
+            logging.error(f"[sharepoint_files_reader] Error in get_files_in_site: {err}")
             raise
 
-    def get_file_permissions(
+    def _get_file_permissions(
         self, site_id: str, item_id: str, access_token: Optional[str] = None
     ) -> List[Dict]:
         """
@@ -303,11 +299,11 @@ class SharePointDataExtractor:
             json_response = self._make_ms_graph_request(url, access_token)
             return json_response["value"]
         except Exception as err:
-            logging.error(f"Error in get_file_permissions: {err}")
+            logging.error(f"[sharepoint_files_reader] Error in get_file_permissions: {err}")
             raise
 
     @staticmethod
-    def get_read_access_entities(permissions):
+    def _get_read_access_entities(permissions):
         """
         Extracts user IDs and group names of entities with read access from the given permissions data.
 
@@ -320,7 +316,7 @@ class SharePointDataExtractor:
             if not isinstance(permission, dict) or "roles" not in permission:
                 continue
 
-            if "read" in permission.get("roles", []):
+            if any(role in permission.get("roles", []) for role in ["read", "write"]):
                 # Process grantedToIdentitiesV2 for individual users
                 identities_v2 = permission.get("grantedToIdentitiesV2", [])
                 for identity in identities_v2:
@@ -347,7 +343,7 @@ class SharePointDataExtractor:
 
         return read_access_entities
 
-    def get_file_content_bytes(
+    def _get_file_content_bytes(
         self,
         site_id: str,
         drive_id: str,
@@ -377,12 +373,12 @@ class SharePointDataExtractor:
             )
             if response.status_code != 200:
                 logging.error(
-                    f"Failed to retrieve file content. Status code: {response.status_code}, Response: {response.text}"
+                    f"[sharepoint_files_reader] Failed to retrieve file content. Status code: {response.status_code}, Response: {response.text}"
                 )
                 return None
             return response.content
         except requests.exceptions.RequestException as req_err:
-            logging.error(f"Request error: {req_err}")
+            logging.error(f"[sharepoint_files_reader] Request error: {req_err}")
             return None
 
     def _retrieve_file_content(
@@ -397,7 +393,7 @@ class SharePointDataExtractor:
         :param file_name: Name of the file to retrieve.
         :return: Content of the file as bytes, or None if retrieval fails.
         """
-        return self.get_file_content_bytes(
+        return self._get_file_content_bytes(
             site_id, drive_id, folder_path, file_name
         )
 
@@ -446,43 +442,6 @@ class SharePointDataExtractor:
             .get("displayName"),
         }
 
-    def retrieve_sharepoint_files_content(
-        self,
-        site_domain: str,
-        site_name: str,
-        folder_path: Optional[str] = None,
-        file_names: Optional[Union[str, List[str]]] = None,
-        minutes_ago: Optional[int] = None,
-        file_formats: Optional[List[str]] = None,
-    ) -> List[Dict[str, Any]]:
-        """
-        Retrieve contents of files from a specified SharePoint location, optionally filtering by last modification time and file formats.
-
-        :param site_domain: The domain of the site in Microsoft Graph.
-        :param site_name: The name of the site in Microsoft Graph.
-        :param folder_path: Path to the folder within the drive, can include subfolders like 'test1/test2'.
-        :param file_names: Optional; the name or names of specific files to retrieve. If provided, only these files' content will be fetched.
-        :param minutes_ago: Optional; filter for files modified within the specified number of minutes.
-        :param file_formats: Optional; list of desired file formats to include.
-        :return: List of dictionaries with file metadata and content in bytes.
-        """
-        if self._are_required_variables_missing():
-            return None
-
-        site_id, drive_id = self._get_site_and_drive_ids(site_domain, site_name)
-        if not site_id or not drive_id:
-            return None
-
-        files = self._get_files(
-            site_id, drive_id, folder_path, minutes_ago, file_formats
-        )
-        if not files:
-            logging.error("No files found in the site's drive")
-            return None
-
-        return self._process_files(
-            site_id, drive_id, folder_path, file_names, files, file_formats
-        )
 
     def _are_required_variables_missing(self) -> bool:
         """
@@ -504,7 +463,7 @@ class SharePointDataExtractor:
         missing_vars = [var_name for var_name, var in required_vars.items() if not var]
         if missing_vars:
             logging.error(
-                f"Required instance variables for SharePointDataExtractor are not set: {', '.join(missing_vars)}. Please load load_environment_variables_from_env_file or set them manually."
+                f"[sharepoint_files_reader] Required instance variables for SharePointDataExtractor are not set: {', '.join(missing_vars)}. Please load load_environment_variables_from_env_file or set them manually."
             )
             return True
         return False
@@ -519,14 +478,14 @@ class SharePointDataExtractor:
         :param site_name: The name of the site.
         :return: A tuple containing the site ID and drive ID, or (None, None) if either ID could not be retrieved.
         """
-        site_id = self.get_site_id(site_domain, site_name)
+        site_id = self._get_site_id(site_domain, site_name)
         if not site_id:
-            logging.error("Failed to retrieve site_id")
+            logging.error("[sharepoint_files_reader] Failed to retrieve site_id")
             return None, None
 
-        drive_id = self.get_drive_id(site_id)
+        drive_id = self._get_drive_id(site_id)
         if not drive_id:
-            logging.error("Failed to retrieve drive ID")
+            logging.error("[sharepoint_files_reader] Failed to retrieve drive ID")
             return None, None
 
         return site_id, drive_id
@@ -549,7 +508,7 @@ class SharePointDataExtractor:
         :param file_formats: List of desired file formats.
         :return: A list of file details.
         """
-        files = self.get_files_in_site(
+        files = self._get_files_in_site(
             site_id=site_id,
             drive_id=drive_id,
             folder_path=folder_path,
@@ -587,7 +546,7 @@ class SharePointDataExtractor:
         if file_names:
             files = [file for file in files if file.get("name") in file_names]
             if len(files) == 0:
-                logging.error("No matching files found")
+                logging.error("[sharepoint_files_reader] No matching files found")
                 return []
 
         for file in files:
@@ -597,8 +556,8 @@ class SharePointDataExtractor:
                 content = self._retrieve_file_content(
                     site_id, drive_id, folder_path, file_name
                 )
-                users_by_role = self.get_read_access_entities(
-                    self.get_file_permissions(site_id, file["id"])
+                users_by_role = self._get_read_access_entities(
+                    self._get_file_permissions(site_id, file["id"])
                 )
                 file_content = {
                     "content": content,
