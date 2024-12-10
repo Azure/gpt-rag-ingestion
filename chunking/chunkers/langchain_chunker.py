@@ -71,28 +71,27 @@ class LangChainChunker(BaseChunker):
         if self.extension not in self.supported_formats:
             raise UnsupportedFormatError(f"[langchain_chunker] {self.filename} {self.extension} format is not supported")
         
-        # Download the blob as bytes
-        blob_data = self.blob_client.download_blob()
+        blob_data = self.document_bytes
         # Decode the bytes into text (assuming it's UTF-8 encoded)
         text = blob_data.decode('utf-8')
 
         text_chunks = self._chunk_content(text)
         skipped_chunks = 0
-        chunk_id = 0
+        chunk_number = 0
         for text_chunk, num_tokens in text_chunks:
             if num_tokens >= self.minimum_chunk_size:
-                chunk_id += 1
+                chunk_number += 1
                 chunk_size = self.token_estimator.estimate_tokens(text_chunk)
                 if chunk_size > self.max_chunk_size:
                     logging.info(f"[langchain_chunker][{self.filename}] truncating {chunk_size} size chunk to fit within {self.max_chunk_size} tokens")
                     text_chunk = self._truncate_chunk(text_chunk)
-                chunk_dict = self._create_chunk(chunk_id, text_chunk)
+                chunk_dict = self._create_chunk(chunk_number, text_chunk)
                 chunks.append(chunk_dict)
             else:
                 skipped_chunks += 1
-        logging.info(f"[langchain_chunker][{self.filename}] {len(chunks)} chunk(s) created")    
+        logging.debug(f"[langchain_chunker][{self.filename}] {len(chunks)} chunk(s) created")    
         if skipped_chunks > 0:
-            logging.info(f"[langchain_chunker][{self.filename}] {skipped_chunks} chunk(s) skipped")
+            logging.debug(f"[langchain_chunker][{self.filename}] {skipped_chunks} chunk(s) skipped")
     
         return chunks
     

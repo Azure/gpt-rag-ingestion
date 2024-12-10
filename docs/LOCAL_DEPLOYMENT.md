@@ -35,7 +35,7 @@ Once the cloud resources (such as Azure OpenAI, Azure KeyVault) have been provis
 
 ### Storage Account Role
 
-To read the content of the **blob storage** when testing in a network-isolated environment, you'll also need to assign the **Storage Blob Data Contributor** role to the identity used by **DefaultAzureCredential**. If you're using the VM's identity, follow the example below:
+To read the content of the **blob storage** when testing in a network-isolated environment, you'll also need to assign the **Storage Blob Data Contributor** role to the identity used to run the program locally. If you're using the VM's identity, follow the example below:
 
 Azure Storage Account **Storage Blob Data Contributor** role.
 

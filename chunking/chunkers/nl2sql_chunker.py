@@ -42,30 +42,30 @@ class NL2SQLChunker(BaseChunker):
         chunks = []
         logging.info(f"[nl2sql_chunker][{self.filename}] Running get_chunks.")
 
-        blob_data = self.blob_client.download_blob()
+        blob_data = self.document_bytes
         # Decode the bytes into text (assuming it's UTF-8 encoded)
         text = blob_data.decode('utf-8')
 
         # Parse the JSON data
         try:
             json_data = json.loads(text)
-            logging.info(f"[nl2sql_chunker][{self.filename}] Successfully parsed JSON data.")
+            logging.debug(f"[nl2sql_chunker][{self.filename}] Successfully parsed JSON data.")
         except json.JSONDecodeError as e:
             logging.error(f"[nl2sql_chunker][{self.filename}] Failed to parse JSON data: {e}")
             return chunks
 
-        chunk_id = 0
+        chunk_number = 0
         for query_id, data in json_data.items():
-            chunk_id += 1
+            chunk_number += 1
             content = json.dumps(data, indent=4, ensure_ascii=False)
             chunk_size = self.token_estimator.estimate_tokens(content)
             if chunk_size > self.max_chunk_size:
-                logging.warning(f"[nl2sql_chunker][{self.filename}] Chunk {chunk_id} size {chunk_size} exceeds max_chunk_size {self.max_chunk_size}.")
+                logging.warning(f"[nl2sql_chunker][{self.filename}] Chunk {chunk_number} size {chunk_size} exceeds max_chunk_size {self.max_chunk_size}.")
                 # Since each chunk corresponds to a single 'query', truncation might not be feasible without data loss.
                 # Proceeding with the chunk as is.
             embedding_text = data.get("question", "")
             chunk_dict = self._create_chunk(
-                chunk_id=chunk_id,
+                chunk_number=chunk_number,
                 content=content,
                 embedding_text=embedding_text,
                 summary=None

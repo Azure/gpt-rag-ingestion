@@ -1,7 +1,9 @@
 import logging
 import time
+import json
+import jsonschema
 
-from utils.file_utils import get_file_extension, get_filename
+from utils import get_file_extension, get_filename
 from .chunker_factory import ChunkerFactory
 
 class DocumentChunker:
@@ -14,16 +16,11 @@ class DocumentChunker:
     chunker based on the document's file extension to splitting the document into manageable chunks.
 
     - Extension-based Chunking: The class uses `ChunkerFactory` to determine the correct chunker based on the file extension.
-    - Error Handling: The class includes mechanisms to handle and log errors, including general errors and specific timeout-related errors.
-
-    Timeout Management:
-    -------------------
-    - max_time: The maximum allowed time for the chunking process is set to 230 seconds to avoid web application timeouts.
-    - Timeout Check: The class checks if the chunking process exceeds the maximum allowed time and handles the timeout scenario by generating an appropriate error message.
+    - Error Handling: The class includes mechanisms to handle and log general errors.
 
     Error Messages:
     ---------------
-    - Generates specific error messages for different scenarios, including timeouts and general processing errors.
+    - Generates specific error messages for different scenarios.
     - Logs errors and exceptions with detailed information for debugging purposes.
 
     Logging:
@@ -38,29 +35,15 @@ class DocumentChunker:
     - warnings: A list of warnings generated during the chunking process.
     """    
     def __init__(self):
-        self.max_time = 230  # webapp timeout is 230 seconds
+        pass
 
-    def _check_timeout(self, start_time):
-        """Check if the operation has timed out."""
-        elapsed_time = time.time() - start_time
-        return elapsed_time > self.max_time
-
-    def _error_message(self, error_type="general", exception=None, filename=""):
+    def _error_message(self, exception=None, filename=""):
         """Generate an error message based on the error type."""
-        if error_type == 'timeout':
-            error_message = (
-                "Terminating the function so it doesn't run indefinitely. "
-                "The AI Search indexer's timeout is 3m50s. If the document is large "
-                "(more than 100 pages), try dividing it into smaller files. If you are "
-                "encountering many 429 errors in the function log, try increasing the "
-                "embedding model's quota as the retrial logic delays processing."
-            )
-        else:
-            error_message = "An error occurred while processing the document."
-            if exception is not None:
-                error_message += f"Exception: {str(exception)}"
+        error_message = "An error occurred while processing the document."
+        if exception is not None:
+            error_message += f" Exception: {str(exception)}"
 
-        logging.info(f"[document_chunking]{f'[{filename}]' if filename else ''} Error: {error_message}, Ingested Document: {f'[{filename}]' if filename else ''}")
+        logging.error(f"[document_chunking]{f'[{filename}]' if filename else ''} Error: {error_message}, Ingested Document: {f'[{filename}]' if filename else ''}")
 
         return error_message
 
@@ -69,21 +52,79 @@ class DocumentChunker:
         chunks = []
         errors = []
         warnings = []
-        start_time = time.time()
 
         url = data['documentUrl']
         filename = get_filename(url)
         extension = get_file_extension(url)
-        
         try:
             chunker = ChunkerFactory().get_chunker(extension, data)
             chunks = chunker.get_chunks()
         except Exception as e:
             errors.append(self._error_message(exception=e, filename=filename))
 
-        elapsed_time = time.time() - start_time
-        logging.info(
-            f"[document_chunking][{filename}] Finished chunking in {elapsed_time:.2f} seconds. "
-            f"{len(chunks)} chunks. {len(errors)} errors. {len(warnings)} warnings."
-        )
         return chunks, errors, warnings
+
+    def _format_messages(self, messages):
+        formatted = [{"message": msg} for msg in messages]
+        return formatted
+
+    def chunk_documents(self, data):
+        """
+        Processes and chunks the document provided in the input data, returning the chunks along with any errors or warnings encountered.
+
+        Args:
+            data (dict): 
+                A dictionary containing the document's metadata and content. Expected keys include:
+                - "documentUrl" (str): URL of the document.
+                - "documentBytes" (str): Base64-encoded bytes of the document.
+                - Additional optional fields as defined in the input schema.
+
+        Returns:
+            tuple: 
+                A tuple containing three lists:
+                - chunks (list[dict]): The list of document chunks created during the process.
+                - errors (list[str]): A list of error messages encountered during chunking.
+                - warnings (list[str]): A list of warning messages generated during chunking.
+
+        Raises:
+            jsonschema.exceptions.ValidationError: If the input data does not conform to the expected schema.
+            Exception: For any unexpected errors during the chunking process.
+
+        Example:
+            >>> chunker = DocumentChunker()
+            >>> chunks, errors, warnings = chunker.chunk_documents(data)
+        """
+        
+        chunks = []
+        errors = []
+        warnings = []
+        
+        try:
+            start_time = time.time()
+
+            filename = data['documentUrl'].split('/')[-1]
+
+            logging.info(f"[document_chunking][{filename}] chunking document.")
+
+            chunks, errors, warnings = DocumentChunker().chunk_document(data)
+
+        except jsonschema.exceptions.ValidationError as e:
+            error_message = f"Invalid request: {e}"
+            logging.error(f"[document_chunking] {error_message}")
+            errors.append(error_message)
+
+        finally:
+
+            if warnings:
+                warnings = self._format_messages(warnings)
+
+            if errors:
+                errors = self._format_messages(errors)            
+            
+            elapsed_time = time.time() - start_time
+            
+            logging.info(
+                f"[document_chunking][{filename}] Finished chunking in {elapsed_time:.2f} seconds. "
+                f"{len(chunks)} chunks. {len(errors)} errors. {len(warnings)} warnings."
+            )            
+            return chunks, errors, warnings
