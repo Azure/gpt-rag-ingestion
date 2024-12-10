@@ -279,7 +279,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     function_app_settings = web_mgmt_client.web_apps.list_application_settings(resource_group, function_app_name)
     function_endpoint = f"https://{function_app_name}.azurewebsites.net"
     azure_openai_service_name = function_app_settings.properties["AZURE_OPENAI_SERVICE_NAME"]
-    search_service = function_app_settings.properties["SEARCH_SERVICE"]
+    search_service = function_app_settings.properties["AZURE_SEARCH_SERVICE"]
     search_analyzer_name= function_app_settings.properties["SEARCH_ANALYZER_NAME"]
     search_api_version = function_app_settings.properties.get("SEARCH_API_VERSION", "2024-07-01") 
     search_index_interval = function_app_settings.properties["SEARCH_INDEX_INTERVAL"]
