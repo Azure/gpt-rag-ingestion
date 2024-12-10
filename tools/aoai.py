@@ -51,7 +51,7 @@ class AzureOpenAIClient:
                 ManagedIdentityCredential(),
                 AzureCliCredential()
             )
-            logging.info(f"[aoai]{self.document_filename} Initialized ChainedTokenCredential with ManagedIdentityCredential and AzureCliCredential.")
+            logging.debug(f"[aoai]{self.document_filename} Initialized ChainedTokenCredential with ManagedIdentityCredential and AzureCliCredential.")
         except Exception as e:
             logging.error(f"[aoai]{self.document_filename} Failed to initialize ChainedTokenCredential: {e}")
             raise
@@ -62,7 +62,7 @@ class AzureOpenAIClient:
                 self.credential, 
                 "https://cognitiveservices.azure.com/.default"
             )
-            logging.info(f"[aoai]{self.document_filename} Initialized bearer token provider.")
+            logging.debug(f"[aoai]{self.document_filename} Initialized bearer token provider.")
         except Exception as e:
             logging.error(f"[aoai]{self.document_filename} Failed to initialize bearer token provider: {e}")
             raise
@@ -75,7 +75,7 @@ class AzureOpenAIClient:
                 azure_ad_token_provider=self.token_provider,
                 max_retries=self.max_retries
             )
-            logging.info(f"[aoai]{self.document_filename} Initialized AzureOpenAI client.")
+            logging.debug(f"[aoai]{self.document_filename} Initialized AzureOpenAI client.")
         except ClientAuthenticationError as e:
             logging.error(f"[aoai]{self.document_filename} Authentication failed during AzureOpenAI client initialization: {e}")
             raise
@@ -96,7 +96,7 @@ class AzureOpenAIClient:
             str: The generated completion.
         """
         one_liner_prompt = prompt.replace('\n', ' ')
-        logging.info(f"[aoai]{self.document_filename} Getting completion for prompt: {one_liner_prompt[:100]}")
+        logging.debug(f"[aoai]{self.document_filename} Getting completion for prompt: {one_liner_prompt[:100]}")
 
         # Truncate prompt if needed
         prompt = self._truncate_input(prompt, self.max_gpt_model_input_tokens)
@@ -116,7 +116,7 @@ class AzureOpenAIClient:
             )
 
             completion = response.choices[0].message.content
-            logging.info(f"[aoai]{self.document_filename} Completion received successfully.")
+            logging.debug(f"[aoai]{self.document_filename} Completion received successfully.")
             return completion
 
         except RateLimitError as e:
@@ -154,7 +154,7 @@ class AzureOpenAIClient:
             list: The generated embeddings.
         """
         one_liner_text = text.replace('\n', ' ')
-        logging.info(f"[aoai]{self.document_filename} Getting embeddings for text: {one_liner_text[:100]}")        
+        logging.debug(f"[aoai]{self.document_filename} Getting embeddings for text: {one_liner_text[:100]}")        
         
         # Truncate in case it is larger than the maximum input tokens
         text = self._truncate_input(text, self.max_embeddings_model_input_tokens)
@@ -165,7 +165,7 @@ class AzureOpenAIClient:
                 model=self.openai_embeddings_deployment
             )
             embeddings = response.data[0].embedding
-            logging.info(f"[aoai]{self.document_filename} Embeddings received successfully.")
+            logging.debug(f"[aoai]{self.document_filename} Embeddings received successfully.")
             return embeddings
         
         except RateLimitError as e:

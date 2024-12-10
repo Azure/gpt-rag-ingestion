@@ -212,7 +212,7 @@ class DocumentIntelligenceClient:
 
                 if result_json.get("status") == "succeeded":
                     result = result_json.get('analyzeResult', {})
-                    logging.info(f"[docintelligence][{filename}] Analysis succeeded.")
+                    logging.debug(f"[docintelligence][{filename}] Analysis succeeded.")
                     break
 
                 logging.debug(f"[docintelligence][{filename}] Analysis in progress. Waiting for 2 seconds before retrying.")
@@ -280,13 +280,13 @@ class DocumentIntelligenceClient:
         container_name = parsed_url.path.split("/")[1]
         blob_name = unquote(parsed_url.path[len(f"/{container_name}/"):])
 
-        logging.info(f"[docintelligence][{filename}] Connecting to blob storage.")
+        logging.debug(f"[docintelligence][{filename}] Connecting to blob storage.")
 
         try:
             blob_service_client = BlobServiceClient(account_url=account_url, credential=self.credential)
             blob_client = blob_service_client.get_blob_client(container=container_name, blob=blob_name)
             data = blob_client.download_blob().readall()
-            logging.info(f"[docintelligence][{filename}] Downloaded blob data.")
+            logging.debug(f"[docintelligence][{filename}] Downloaded blob data.")
         except ResourceNotFoundError:
             error_message = f"Blob '{blob_name}' not found in container '{container_name}'."
             logging.error(f"[docintelligence][{filename}] {error_message}")
@@ -347,7 +347,7 @@ class DocumentIntelligenceClient:
 
                 if result_json.get("status") == "succeeded":
                     result = result_json.get('analyzeResult', {})
-                    logging.info(f"[docintelligence][{filename}] Analysis succeeded.")
+                    logging.debug(f"[docintelligence][{filename}] Analysis succeeded.")
                     break
 
                 logging.debug(f"[docintelligence][{filename}] Analysis in progress. Waiting for 2 seconds before retrying.")

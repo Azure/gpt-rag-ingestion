@@ -51,7 +51,7 @@ class AISearchClient:
                     index_name=index_name,
                     credential=self.credential
                 )
-                logging.info(f"[aisearch] Initialized SearchClient for index '{index_name}'.")
+                logging.debug(f"[aisearch] Initialized SearchClient for index '{index_name}'.")
             except Exception as e:
                 logging.error(f"[aisearch] Failed to initialize SearchClient for index '{index_name}': {e}")
                 raise
@@ -204,10 +204,10 @@ class AISearchClient:
         """
         for index_name, client in self.clients.items():
             await client.close()
-            logging.info(f"[aisearch] Closed SearchClient for index '{index_name}'.")
+            logging.debug(f"[aisearch] Closed SearchClient for index '{index_name}'.")
         self.clients.clear()
 
         # Close the ChainedTokenCredential if it has a close method
         if hasattr(self.credential, "close"):
             await self.credential.close()
-            logging.info("[aisearch] Closed ChainedTokenCredential.")
+            logging.debug("[aisearch] Closed ChainedTokenCredential.")

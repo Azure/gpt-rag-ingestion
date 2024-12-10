@@ -1,5 +1,6 @@
 import logging
 import time
+import json
 import jsonschema
 
 from utils import get_file_extension, get_filename
@@ -42,7 +43,7 @@ class DocumentChunker:
         if exception is not None:
             error_message += f" Exception: {str(exception)}"
 
-        logging.info(f"[document_chunking]{f'[{filename}]' if filename else ''} Error: {error_message}, Ingested Document: {f'[{filename}]' if filename else ''}")
+        logging.error(f"[document_chunking]{f'[{filename}]' if filename else ''} Error: {error_message}, Ingested Document: {f'[{filename}]' if filename else ''}")
 
         return error_message
 
@@ -104,6 +105,7 @@ class DocumentChunker:
             filename = data['documentUrl'].split('/')[-1]
 
             logging.info(f"[document_chunking][{filename}] chunking document.")
+
             chunks, errors, warnings = DocumentChunker().chunk_document(data)
 
         except jsonschema.exceptions.ValidationError as e:

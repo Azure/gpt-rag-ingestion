@@ -49,7 +49,7 @@ class NL2SQLChunker(BaseChunker):
         # Parse the JSON data
         try:
             json_data = json.loads(text)
-            logging.info(f"[nl2sql_chunker][{self.filename}] Successfully parsed JSON data.")
+            logging.debug(f"[nl2sql_chunker][{self.filename}] Successfully parsed JSON data.")
         except json.JSONDecodeError as e:
             logging.error(f"[nl2sql_chunker][{self.filename}] Failed to parse JSON data: {e}")
             return chunks

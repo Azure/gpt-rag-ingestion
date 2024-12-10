@@ -883,7 +883,12 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                             "name": "summary",
                             "source": "/document/chunks/*/summary",
                             "inputs": []
-                        },                        
+                        },
+                        {
+                            "name": "source",
+                            "source": "/document/chunks/*/source",
+                            "inputs": []
+                        },                                                      
                         {
                             "name": "contentVector",
                             "source": "/document/chunks/*/contentVector",
@@ -1235,12 +1240,6 @@ def main(subscription_id=None, resource_group=None, function_app_name=None, sear
 
     response_time = time.time() - start_time
     logging.info(f"Finished setup. {round(response_time,2)} seconds")
-
-
-# Debug
-# main(subscription_id='9788a92c-2f71-4629-8173-7ad449cb50e1', resource_group='rg-1117241755', 
-#      function_app_name='fninges0-pl6jgna73nrme', search_principal_id='8e26f5b0-44d3-41bb-996c-0087e554f396', 
-#     azure_search_use_mis=False, enable_managed_identities=False, enable_env_credentials=False)
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')    

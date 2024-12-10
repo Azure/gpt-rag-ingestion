@@ -32,12 +32,42 @@ Usage:
 """
 
 import logging
+import os
 import asyncio
 from dotenv import load_dotenv
 from connectors import SharepointFilesIndexer, SharepointDeletedFilesPurger
 from typing import Any, Dict, List, Optional
 
 load_dotenv()
+
+# -------------------------------
+# Logging configuration
+# -------------------------------
+log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
+log_level = getattr(logging, log_level, logging.INFO)
+logging.basicConfig(
+    level=logging.INFO, 
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+suppress_loggers = [
+    'azure',
+    'azure.core',
+    'azure.core.pipeline',
+    'azure.core.pipeline.policies.http_logging_policy',
+    'azsdk-python-search-documents',
+    'azsdk-python-identity',
+    'azure.ai.openai',  # Assuming 'aoai' refers to Azure OpenAI
+    'azure.identity',
+    'azure.storage',
+    'azure.ai.*',  # Wildcard-like suppression for any azure.ai sub-loggers
+    # Add any other specific loggers if necessary
+]
+for logger_name in suppress_loggers:
+    logger = logging.getLogger(logger_name)
+    logger.setLevel(logging.WARNING)
+    logger.propagate = False  
+
 
 # -------------------------------
 # Main Method

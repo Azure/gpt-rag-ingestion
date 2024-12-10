@@ -8,9 +8,11 @@ Part of [GPT-RAG](https://github.com/Azure/gpt-rag)
    - [1.1 Document Ingestion Process](#document-ingestion-process)
    - [1.2 Document Chunking Process](#document-chunking-process)
    - [1.3 NL2SQL Data Ingestion](#nl2sql-ingestion-process)
+   - [1.4 Sharepoint Indexing](#sharepoint-indexing)   
 2. [**How-to: Developer**](#how-to-developer)
    - [2.1 Redeploying the Ingestion Component](#redeploying-the-ingestion-component)
    - [2.2 Running Locally](#running-locally)
+   - [2.3 Configuring Sharepoint Connector](#configuring-sharepoint-connector)      
 3. [**How-to: User**](#how-to-user)
    - [3.1 Uploading Documents for Ingestion](#uploading-documents-for-ingestion)
    - [3.2 Reindexing Documents in AI Search](#reindexing-documents-in-ai-search)
@@ -125,6 +127,10 @@ This outlines the ingestion workflow for **query** elements.
 
 3. Finally, the indexed content is added to the `nl2sql-queries` index.
 
+### Sharepoint Indexing
+
+Learn how the SharePoint Connector works in the [How It Works: SharePoint Connector](docs/HOW_SHAREPOINT_CONNECTOR_WORKS.md) section.
+
 ## How-to: Developer
 
 ### Redeploying the Ingestion Component
@@ -146,6 +152,10 @@ This outlines the ingestion workflow for **query** elements.
 
 ### Running Locally
 - Instructions for testing the data ingestion component locally using in VS Code. See [Local Deployment Guide](docs/LOCAL_DEPLOYMENT.md).
+
+### Configuring Sharepoint Connector
+
+Follow the instructions to configure the SharePoint Connector in the [Configuration Guide: SharePoint Connector](docs/HOW_TO_SETUP_SHAREPOINT_CONNECTOR.md).
 
 ## How-to: User
 

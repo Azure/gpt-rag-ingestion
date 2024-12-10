@@ -31,7 +31,7 @@ class SharepointFilesIndexer:
         try:
             self.keyvault_client = KeyVaultClient()
             self.client_secret = await self.keyvault_client.get_secret(self.sharepoint_client_secret_name)
-            logging.info("[sharepoint_files_indexer] Retrieved sharepointClientSecret secret from Key Vault.")
+            logging.debug("[sharepoint_files_indexer] Retrieved sharepointClientSecret secret from Key Vault.")
         except Exception as e:
             logging.error(f"[sharepoint_files_indexer] Failed to retrieve secret from Key Vault: {e}")
             return False
@@ -71,7 +71,7 @@ class SharepointFilesIndexer:
                 client_secret=self.client_secret,
             )
             self.sharepoint_data_reader._msgraph_auth()
-            logging.info("[sharepoint_files_indexer] Authenticated with Microsoft Graph successfully.")
+            logging.debug("[sharepoint_files_indexer] Authenticated with Microsoft Graph successfully.")
         except Exception as e:
             logging.error(f"[sharepoint_files_indexer] Authentication failed: {e}")
             return False
@@ -79,7 +79,7 @@ class SharepointFilesIndexer:
         # Initialize AISearchClient
         try:
             self.search_client = AISearchClient()
-            logging.info("[sharepoint_files_indexer] Initialized AISearchClient successfully.")
+            logging.debug("[sharepoint_files_indexer] Initialized AISearchClient successfully.")
         except ValueError as ve:
             logging.error(f"[sharepoint_files_indexer] AISearchClient initialization failed: {ve}")
             return False
@@ -97,15 +97,15 @@ class SharepointFilesIndexer:
             return
         try:
             await self.search_client.delete_documents(index_name=self.index_name, key_field="id", key_values=chunk_ids)
-            logging.info(f"[sharepoint_files_indexer] Deleted {len(chunk_ids)} existing chunks for '{file_name}'.")
+            logging.debug(f"[sharepoint_files_indexer] Deleted {len(chunk_ids)} existing chunks for '{file_name}'.")
         except Exception as e:
             logging.error(f"[sharepoint_files_indexer] Failed to delete existing chunks for '{file_name}': {e}")
 
     async def index_file(self, data: Dict[str, Any]) -> None:
         """Index a single file's metadata into the search index."""
         try:
-            await self.search_client.upload_documents(index_name=self.index_name, documents=[data])
-            logging.info(f"[sharepoint_files_indexer] Indexed file '{data['fileName']}' successfully.")
+            await self.search_client.index_document(index_name=self.index_name, document=data)
+            logging.debug(f"[sharepoint_files_indexer] Indexed file '{data['fileName']}' successfully.")
         except Exception as e:
             logging.error(f"[sharepoint_files_indexer] Failed to index file '{data['fileName']}': {e}")
 
@@ -146,30 +146,25 @@ class SharepointFilesIndexer:
                 return
 
             if existing_chunks.get('count', 0) == 0:
-                logging.info(f"[sharepoint_files_indexer] No existing chunks found for '{file_name}'. Proceeding to index.")
-                await self.index_file(data)
-                return
-
-            indexed_last_modified_str = existing_chunks['documents'][0].get('metadata_storage_last_modified')
-
-            if not indexed_last_modified_str:
-                logging.warning(
-                    f"[sharepoint_files_indexer] 'metadata_storage_last_modified' not found for existing chunks of '{file_name}'. "
-                    "Deleting existing chunks and proceeding to re-index."
-                )
-                await self.delete_existing_chunks(existing_chunks, file_name)
-                await self.index_file(data)
-                return
-
-            # Compare modification times
-            if last_modified_datetime <= indexed_last_modified_str:
-                logging.info(f"[sharepoint_files_indexer] '{file_name}' has not been modified since last indexing. Skipping.")
-                return  # Skip indexing as no changes detected
+                logging.debug(f"[sharepoint_files_indexer] No existing chunks found for '{file_name}'. Proceeding to index.")
             else:
-                # If the file has been modified, delete existing chunks and re-index
-                logging.info(f"[sharepoint_files_indexer] '{file_name}' has been modified. Deleting existing chunks and re-indexing.")
-                await self.delete_existing_chunks(existing_chunks, file_name)
-                await self.index_file(data)
+                indexed_last_modified_str = existing_chunks['documents'][0].get('metadata_storage_last_modified')
+
+                if not indexed_last_modified_str:
+                    logging.warning(
+                        f"[sharepoint_files_indexer] 'metadata_storage_last_modified' not found for existing chunks of '{file_name}'. "
+                        "Deleting existing chunks and proceeding to re-index."
+                    )
+                    await self.delete_existing_chunks(existing_chunks, file_name)
+                else:
+                    # Compare modification times
+                    if last_modified_datetime <= indexed_last_modified_str:
+                        logging.info(f"[sharepoint_files_indexer] '{file_name}' has not been modified since last indexing. Skipping.")
+                        return  # Skip indexing as no changes detected
+                    else:
+                        # If the file has been modified, delete existing chunks and re-index
+                        logging.debug(f"[sharepoint_files_indexer] '{file_name}' has been modified. Deleting existing chunks and re-indexing.")
+                        await self.delete_existing_chunks(existing_chunks, file_name)
 
             # Chunk and index document
             chunks, errors, warnings = DocumentChunker().chunk_documents(data)
@@ -223,7 +218,8 @@ class SharepointFilesIndexer:
                 folder_path=self.folder_path,
                 file_formats=self.file_formats,
             )
-            logging.info(f"[sharepoint_files_indexer] Retrieved {len(files)} files from SharePoint.")
+            number_files = len(files) if files else 0
+            logging.info(f"[sharepoint_files_indexer] Retrieved {number_files} files from SharePoint.")
         except Exception as e:
             logging.error(f"[sharepoint_files_indexer] Failed to retrieve files: {e}")
             return
@@ -242,7 +238,7 @@ class SharepointFilesIndexer:
         # Close the AISearchClient
         try:
             await self.search_client.close()
-            logging.info("[sharepoint_files_indexer] Closed AISearchClient successfully.")
+            logging.debug("[sharepoint_files_indexer] Closed AISearchClient successfully.")
         except Exception as e:
             logging.error(f"[sharepoint_files_indexer] Failed to close AISearchClient: {e}")
 

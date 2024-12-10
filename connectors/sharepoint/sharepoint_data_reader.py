@@ -76,7 +76,7 @@ class SharePointDataReader:
             site_id, drive_id, folder_path, minutes_ago, file_formats
         )
         if not files:
-            logging.error("[sharepoint_files_reader] No files found in the site's drive")
+            logging.info("[sharepoint_files_reader] No files found in the site's drive")
             return None
 
         return self._process_files(
@@ -111,12 +111,12 @@ class SharePointDataReader:
             if not access_token:
                 access_token = app.acquire_token_for_client(scopes=self.scope)
                 if "access_token" in access_token:
-                    logging.info("[sharepoint_files_reader] New access token retrieved.")
+                    logging.debug("[sharepoint_files_reader] New access token retrieved.")
                 else:
                     logging.error("[sharepoint_files_reader] Error acquiring authorization token.")
                     return None
             else:
-                logging.info("[sharepoint_files_reader] Token retrieved from MSAL Cache.")
+                logging.debug("[sharepoint_files_reader] Token retrieved from MSAL Cache.")
 
             # Store the access token in the instance
             self.access_token = access_token["access_token"]
@@ -180,11 +180,11 @@ class SharePointDataReader:
         access_token = access_token or self.access_token
 
         try:
-            logging.info("[sharepoint_files_reader] Getting the Site ID...")
+            logging.debug("[sharepoint_files_reader] Getting the Site ID...")
             result = self._make_ms_graph_request(endpoint, access_token)
             site_id = result.get("id")
             if site_id:
-                logging.info(f"[sharepoint_files_reader] Site ID retrieved: {site_id}")
+                logging.debug(f"[sharepoint_files_reader] Site ID retrieved: {site_id}")
                 return site_id
         except Exception as err:
             logging.error(f"[sharepoint_files_reader] Error retrieving Site ID: {err}")
@@ -201,7 +201,7 @@ class SharePointDataReader:
         try:
             json_response = self._make_ms_graph_request(url, access_token)
             drive_id = json_response.get("id")
-            logging.info(f"[sharepoint_files_reader] Successfully retrieved drive ID: {drive_id}")
+            logging.debug(f"[sharepoint_files_reader] Successfully retrieved drive ID: {drive_id}")
             return drive_id
         except Exception as err:
             logging.error(f"[sharepoint_files_reader] Error in get_drive_id: {err}")
@@ -243,7 +243,7 @@ class SharePointDataReader:
             logging.info("[sharepoint_files_reader] Making request to Microsoft Graph API")
             json_response = self._make_ms_graph_request(url, access_token)
             files = json_response["value"]
-            logging.info("[sharepoint_files_reader] Received response from Microsoft Graph API")
+            logging.debug("[sharepoint_files_reader] Received response from Microsoft Graph API")
 
             time_limit = (
                 datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)

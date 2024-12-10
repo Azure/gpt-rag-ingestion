@@ -87,7 +87,7 @@ class SpreadsheetChunker(BaseChunker):
                 # Original behavior: Chunk per sheet
                 start_time = time.time()
                 chunk_number += 1
-                logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Starting processing chunk {chunk_number} (sheet).")
+                logging.debug(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Starting processing chunk {chunk_number} (sheet).")
                 table_content = sheet["table"]
 
                 table_content = self._clean_markdown_table(table_content)
@@ -106,7 +106,7 @@ class SpreadsheetChunker(BaseChunker):
                 )            
                 chunks.append(chunk_dict)
                 elapsed_time = time.time() - start_time
-                logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Processed chunk {chunk_number} in {elapsed_time:.2f} seconds.")            
+                logging.debug(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Processed chunk {chunk_number} in {elapsed_time:.2f} seconds.")            
             else:
                 # New behavior: Chunk per row
                 logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Starting row-wise chunking.")
@@ -117,7 +117,7 @@ class SpreadsheetChunker(BaseChunker):
                         continue
                     chunk_number += 1
                     start_time = time.time()
-                    logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Processing chunk {chunk_number} for row {row_index}.")
+                    logging.debug(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Processing chunk {chunk_number} for row {row_index}.")
                     
                     if self.include_header_in_chunks:
                         table = tabulate([headers, row], headers="firstrow", tablefmt="github")
@@ -145,10 +145,10 @@ class SpreadsheetChunker(BaseChunker):
                     )
                     chunks.append(chunk_dict)
                     elapsed_time = time.time() - start_time
-                    logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Processed chunk {chunk_number} in {elapsed_time:.2f} seconds.")
+                    logging.debug(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Processed chunk {chunk_number} in {elapsed_time:.2f} seconds.")
         
         total_elapsed_time = time.time() - total_start_time
-        logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks] Finished get_chunks. Created {len(chunks)} chunks in {total_elapsed_time:.2f} seconds.")
+        logging.debug(f"[spreadsheet_chunker][{self.filename}][get_chunks] Finished get_chunks. Created {len(chunks)} chunks in {total_elapsed_time:.2f} seconds.")
 
         return chunks
 
@@ -160,10 +160,10 @@ class SpreadsheetChunker(BaseChunker):
         Returns:
             List[dict]: A list of dictionaries, where each dictionary contains sheet metadata, headers, rows, table content, and a summary if applicable.
         """
-        logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process] Starting blob download.")        
+        logging.debug(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process] Starting blob download.")        
         blob_data = self.document_bytes
         blob_stream = BytesIO(blob_data)
-        logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process] Starting openpyxl load_workbook.")                    
+        logging.debug(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process] Starting openpyxl load_workbook.")                    
         workbook = load_workbook(blob_stream, data_only=True)
 
         sheets = []
@@ -186,17 +186,17 @@ class SpreadsheetChunker(BaseChunker):
                 prompt = f"Summarize the table with data in it, by understanding the information clearly.\n table_data:{table}"
                 summary = self.aoai_client.get_completion(prompt, max_tokens=2048)
                 sheet_dict["summary"] = summary
-                logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_dict['name']}] Generated summary.")
+                logging.debug(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_dict['name']}] Generated summary.")
             else:
                 sheet_dict["summary"] = ""
-                logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_dict['name']}] Skipped summary generation (chunking by row).")
+                logging.debug(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_dict['name']}] Skipped summary generation (chunking by row).")
             
             elapsed_time = time.time() - start_time
-            logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_dict['name']}] Processed in {elapsed_time:.2f} seconds.")
+            logging.debug(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_dict['name']}] Processed in {elapsed_time:.2f} seconds.")
             sheets.append(sheet_dict)
     
         total_elapsed_time = time.time() - total_start_time
-        logging.info(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process] Total processing time: {total_elapsed_time:.2f} seconds.")
+        logging.debug(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process] Total processing time: {total_elapsed_time:.2f} seconds.")
 
         return sheets
 

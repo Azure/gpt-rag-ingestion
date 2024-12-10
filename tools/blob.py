@@ -48,7 +48,7 @@ class BlobStorageClient:
             self.account_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
             self.container_name = parsed_url.path.split("/")[1]
             self.blob_name = unquote(parsed_url.path[len(f"/{self.container_name}/"):])
-            logging.info(f"[blob][{self.blob_name}] Parsed blob URL successfully.")
+            logging.debug(f"[blob][{self.blob_name}] Parsed blob URL successfully.")
         except Exception as e:
             logging.error(f"[blob] Invalid blob URL '{self.file_url}': {e}")
             raise EnvironmentError(f"Invalid blob URL '{self.file_url}': {e}")
@@ -56,7 +56,7 @@ class BlobStorageClient:
         # Initialize BlobServiceClient
         try:
             self.blob_service_client = BlobServiceClient(account_url=self.account_url, credential=self.credential)
-            logging.info(f"[blob][{self.blob_name}] Initialized BlobServiceClient.")
+            logging.debug(f"[blob][{self.blob_name}] Initialized BlobServiceClient.")
         except Exception as e:
             logging.error(f"[blob][{self.blob_name}] Failed to initialize BlobServiceClient: {e}")
             raise
@@ -76,7 +76,7 @@ class BlobStorageClient:
         data = b""
 
         try:
-            logging.info(f"[blob][{self.blob_name}] Attempting to download blob.")
+            logging.debug(f"[blob][{self.blob_name}] Attempting to download blob.")
             data = blob_client.download_blob().readall()
             logging.info(f"[blob][{self.blob_name}] Blob downloaded successfully.")
         except Exception as e:

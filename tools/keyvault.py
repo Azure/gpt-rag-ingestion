@@ -65,4 +65,4 @@ class KeyVaultClient:
         """
         if self.credential:
             await self.credential.close()
-            logging.info("[keyvault] Credential has been closed.")
+            logging.debug("[keyvault] Credential has been closed.")

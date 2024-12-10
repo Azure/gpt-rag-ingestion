@@ -89,9 +89,9 @@ class LangChainChunker(BaseChunker):
                 chunks.append(chunk_dict)
             else:
                 skipped_chunks += 1
-        logging.info(f"[langchain_chunker][{self.filename}] {len(chunks)} chunk(s) created")    
+        logging.debug(f"[langchain_chunker][{self.filename}] {len(chunks)} chunk(s) created")    
         if skipped_chunks > 0:
-            logging.info(f"[langchain_chunker][{self.filename}] {skipped_chunks} chunk(s) skipped")
+            logging.debug(f"[langchain_chunker][{self.filename}] {skipped_chunks} chunk(s) skipped")
     
         return chunks
     

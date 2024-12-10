@@ -153,9 +153,9 @@ class DocAnalysisChunker(BaseChunker):
             else:
                 skipped_chunks += 1
 
-        logging.info(f"[doc_analysis_chunker][{self.filename}] {len(chunks)} chunk(s) created")
+        logging.debug(f"[doc_analysis_chunker][{self.filename}] {len(chunks)} chunk(s) created")
         if skipped_chunks > 0:
-            logging.info(f"[doc_analysis_chunker][{self.filename}] {skipped_chunks} chunk(s) skipped")
+            logging.debug(f"[doc_analysis_chunker][{self.filename}] {skipped_chunks} chunk(s) skipped")
         return chunks
 
     def _chunk_content(self, content):

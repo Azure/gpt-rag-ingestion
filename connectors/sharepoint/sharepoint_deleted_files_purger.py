@@ -31,7 +31,7 @@ class SharepointDeletedFilesPurger:
         try:
             self.keyvault_client = KeyVaultClient()
             self.client_secret = await self.keyvault_client.get_secret(self.client_secret_name)
-            logging.info("[sharepoint_purge_deleted_files] Retrieved sharepointClientSecret secret from Key Vault.")
+            logging.debug("[sharepoint_purge_deleted_files] Retrieved sharepointClientSecret secret from Key Vault.")
         except Exception as e:
             logging.error(f"[sharepoint_purge_deleted_files] Failed to retrieve secret from Key Vault: {e}")
             return False
@@ -67,7 +67,7 @@ class SharepointDeletedFilesPurger:
         # Initialize AISearchClient
         try:
             self.search_client = AISearchClient()
-            logging.info("[sharepoint_purge_deleted_files] Initialized AISearchClient successfully.")
+            logging.debug("[sharepoint_purge_deleted_files] Initialized AISearchClient successfully.")
         except ValueError as ve:
             logging.error(f"[sharepoint_purge_deleted_files] AISearchClient initialization failed: {ve}")
             return False
@@ -96,7 +96,7 @@ class SharepointDeletedFilesPurger:
                     if resp.status == 200:
                         token_response = await resp.json()
                         access_token = token_response.get("access_token")
-                        logging.info("[sharepoint_purge_deleted_files] Successfully obtained access token for Microsoft Graph API.")
+                        logging.debug("[sharepoint_purge_deleted_files] Successfully obtained access token for Microsoft Graph API.")
                         return access_token
                     else:
                         error_response = await resp.text()
@@ -258,7 +258,7 @@ class SharepointDeletedFilesPurger:
         # Close the AISearchClient
         try:
             await self.search_client.close()
-            logging.info("[sharepoint_purge_deleted_files] Closed AISearchClient successfully.")
+            logging.debug("[sharepoint_purge_deleted_files] Closed AISearchClient successfully.")
         except Exception as e:
             logging.error(f"[sharepoint_purge_deleted_files] Failed to close AISearchClient: {e}")
 
