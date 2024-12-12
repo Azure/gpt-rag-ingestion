@@ -180,7 +180,7 @@ class SharepointFilesIndexer:
 
             # Ingest the chunks into the index
             for chunk in chunks:
-                chunk["id"] = f"{sharepoint_id}_{chunk.get('chunk_number', 'unknown')}"
+                chunk["id"] = f"{sharepoint_id}_{chunk.get('chunk_id', 'unknown')}"
                 chunk["parent_id"] = sharepoint_id
                 chunk["metadata_storage_path"] = document_url
                 chunk["metadata_storage_name"] = file_name
