@@ -141,7 +141,7 @@ class BaseChunker:
 
     def _create_chunk(
         self,
-        chunk_number,
+        chunk_id,
         content,
         summary="",
         embedding_text="",
@@ -159,7 +159,7 @@ class BaseChunker:
         If no embedding_text is available, it will fall back to using the content text.
 
         Args:
-            chunk_number (str): Sequential number for the chunk.
+            chunk_id (str): Sequential number for the chunk.
             content (str): The main content of the chunk.
             summary (str, optional): A brief summary of the content. Defaults to an empty string.
             embedding_text (str, optional): Text used to generate the embedding. Defaults to an empty string.
@@ -204,7 +204,7 @@ class BaseChunker:
         content_vector = self.aoai_client.get_embeddings(embedding_text)
 
         return {
-            "chunk_number": chunk_number,
+            "chunk_id": chunk_id,
             "url": self.url,
             "filepath": self.filename,
             "content": truncated_content,

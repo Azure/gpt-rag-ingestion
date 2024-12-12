@@ -66,14 +66,14 @@ class TranscriptionChunker(BaseChunker):
         prompt = f"Provide clearly elaborated summary along with the keypoints and values mentioned for the transcript of a conversation: {text} "
         summary = self.aoai_client.get_completion(prompt)
         text_chunks = self._chunk_document_content(text)
-        chunk_number = 0
+        chunk_id = 0
         for text_chunk in text_chunks:
-            chunk_number += 1
+            chunk_id += 1
             chunk_size = self.token_estimator.estimate_tokens(text_chunk)
             if chunk_size > self.max_chunk_size:
                 logging.debug(f"[transcription_chunker][{self.filename}] truncating {chunk_size} size chunk to fit within {self.max_chunk_size} tokens")
                 text_chunk = self._truncate_chunk(text_chunk)
-            chunk_dict = self._create_chunk(chunk_number=chunk_number, content=text_chunk, embedding_text=summary, summary=summary) 
+            chunk_dict = self._create_chunk(chunk_id=chunk_id, content=text_chunk, embedding_text=summary, summary=summary) 
             chunks.append(chunk_dict)      
         return chunks
 

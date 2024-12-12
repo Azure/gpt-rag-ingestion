@@ -81,13 +81,13 @@ class SpreadsheetChunker(BaseChunker):
         sheets = self._spreadsheet_process()
         logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks] Workbook has {len(sheets)} sheets")
 
-        chunk_number = 0
+        chunk_id = 0
         for sheet in sheets:
             if not self.chunking_by_row:
                 # Original behavior: Chunk per sheet
                 start_time = time.time()
-                chunk_number += 1
-                logging.debug(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Starting processing chunk {chunk_number} (sheet).")
+                chunk_id += 1
+                logging.debug(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Starting processing chunk {chunk_id} (sheet).")
                 table_content = sheet["table"]
 
                 table_content = self._clean_markdown_table(table_content)
@@ -98,7 +98,7 @@ class SpreadsheetChunker(BaseChunker):
                     table_content = sheet["summary"]
 
                 chunk_dict = self._create_chunk(
-                    chunk_number=chunk_number,
+                    chunk_id=chunk_id,
                     content=table_content,
                     summary=sheet["summary"] if not self.chunking_by_row else "",
                     embedding_text=sheet["summary"] if (sheet["summary"] and not self.chunking_by_row) else table_content,
@@ -106,7 +106,7 @@ class SpreadsheetChunker(BaseChunker):
                 )            
                 chunks.append(chunk_dict)
                 elapsed_time = time.time() - start_time
-                logging.debug(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Processed chunk {chunk_number} in {elapsed_time:.2f} seconds.")            
+                logging.debug(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Processed chunk {chunk_id} in {elapsed_time:.2f} seconds.")            
             else:
                 # New behavior: Chunk per row
                 logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Starting row-wise chunking.")
@@ -115,9 +115,9 @@ class SpreadsheetChunker(BaseChunker):
                 for row_index, row in enumerate(rows, start=1):
                     if not any(cell.strip() for cell in row):
                         continue
-                    chunk_number += 1
+                    chunk_id += 1
                     start_time = time.time()
-                    logging.debug(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Processing chunk {chunk_number} for row {row_index}.")
+                    logging.debug(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Processing chunk {chunk_id} for row {row_index}.")
                     
                     if self.include_header_in_chunks:
                         table = tabulate([headers, row], headers="firstrow", tablefmt="github")
@@ -137,7 +137,7 @@ class SpreadsheetChunker(BaseChunker):
                         embedding_text = table
 
                     chunk_dict = self._create_chunk(
-                        chunk_number=chunk_number,
+                        chunk_id=chunk_id,
                         content=content,
                         summary=summary,
                         embedding_text=embedding_text,
@@ -145,7 +145,7 @@ class SpreadsheetChunker(BaseChunker):
                     )
                     chunks.append(chunk_dict)
                     elapsed_time = time.time() - start_time
-                    logging.debug(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Processed chunk {chunk_number} in {elapsed_time:.2f} seconds.")
+                    logging.debug(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Processed chunk {chunk_id} in {elapsed_time:.2f} seconds.")
         
         total_elapsed_time = time.time() - total_start_time
         logging.debug(f"[spreadsheet_chunker][{self.filename}][get_chunks] Finished get_chunks. Created {len(chunks)} chunks in {total_elapsed_time:.2f} seconds.")

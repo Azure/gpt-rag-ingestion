@@ -135,7 +135,7 @@ class DocAnalysisChunker(BaseChunker):
         document_content = self._number_pagebreaks(document_content)
 
         text_chunks = self._chunk_content(document_content)
-        chunk_number = 0
+        chunk_id = 0
         skipped_chunks = 0
         current_page = 1
 
@@ -143,9 +143,9 @@ class DocAnalysisChunker(BaseChunker):
             current_page = self._update_page(text_chunk, current_page)
             chunk_page = self._determine_chunk_page(text_chunk, current_page)
             if num_tokens >= self.minimum_chunk_size:
-                chunk_number += 1
+                chunk_id += 1
                 chunk = self._create_chunk(
-                    chunk_number=chunk_number,
+                    chunk_id=chunk_id,
                     content=text_chunk,
                     page=chunk_page
                 )

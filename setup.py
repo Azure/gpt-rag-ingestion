@@ -486,7 +486,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                     "filterable": True
                 },                
                 {
-                    "name": "chunk_number",
+                    "name": "chunk_id",
                     "type": "Edm.Int32",
                     "searchable": False,
                     "retrievable": True
@@ -825,8 +825,8 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                     "sourceContext": "/document/chunks/*",
                     "mappings": [
                         {
-                        "name": "chunk_number",
-                        "source": "/document/chunks/*/chunk_number",
+                        "name": "chunk_id",
+                        "source": "/document/chunks/*/chunk_id",
                         "inputs": []
                         },
                         {
