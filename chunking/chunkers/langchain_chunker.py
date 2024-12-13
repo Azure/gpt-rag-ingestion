@@ -71,8 +71,7 @@ class LangChainChunker(BaseChunker):
         if self.extension not in self.supported_formats:
             raise UnsupportedFormatError(f"[langchain_chunker] {self.filename} {self.extension} format is not supported")
         
-        # Download the blob as bytes
-        blob_data = self.blob_client.download_blob()
+        blob_data = self.document_bytes
         # Decode the bytes into text (assuming it's UTF-8 encoded)
         text = blob_data.decode('utf-8')
 
@@ -90,9 +89,9 @@ class LangChainChunker(BaseChunker):
                 chunks.append(chunk_dict)
             else:
                 skipped_chunks += 1
-        logging.info(f"[langchain_chunker][{self.filename}] {len(chunks)} chunk(s) created")    
+        logging.debug(f"[langchain_chunker][{self.filename}] {len(chunks)} chunk(s) created")    
         if skipped_chunks > 0:
-            logging.info(f"[langchain_chunker][{self.filename}] {skipped_chunks} chunk(s) skipped")
+            logging.debug(f"[langchain_chunker][{self.filename}] {skipped_chunks} chunk(s) skipped")
     
         return chunks
     

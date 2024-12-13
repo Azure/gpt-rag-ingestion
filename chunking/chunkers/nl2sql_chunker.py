@@ -42,14 +42,14 @@ class NL2SQLChunker(BaseChunker):
         chunks = []
         logging.info(f"[nl2sql_chunker][{self.filename}] Running get_chunks.")
 
-        blob_data = self.blob_client.download_blob()
+        blob_data = self.document_bytes
         # Decode the bytes into text (assuming it's UTF-8 encoded)
         text = blob_data.decode('utf-8')
 
         # Parse the JSON data
         try:
             json_data = json.loads(text)
-            logging.info(f"[nl2sql_chunker][{self.filename}] Successfully parsed JSON data.")
+            logging.debug(f"[nl2sql_chunker][{self.filename}] Successfully parsed JSON data.")
         except json.JSONDecodeError as e:
             logging.error(f"[nl2sql_chunker][{self.filename}] Failed to parse JSON data: {e}")
             return chunks

@@ -12,6 +12,7 @@ class ChunkerFactory:
     """Factory class to create appropriate chunker based on file extension."""
     
     def __init__(self):
+        # needs to check if docint_40_api is available
         docint_client = DocumentIntelligenceClient()
         self.docint_40_api = docint_client.docint_40_api 
 

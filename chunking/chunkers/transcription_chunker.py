@@ -60,7 +60,7 @@ class TranscriptionChunker(BaseChunker):
 
         # Extract the text from the vtt file
         text = self._vtt_process()
-        logging.info(f"[transcription_chunker][{self.filename}] transcription text: {text[:100]}")
+        logging.debug(f"[transcription_chunker][{self.filename}] transcription text: {text[:100]}")
 
         # Get the summary of the text
         prompt = f"Provide clearly elaborated summary along with the keypoints and values mentioned for the transcript of a conversation: {text} "
@@ -71,14 +71,14 @@ class TranscriptionChunker(BaseChunker):
             chunk_id += 1
             chunk_size = self.token_estimator.estimate_tokens(text_chunk)
             if chunk_size > self.max_chunk_size:
-                logging.info(f"[transcription_chunker][{self.filename}] truncating {chunk_size} size chunk to fit within {self.max_chunk_size} tokens")
+                logging.debug(f"[transcription_chunker][{self.filename}] truncating {chunk_size} size chunk to fit within {self.max_chunk_size} tokens")
                 text_chunk = self._truncate_chunk(text_chunk)
             chunk_dict = self._create_chunk(chunk_id=chunk_id, content=text_chunk, embedding_text=summary, summary=summary) 
             chunks.append(chunk_dict)      
         return chunks
 
     def _vtt_process(self):
-        blob_data = self.blob_client.download_blob()
+        blob_data = self.document_bytes
         blob_stream = BytesIO(blob_data)
         vtt = webvtt.read_buffer(blob_stream)
         data, text, voice = [], "", ""
