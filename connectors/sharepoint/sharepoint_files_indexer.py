@@ -6,6 +6,7 @@ from tools import KeyVaultClient
 from tools import AISearchClient
 from typing import Any, Dict, List, Optional
 from chunking import DocumentChunker
+from chunking import ChunkerFactory
 
 class SharepointFilesIndexer:
     def __init__(self):
@@ -18,8 +19,9 @@ class SharepointFilesIndexer:
         self.folder_path = os.getenv("SHAREPOINT_SITE_FOLDER", "/")
         self.sharepoint_client_secret_name = os.getenv("KEYVAULT_SHAREPOINT_SECRET_NAME", "sharepointClientSecret")
         self.index_name = os.getenv("AZURE_SEARCH_SHAREPOINT_INDEX_NAME", "ragindex")
-        self.file_formats = os.getenv("SHAREPOINT_FILES_FORMAT", "pdf,docx").split(",")
-        
+        self.file_formats = os.getenv("SHAREPOINT_FILES_FORMAT")
+        if not self.file_formats:
+            self.file_formats = ChunkerFactory.get_supported_extensions()
         self.keyvault_client: Optional[KeyVaultClient] = None
         self.client_secret: Optional[str] = None
         self.sharepoint_data_reader: Optional[SharePointDataReader] = None
