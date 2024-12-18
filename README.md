@@ -129,7 +129,37 @@ This outlines the ingestion workflow for **query** elements.
 
 ### Sharepoint Indexing
 
-Learn how the SharePoint Connector works in the [How It Works: SharePoint Connector](docs/HOW_SHAREPOINT_CONNECTOR_WORKS.md) section.
+The SharePoint connector operates through two primary processes, cada um deles roda em uma function da Data Ingestion Function App:
+
+1. **Indexing SharePoint Files**: `sharepoint_index_files` function retrieves files from SharePoint, processes them, and indexes their content into the Azure AI Search Index (`ragindex`).
+2. **Purging Deleted Files**: `sharepoint_purge_deleted_files` identifies and removes files that have been deleted from SharePoint to keep the search index up-to-date.
+
+Both processes are managed by scheduled Azure Functions that run at regular intervals, leveraging configuration settings to determine their behavior. The diagram below illustrates the Sharepoint indexing.
+
+![Sharepoint Data Ingestion](media/sharepoint-flow.png)  
+*Sharepoint Indexing Workflow*
+
+**Workflow**
+
+### 1. **Indexing Process** (sharepoint_index_files)
+
+1.1. List files from a specific SharePoint site, directory, and file types configured in the settings.  
+1.2.  Check if the document exists in the AI Search Index. If it exists, compare the `metadata_storage_last_modified` field to determine if the file has been updated.  
+1.3. Use the Microsoft Graph API to download the file if it is new or has been updated.  
+1.4. Process the file content using the regular document chunking process. For specific formats, like PDFs, use Document Intelligence.  
+1.5. Use Azure OpenAI to generate embeddings for the document chunks.  
+1.6. Upload the processed document chunks, metadata, and embeddings into the Azure AI Search Index.  
+
+### 2. **Purging Deleted Files** (sharepoint_purge_deleted_files)
+
+2.1. Connect to the Azure AI Search Index to identify indexed documents.  
+2.2. Query the Microsoft Graph API to verify the existence of corresponding files in SharePoint.  
+2.3. Remove entries in the Azure AI Search Index for files that no longer exist.  
+
+Azure Function triggers automate the indexing and purging processes. Indexing runs at regular intervals to ingest updated SharePoint files, while purging removes deleted files to maintain an accurate search index. By default, both processes run every 10 minutes when enabled.
+
+If you'd like to learn how to set up the SharePoint connector, check out [SharePoint Connector Setup](https://github.com/Azure/GPT-RAG/blob/main/docs/INGESTION_SHAREPOINT_SETUP.md).
+
 
 ## How-to: Developer
 
