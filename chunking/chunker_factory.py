@@ -30,6 +30,7 @@ class ChunkerFactory:
         filename = data['documentUrl'].split('/')[-1]
         logging.info(f"[chunker_factory][{filename}] Creating chunker")
 
+        extension = extension.lower()
         if extension == 'vtt':
             return TranscriptionChunker(data)
         elif extension in ('xlsx', 'xls'):
@@ -47,3 +48,18 @@ class ChunkerFactory:
         else:
             return LangChainChunker(data)
         
+    @staticmethod
+    def get_supported_extensions():
+        """
+        Get a comma-separated list of supported file extensions.
+
+        Returns:
+            str: A comma-separated list of supported file extensions.
+        """
+        extensions = [
+            'vtt',
+            'xlsx', 'xls',
+            'pdf', 'png', 'jpeg', 'jpg', 'bmp', 'tiff',
+            'docx', 'pptx'
+        ]
+        return ', '.join(extensions)
