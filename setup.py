@@ -287,6 +287,11 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     storage_container = function_app_settings.properties["STORAGE_CONTAINER"]
     storage_account_name = function_app_settings.properties["STORAGE_ACCOUNT_NAME"]
     network_isolation = True if function_app_settings.properties["NETWORK_ISOLATION"].lower() == "true" else False
+    storage_container = function_app_settings.properties["STORAGE_CONTAINER"]
+    storage_account_name = function_app_settings.properties["STORAGE_ACCOUNT_NAME"]
+    azure_openai_embedding_deployment = function_app_settings.properties.get("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding")
+    azure_openai_embedding_model = function_app_settings.properties.get("AZURE_OPENAI_EMBEDDING_MODEL", "text-embedding-3-large")
+    azure_embeddings_vector_size = function_app_settings.properties.get("AZURE_EMBEDDINGS_VECTOR_SIZE", "3072")
 
     logging.info(f"Function endpoint: {function_endpoint}")
     logging.info(f"Search service: {search_service}")
@@ -296,7 +301,9 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     logging.info(f"Search index name: {search_index_name}")
     logging.info(f"Storage container: {storage_container}")
     logging.info(f"Storage account name: {storage_account_name}")
-
+    logging.info(f"Embedding deployment name: {azure_openai_embedding_deployment}")
+    logging.info(f"Embedding model: {azure_openai_embedding_model}")
+    logging.info(f"Embedding vector size: {azure_embeddings_vector_size}")
 
     # NL2SQL Elements
     storage_container_nl2sql = "nl2sql"
@@ -309,7 +316,6 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     logging.info(f"NL2SQL Search index name (tables): {search_index_name_nl2sql_tables}")
     logging.info(f"NL2SQL Search index name (columns): {search_index_name_nl2sql_columns}")    
 
-    
     ###########################################################################
     # Get function key to be used later when creating the skillset
     ########################################################################### 
@@ -581,13 +587,13 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                     "type": "Collection(Edm.Single)",
                     "searchable": True,
                     "retrievable": True,
-                    "dimensions": 1536,
+                    "dimensions": vector_size,
                     "vectorSearchProfile": vector_profile_name
                 }
             ],
             "content_field_name": "content",
             "keyword_field_name": "category",
-            "vector_dimensions": 1536
+            "vector_dimensions": vector_size
         },
         {
             "index_name": search_index_name_nl2sql_queries,
@@ -648,13 +654,13 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                     "type": "Collection(Edm.Single)",
                     "searchable": True,
                     "retrievable": True,
-                    "dimensions": 1536,
+                    "dimensions": vector_size,
                     "vectorSearchProfile": vector_profile_name
                 }
             ],
             "content_field_name": "question",
             "keyword_field_name": "question",
-            "vector_dimensions": 1536
+            "vector_dimensions": vector_size
         },
         {
             "index_name": search_index_name_nl2sql_tables,
@@ -693,13 +699,13 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                     "type": "Collection(Edm.Single)",
                     "searchable": True,
                     "retrievable": True,
-                    "dimensions": 1536,
+                    "dimensions": vector_size,
                     "vectorSearchProfile": vector_profile_name
                 }
             ],
             "content_field_name": "description",
             "keyword_field_name": "description",
-            "vector_dimensions": 1536
+            "vector_dimensions": vector_size
         },
         {
             "index_name": search_index_name_nl2sql_columns,
@@ -748,13 +754,13 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                     "type": "Collection(Edm.Single)",
                     "searchable": True,
                     "retrievable": True,
-                    "dimensions": 1536,
+                    "dimensions": vector_size,
                     "vectorSearchProfile": vector_profile_name
                 }
             ],
             "content_field_name": "description",
             "keyword_field_name": "description",
-            "vector_dimensions": 1536
+            "vector_dimensions": vector_size
         }
     ]
 
@@ -935,7 +941,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
 
     # creating skill sets for the NL2SQL indexes
 
-    def create_embedding_skillset(skillset_name, resource_uri, deployment_id, model_name, input_field, output_field, dimensions=1536):
+    def create_embedding_skillset(skillset_name, resource_uri, deployment_id, model_name, input_field, output_field, dimensions):
         skill = {
             "@odata.type": "#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill",
             "name": f"{skillset_name}-embedding-skill",
@@ -969,9 +975,10 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
 
     # Configuration parameters
     resource_uri = f"https://{azure_openai_service_name}.openai.azure.com/"
-    deployment_id = "text-embedding-ada-002"  # Example deployment ID
-    model_name = "text-embedding-ada-002"
- 
+    deployment_id = azure_openai_embedding_deployment  # Example deployment ID
+    model_name = azure_openai_embedding_model
+    vector_size = azure_embeddings_vector_size
+
     # Define skillsets configurations
     skillsets = [
         {
@@ -1000,7 +1007,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
             model_name=model_name,
             input_field=skillset["input_field"],
             output_field=skillset["output_field"],
-            dimensions=1536
+            dimensions=vector_size
         )
 
         # Delete existing skillset if it exists
