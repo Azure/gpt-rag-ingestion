@@ -186,7 +186,8 @@ def approve_search_shared_private_access(subscription_id, resource_group, functi
 
     Raises:
         Exception: If approval fails.
-    """    
+    """ 
+    # TODO: Use respective services resource group
     try:
         logging.info("Approving Shared Private Access requests for storage, function app, and Azure OpenAI Service if needed.")
         
@@ -360,6 +361,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     start_time = time.time()
 
     # Define storage connection string without account key
+    # TODO: Use storage account resource group
     storage_connection_string = f"ResourceId=/subscriptions/{subscription_id}/resourceGroups/{resource_group}/providers/Microsoft.Storage/storageAccounts/{storage_account_name}/;"
 
     # Creating main datasource
@@ -1263,6 +1265,15 @@ if __name__ == '__main__':
     # format search_use_mis to boolean
     search_use_mis = args.azure_search_use_mis.lower() == "true" if args.azure_search_use_mis not in [None, ""] else False
 
+    # Log all arguments
+    logging.info(f"Subscription ID: {args.subscription_id}")
+    logging.info(f"Resource group: {args.resource_group}")
+    logging.info(f"Function app name: {args.function_app_name}")
+    logging.info(f"Search principal ID: {args.search_principal_id}")
+    logging.info(f"Azure Search use MIS: {search_use_mis}")
+    logging.info(f"Enable managed identities: {args.enable_managed_identities}")
+    logging.info(f"Enable environment credentials: {args.enable_env_credentials}")
+
     main(subscription_id=args.subscription_id, resource_group=args.resource_group, function_app_name=args.function_app_name, search_principal_id=args.search_principal_id, 
-        azure_search_use_mis=search_use_mis, enable_managed_identities=args.enable_managed_identities, enable_env_credentials=args.enable_env_credentials)    
+        azure_search_use_mis=search_use_mis, enable_managed_identities=args.enable_managed_identities, enable_env_credentials=args.enable_env_credentials)
     
