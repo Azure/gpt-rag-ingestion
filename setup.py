@@ -152,7 +152,8 @@ def approve_private_link_connections(access_token, subscription_id, resource_gro
             logging.info(f"Checking connection '{connection['name']}'. Status: {status}.")
             if status.lower() == "pending":
                 connection_name = connection['name']
-                approve_url = f"{request_url}/{connection_name}/approve?api-version={api_version}"
+                # approve_url = f"{request_url}/{connection_name}/approve?api-version={api_version}"
+                approve_url = f"https://management.azure.com/subscriptions/{subscription_id}/resourceGroups/{resource_group}/providers/{service_type}/{service_name}/privateEndpointConnections/{connection_name}/approve?api-version={api_version}"
                 logging.info(f"[approve_private_link_connections] approve_url: {approve_url}")
                 request_body = {
                     "properties": {
