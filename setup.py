@@ -383,7 +383,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     # Creating indexes
     ###############################################################################
 
-    def create_index_body(index_name, fields, content_field_name, keyword_field_name, vector_dimensions, vector_profile_name="myHnswProfile", vector_algorithm_name="myHnswConfig"):
+    def create_index_body(index_name, fields, content_field_name, keyword_field_name, vector_dimensions, vector_profile_name="myHnswProfile", vector_algorithm_name="myHnswConfig", dimensions=3072):
         body = {
             "name": index_name,
             "fields": fields,
@@ -587,13 +587,13 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                     "type": "Collection(Edm.Single)",
                     "searchable": True,
                     "retrievable": True,
-                    "dimensions": vector_size,
+                    "dimensions": azure_embeddings_vector_size,
                     "vectorSearchProfile": vector_profile_name
                 }
             ],
             "content_field_name": "content",
             "keyword_field_name": "category",
-            "vector_dimensions": vector_size
+            "vector_dimensions": azure_embeddings_vector_size
         },
         {
             "index_name": search_index_name_nl2sql_queries,
@@ -654,13 +654,13 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                     "type": "Collection(Edm.Single)",
                     "searchable": True,
                     "retrievable": True,
-                    "dimensions": vector_size,
+                    "dimensions": azure_embeddings_vector_size,
                     "vectorSearchProfile": vector_profile_name
                 }
             ],
             "content_field_name": "question",
             "keyword_field_name": "question",
-            "vector_dimensions": vector_size
+            "vector_dimensions": azure_embeddings_vector_size
         },
         {
             "index_name": search_index_name_nl2sql_tables,
@@ -699,13 +699,13 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                     "type": "Collection(Edm.Single)",
                     "searchable": True,
                     "retrievable": True,
-                    "dimensions": vector_size,
+                    "dimensions": azure_embeddings_vector_size,
                     "vectorSearchProfile": vector_profile_name
                 }
             ],
             "content_field_name": "description",
             "keyword_field_name": "description",
-            "vector_dimensions": vector_size
+            "vector_dimensions": azure_embeddings_vector_size
         },
         {
             "index_name": search_index_name_nl2sql_columns,
@@ -754,13 +754,13 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                     "type": "Collection(Edm.Single)",
                     "searchable": True,
                     "retrievable": True,
-                    "dimensions": vector_size,
+                    "dimensions": azure_embeddings_vector_size,
                     "vectorSearchProfile": vector_profile_name
                 }
             ],
             "content_field_name": "description",
             "keyword_field_name": "description",
-            "vector_dimensions": vector_size
+            "vector_dimensions": azure_embeddings_vector_size
         }
     ]
 
@@ -773,7 +773,8 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
             keyword_field_name=index["keyword_field_name"],
             vector_dimensions=index["vector_dimensions"],
             vector_profile_name=vector_profile_name,
-            vector_algorithm_name=vector_algorithm_name
+            vector_algorithm_name=vector_algorithm_name,
+            dimensions=azure_embeddings_vector_size
         )
         # Delete existing index if it exists
         call_search_api(search_service, search_api_version, "indexes", index["index_name"], "delete", credential)
@@ -977,7 +978,6 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     resource_uri = f"https://{azure_openai_service_name}.openai.azure.com/"
     deployment_id = azure_openai_embedding_deployment  # Example deployment ID
     model_name = azure_openai_embedding_model
-    vector_size = azure_embeddings_vector_size
 
     # Define skillsets configurations
     skillsets = [
@@ -1007,7 +1007,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
             model_name=model_name,
             input_field=skillset["input_field"],
             output_field=skillset["output_field"],
-            dimensions=vector_size
+            dimensions=azure_embeddings_vector_size
         )
 
         # Delete existing skillset if it exists
