@@ -4,7 +4,6 @@ import requests
 import argparse
 import json
 from azure.mgmt.web import WebSiteManagementClient
-from azure.identity import DefaultAzureCredential
 from azure.identity import ManagedIdentityCredential, AzureCliCredential, ChainedTokenCredential
 from azure.core.exceptions import ClientAuthenticationError, HttpResponseError
 # Set up logging configuration globally
@@ -133,6 +132,7 @@ def approve_private_link_connections(access_token, subscription_id, resource_gro
     logging.info(f"[approve_private_link_connections] Service type: {service_type}")
     logging.info(f"[approve_private_link_connections] API version: {api_version}")    
     request_url = f"https://management.azure.com/subscriptions/{subscription_id}/resourceGroups/{resource_group}/providers/{service_type}/{service_name}/privateEndpointConnections?api-version={api_version}"
+    logging.info(f"[approve_private_link_connections] Request URL: {request_url}")   
     request_headers = {
         "Authorization": access_token,
         "Content-Type": "application/json"
@@ -148,11 +148,12 @@ def approve_private_link_connections(access_token, subscription_id, resource_gro
             raise Exception("Unexpected response structure.")
 
         for connection in response_json["value"]:
-            status = connection['properties']['privateLinkServiceConnectionState']['status']
+            status = connection['properties']['privateLinkServiceConnectionState']['status']                
             logging.info(f"Checking connection '{connection['name']}'. Status: {status}.")
             if status.lower() == "pending":
                 connection_name = connection['name']
                 approve_url = f"{request_url}/{connection_name}/approve?api-version={api_version}"
+                logging.info(f"[approve_private_link_connections] approve_url: {approve_url}")
                 request_body = {
                     "properties": {
                         "privateLinkServiceConnectionState": {
@@ -277,7 +278,6 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
         None
     """    
     logging.info(f"Getting function app {function_app_name} properties.") 
-    # credential = DefaultAzureCredential()
     credential = ChainedTokenCredential(
         ManagedIdentityCredential(),
         AzureCliCredential()
@@ -299,6 +299,8 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     azure_openai_embedding_deployment = function_app_settings.properties.get("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding")
     azure_openai_embedding_model = function_app_settings.properties.get("AZURE_OPENAI_EMBEDDING_MODEL", "text-embedding-3-large")
     azure_embeddings_vector_size = function_app_settings.properties.get("AZURE_EMBEDDINGS_VECTOR_SIZE", "3072")
+    azure_storage_resource_group = function_app_settings.properties["AZURE_STORAGE_ACCOUNT_RG"]
+    azure_aoai_resource_group = function_app_settings.properties["AZURE_AOAI_RG"]    
 
     logging.info(f"[execute_setup] Function endpoint: {function_endpoint}")
     logging.info(f"[execute_setup] Search service: {search_service}")
@@ -311,6 +313,10 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     logging.info(f"[execute_setup] Embedding deployment name: {azure_openai_embedding_deployment}")
     logging.info(f"[execute_setup] Embedding model: {azure_openai_embedding_model}")
     logging.info(f"[execute_setup] Embedding vector size: {azure_embeddings_vector_size}")
+    logging.info(f"[execute_setup] Resource group: {resource_group}")  
+    logging.info(f"[execute_setup] Storage resource group: {azure_storage_resource_group}") 
+    logging.info(f"[execute_setup] Storage resource group: {azure_aoai_resource_group}")        
+    xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
     # NL2SQL Elements
     storage_container_nl2sql = "nl2sql"
@@ -368,7 +374,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
 
     # Define storage connection string without account key
     # TODO: Use storage account resource group
-    storage_connection_string = f"ResourceId=/subscriptions/{subscription_id}/resourceGroups/{resource_group}/providers/Microsoft.Storage/storageAccounts/{storage_account_name}/;"
+    storage_connection_string = f"ResourceId=/subscriptions/{subscription_id}/resourceGroups/{azure_storage_resource_group}/providers/Microsoft.Storage/storageAccounts/{storage_account_name}/;"
 
     # Creating main datasource
     create_datasource(search_service, search_api_version, f"{search_index_name}", storage_connection_string, storage_container, credential)
@@ -1245,7 +1251,7 @@ def main(subscription_id=None, resource_group=None, function_app_name=None, sear
     if subscription_id is None:
         subscription_id = input("Enter subscription ID: ")
     if resource_group is None:
-        resource_group = input("Enter resource group: ")
+        resource_group = input("Enter function app resource group: ")
     if function_app_name is None:
         function_app_name = input("Enter chunking function app name: ")
 
@@ -1260,7 +1266,7 @@ if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')    
     parser = argparse.ArgumentParser(description='Script to do the data ingestion setup for Azure Cognitive Search.')
     parser.add_argument('-s', '--subscription_id', help='Subscription ID')
-    parser.add_argument('-r', '--resource_group', help='Resource group')
+    parser.add_argument('-r', '--resource_group', help='Resource group (Function App)')
     parser.add_argument('-f', '--function_app_name', help='Chunking function app name')
     parser.add_argument('-a', '--search_principal_id', default='none', help='Entra ID of the search service')
     parser.add_argument('-m', '--azure_search_use_mis', help='Use Search Service Managed Identity to Connect to data ingestion function')
@@ -1273,7 +1279,7 @@ if __name__ == '__main__':
 
     # Log all arguments
     logging.info(f"[main] Subscription ID: {args.subscription_id}")
-    logging.info(f"[main] Resource group: {args.resource_group}")
+    logging.info(f"[main] Resource group: {args.resource_group}") 
     logging.info(f"[main] Function app name: {args.function_app_name}")
     logging.info(f"[main] Search principal ID: {args.search_principal_id}")
     logging.info(f"[main] Azure Search use MIS: {search_use_mis}")
