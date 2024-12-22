@@ -126,6 +126,12 @@ def approve_private_link_connections(access_token, subscription_id, resource_gro
     Raises:
         HTTPError: If any of the HTTP requests fail.
     """
+    logging.info(f"[approve_private_link_connections] Access token: {access_token[:10]}...")
+    logging.info(f"[approve_private_link_connections] Subscription ID: {subscription_id}")
+    logging.info(f"[approve_private_link_connections] Resource group: {resource_group}")
+    logging.info(f"[approve_private_link_connections] Service name: {service_name}")
+    logging.info(f"[approve_private_link_connections] Service type: {service_type}")
+    logging.info(f"[approve_private_link_connections] API version: {api_version}")    
     request_url = f"https://management.azure.com/subscriptions/{subscription_id}/resourceGroups/{resource_group}/providers/{service_type}/{service_name}/privateEndpointConnections?api-version={api_version}"
     request_headers = {
         "Authorization": access_token,
@@ -294,17 +300,17 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     azure_openai_embedding_model = function_app_settings.properties.get("AZURE_OPENAI_EMBEDDING_MODEL", "text-embedding-3-large")
     azure_embeddings_vector_size = function_app_settings.properties.get("AZURE_EMBEDDINGS_VECTOR_SIZE", "3072")
 
-    logging.info(f"Function endpoint: {function_endpoint}")
-    logging.info(f"Search service: {search_service}")
-    logging.info(f"Search analyzer name: {search_analyzer_name}")
-    logging.info(f"Search API version: {search_api_version}")
-    logging.info(f"Search index interval: {search_index_interval}")
-    logging.info(f"Search index name: {search_index_name}")
-    logging.info(f"Storage container: {storage_container}")
-    logging.info(f"Storage account name: {storage_account_name}")
-    logging.info(f"Embedding deployment name: {azure_openai_embedding_deployment}")
-    logging.info(f"Embedding model: {azure_openai_embedding_model}")
-    logging.info(f"Embedding vector size: {azure_embeddings_vector_size}")
+    logging.info(f"[execute_setup] Function endpoint: {function_endpoint}")
+    logging.info(f"[execute_setup] Search service: {search_service}")
+    logging.info(f"[execute_setup] Search analyzer name: {search_analyzer_name}")
+    logging.info(f"[execute_setup] Search API version: {search_api_version}")
+    logging.info(f"[execute_setup] Search index interval: {search_index_interval}")
+    logging.info(f"[execute_setup] Search index name: {search_index_name}")
+    logging.info(f"[execute_setup] Storage container: {storage_container}")
+    logging.info(f"[execute_setup] Storage account name: {storage_account_name}")
+    logging.info(f"[execute_setup] Embedding deployment name: {azure_openai_embedding_deployment}")
+    logging.info(f"[execute_setup] Embedding model: {azure_openai_embedding_model}")
+    logging.info(f"[execute_setup] Embedding vector size: {azure_embeddings_vector_size}")
 
     # NL2SQL Elements
     storage_container_nl2sql = "nl2sql"
@@ -312,10 +318,10 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     search_index_name_nl2sql_tables = "nl2sql-tables"
     search_index_name_nl2sql_columns = "nl2sql-columns"
 
-    logging.info(f"NL2SQL Storage container: {storage_container_nl2sql}")
-    logging.info(f"NL2SQL Search index name (queries): {search_index_name_nl2sql_queries}")
-    logging.info(f"NL2SQL Search index name (tables): {search_index_name_nl2sql_tables}")
-    logging.info(f"NL2SQL Search index name (columns): {search_index_name_nl2sql_columns}")    
+    logging.info(f"[execute_setup] NL2SQL Storage container: {storage_container_nl2sql}")
+    logging.info(f"[execute_setup] NL2SQL Search index name (queries): {search_index_name_nl2sql_queries}")
+    logging.info(f"[execute_setup] NL2SQL Search index name (tables): {search_index_name_nl2sql_tables}")
+    logging.info(f"[execute_setup] NL2SQL Search index name (columns): {search_index_name_nl2sql_columns}")    
 
     ###########################################################################
     # Get function key to be used later when creating the skillset
@@ -1266,13 +1272,13 @@ if __name__ == '__main__':
     search_use_mis = args.azure_search_use_mis.lower() == "true" if args.azure_search_use_mis not in [None, ""] else False
 
     # Log all arguments
-    logging.info(f"Subscription ID: {args.subscription_id}")
-    logging.info(f"Resource group: {args.resource_group}")
-    logging.info(f"Function app name: {args.function_app_name}")
-    logging.info(f"Search principal ID: {args.search_principal_id}")
-    logging.info(f"Azure Search use MIS: {search_use_mis}")
-    logging.info(f"Enable managed identities: {args.enable_managed_identities}")
-    logging.info(f"Enable environment credentials: {args.enable_env_credentials}")
+    logging.info(f"[main] Subscription ID: {args.subscription_id}")
+    logging.info(f"[main] Resource group: {args.resource_group}")
+    logging.info(f"[main] Function app name: {args.function_app_name}")
+    logging.info(f"[main] Search principal ID: {args.search_principal_id}")
+    logging.info(f"[main] Azure Search use MIS: {search_use_mis}")
+    logging.info(f"[main] Enable managed identities: {args.enable_managed_identities}")
+    logging.info(f"[main] Enable environment credentials: {args.enable_env_credentials}")
 
     main(subscription_id=args.subscription_id, resource_group=args.resource_group, function_app_name=args.function_app_name, search_principal_id=args.search_principal_id, 
         azure_search_use_mis=search_use_mis, enable_managed_identities=args.enable_managed_identities, enable_env_credentials=args.enable_env_credentials)
