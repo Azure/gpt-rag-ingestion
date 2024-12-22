@@ -177,7 +177,7 @@ def approve_private_link_connections(access_token, subscription_id, resource_gro
         logging.error(f"Error occurred when approving private link connections: {e}")
         raise
 
-def approve_search_shared_private_access(subscription_id, resource_group, function_app_name, storage_account_name, openai_service_name, credential):
+def approve_search_shared_private_access(subscription_id, resource_group, storage_resource_group, aoai_resource_group, function_app_name, storage_account_name, openai_service_name, credential):
     """
     Approves Shared Private Access requests for private endpoints for AI Search, storage account, function app, and Azure OpenAI Service.
 
@@ -209,13 +209,13 @@ def approve_search_shared_private_access(subscription_id, resource_group, functi
         except Exception as e:
             logging.error(f"Unexpected error when obtaining access token: {e}")
             raise
-        
+
         # Approve private link connection for storage account
         try:
             approve_private_link_connections(
                 access_token, 
                 subscription_id, 
-                resource_group, 
+                storage_resource_group, 
                 storage_account_name, 
                 'Microsoft.Storage/storageAccounts', 
                 '2023-05-01'
@@ -245,7 +245,7 @@ def approve_search_shared_private_access(subscription_id, resource_group, functi
             approve_private_link_connections(
                 access_token, 
                 subscription_id, 
-                resource_group, 
+                aoai_resource_group, 
                 openai_service_name, 
                 'Microsoft.CognitiveServices/accounts', 
                 '2023-05-01'
@@ -315,9 +315,8 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     logging.info(f"[execute_setup] Embedding vector size: {azure_embeddings_vector_size}")
     logging.info(f"[execute_setup] Resource group: {resource_group}")  
     logging.info(f"[execute_setup] Storage resource group: {azure_storage_resource_group}") 
-    logging.info(f"[execute_setup] Storage resource group: {azure_aoai_resource_group}")        
-    xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-
+    logging.info(f"[execute_setup] Azure OpenAI resource group: {azure_aoai_resource_group}")        
+    
     # NL2SQL Elements
     storage_container_nl2sql = "nl2sql"
     search_index_name_nl2sql_queries = "nl2sql-queries"
@@ -341,7 +340,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     # Approve Search Shared Private Links (if needed)
     ########################################################################### 
     logging.info("Approving search shared private links.")  
-    approve_search_shared_private_access(subscription_id, resource_group, function_app_name, storage_account_name, azure_openai_service_name, credential)
+    approve_search_shared_private_access(subscription_id, resource_group, azure_storage_resource_group, azure_aoai_resource_group, function_app_name, storage_account_name, azure_openai_service_name, credential)
 
     ###########################################################################
     # Creating blob containers
