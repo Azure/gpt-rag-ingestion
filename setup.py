@@ -211,7 +211,6 @@ def approve_search_shared_private_access(subscription_id, resource_group, storag
     Raises:
         Exception: If approval fails.
     """ 
-    # TODO: Use respective services resource group
     try:
         logging.info("Approving Shared Private Access requests for storage, function app, and Azure OpenAI Service if needed.")
         
@@ -235,7 +234,7 @@ def approve_search_shared_private_access(subscription_id, resource_group, storag
                 storage_resource_group, 
                 storage_account_name, 
                 'Microsoft.Storage/storageAccounts', 
-                '2023-05-01'
+                '2022-09-01'
             )
             logging.info(f"Approved private link connections for Storage Account: {storage_account_name}.")
         except Exception as e:
@@ -250,7 +249,7 @@ def approve_search_shared_private_access(subscription_id, resource_group, storag
                 resource_group, 
                 function_app_name, 
                 'Microsoft.Web/sites', 
-                '2023-01-01'
+                '2022-09-01'
             )
             logging.info(f"Approved private link connections for Function App: {function_app_name}.")
         except Exception as e:
@@ -265,7 +264,7 @@ def approve_search_shared_private_access(subscription_id, resource_group, storag
                 aoai_resource_group, 
                 openai_service_name, 
                 'Microsoft.CognitiveServices/accounts', 
-                '2023-05-01'
+                '2022-09-01'
             )
             logging.info(f"Approved private link connections for Azure OpenAI Service: {openai_service_name}.")
         except Exception as e:
