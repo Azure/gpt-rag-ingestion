@@ -109,7 +109,8 @@ def get_function_key(subscription_id, resource_group, function_app_name, credent
 
 def approve_private_link_connections(access_token, subscription_id, resource_group, service_name, service_type, api_version):
     """
-    Approves private link service connections for a given service.
+    Approves private link service connections for a given service using
+    the "GET-then-PUT" pattern to ensure all required fields are present.
 
     Args:
         access_token (str): The access token used for authorization.
@@ -123,24 +124,33 @@ def approve_private_link_connections(access_token, subscription_id, resource_gro
         None
 
     Note:
-        Instead of raising an exception on errors, we are now just logging a warning.
+        Instead of raising an exception on errors, we log a warning.
+        This updated version performs a "GET-then-PUT" for each connection
+        to avoid 'InvalidValuesForRequestParameters' errors.
     """
     logging.info(f"[approve_private_link_connections] Access token: {access_token[:10]}...")
     logging.info(f"[approve_private_link_connections] Subscription ID: {subscription_id}")
     logging.info(f"[approve_private_link_connections] Resource group: {resource_group}")
     logging.info(f"[approve_private_link_connections] Service name: {service_name}")
     logging.info(f"[approve_private_link_connections] Service type: {service_type}")
-    logging.info(f"[approve_private_link_connections] API version: {api_version}")    
-    request_url = f"https://management.azure.com/subscriptions/{subscription_id}/resourceGroups/{resource_group}/providers/{service_type}/{service_name}/privateEndpointConnections?api-version={api_version}"
-    logging.info(f"[approve_private_link_connections] Request URL: {request_url}")   
+    logging.info(f"[approve_private_link_connections] API version: {api_version}")
+
+    # List all private endpoint connections for the given resource
+    list_url = (
+        f"https://management.azure.com/subscriptions/{subscription_id}"
+        f"/resourceGroups/{resource_group}/providers/{service_type}/{service_name}"
+        f"/privateEndpointConnections?api-version={api_version}"
+    )
+    logging.info(f"[approve_private_link_connections] Request URL: {list_url}")
+
     request_headers = {
         "Authorization": access_token,
         "Content-Type": "application/json"
     }
 
     try:
-        response = requests.get(request_url, headers=request_headers)
-        response.raise_for_status() 
+        response = requests.get(list_url, headers=request_headers)
+        response.raise_for_status()
         response_json = response.json()
 
         if 'value' not in response_json:
@@ -148,42 +158,50 @@ def approve_private_link_connections(access_token, subscription_id, resource_gro
                 f"Unexpected response structure when fetching private link connections. "
                 f"Response content: {response.content}"
             )
-            return  # or just return, no connections to approve
+            return  # No connections to approve or error in structure
 
+        # Iterate over all connections in the array
         for connection in response_json["value"]:
-            connection_id = connection["id"]
+            connection_id = connection["id"]  # Full ARM ID
+            connection_name = connection["name"]
             status = connection["properties"]["privateLinkServiceConnectionState"]["status"]
-            logging.info(f"Checking connection '{connection['name']}'. Status: {status}.")
+            logging.info(f"Checking connection '{connection_name}'. Status: {status}.")
 
-            if status.lower() == "pending" or status.lower() == "approved":
-                # Use the 'id' property to build the approve URL
-                approve_url = f"https://management.azure.com{connection_id}?api-version={api_version}"
+            # Approve only if status is 'Pending' or 'Approved' (re-approve)
+            if status.lower() in ["pending", "approved"]:
+                # 1) GET the entire connection resource so we can PUT it back intact
+                single_connection_url = f"https://management.azure.com{connection_id}?api-version={api_version}"
+                logging.info(f"[approve_private_link_connections] GET single connection URL: {single_connection_url}")
 
-                logging.info(f"[approve_private_link_connections] approve_url: {approve_url}")
-                request_body = {
-                    "properties": {
-                        "privateLinkServiceConnectionState": {
-                            "status": "Approved",
-                            "description": "Approved by setup script"
-                        }
-                    }
-                }
+                try:
+                    single_conn_response = requests.get(single_connection_url, headers=request_headers)
+                    single_conn_response.raise_for_status()
+                    full_conn_resource = single_conn_response.json()
+                except requests.HTTPError as http_err:
+                    logging.warning(
+                        f"Failed to GET full connection resource for '{connection_name}': {http_err}. "
+                        f"Response: {single_conn_response.text if 'single_conn_response' in locals() else ''}"
+                    )
+                    continue
 
-                approve_response = requests.put(approve_url, headers=request_headers, json=request_body)
-                
+                # 2) Update the status to "Approved" within the retrieved resource
+                full_conn_resource["properties"]["privateLinkServiceConnectionState"]["status"] = "Approved"
+                full_conn_resource["properties"]["privateLinkServiceConnectionState"]["description"] = "Approved by setup script"
+
+                # 3) PUT the entire resource (with updated status)
+                logging.info(f"[approve_private_link_connections] PUT single connection URL: {single_connection_url}")
+                approve_response = requests.put(single_connection_url, headers=request_headers, json=full_conn_resource)
+
                 if approve_response.status_code in [200, 202]:
                     logging.info(
-                        f"Approved private endpoint connection '{connection['name']}' "
-                        f"for service '{service_name}'."
+                        f"Approved private endpoint connection '{connection_name}' for service '{service_name}'."
                     )
                 else:
                     logging.warning(
-                        f"Warning: Failed to approve private endpoint connection "
-                        f"'{connection['name']}' for service '{service_name}'. "
-                        f"Status Code: {approve_response.status_code}, "
+                        f"Warning: Failed to approve private endpoint connection '{connection_name}' "
+                        f"for service '{service_name}'. Status Code: {approve_response.status_code}, "
                         f"Response: {approve_response.text}"
                     )
-
 
     except requests.HTTPError as http_err:
         logging.warning(
@@ -192,7 +210,6 @@ def approve_private_link_connections(access_token, subscription_id, resource_gro
         )
     except Exception as e:
         logging.warning(f"Error occurred when approving private link connections: {e}")
-
 
 def approve_search_shared_private_access(subscription_id, resource_group, storage_resource_group, aoai_resource_group, function_app_name, storage_account_name, openai_service_name, credential):
     """
@@ -234,7 +251,7 @@ def approve_search_shared_private_access(subscription_id, resource_group, storag
                 storage_resource_group, 
                 storage_account_name, 
                 'Microsoft.Storage/storageAccounts', 
-                '2022-09-01'
+                '2023-01-01'
             )
             logging.info(f"Approved private link connections for Storage Account: {storage_account_name}.")
         except Exception as e:
@@ -264,7 +281,7 @@ def approve_search_shared_private_access(subscription_id, resource_group, storag
                 aoai_resource_group, 
                 openai_service_name, 
                 'Microsoft.CognitiveServices/accounts', 
-                '2022-09-01'
+                '2022-10-01'
             )
             logging.info(f"Approved private link connections for Azure OpenAI Service: {openai_service_name}.")
         except Exception as e:
