@@ -150,33 +150,16 @@ def approve_private_link_connections(access_token, subscription_id, resource_gro
             )
             return  # or just return, no connections to approve
 
-
         for connection in response_json["value"]:
-            full_name = connection["name"]  # e.g. "oai0-7e7elmgeqvsoy/my-aisearch-122224-aoailink.7a9b0f6f-33aa-476f-9a12-6a6d3d9e3fc8"
-            status = connection["properties"]["privateLinkServiceConnectionState"]["status"]                
-            logging.info(f"Checking connection '{full_name}'. Status: {status}.")
+            connection_id = connection["id"]
+            status = connection["properties"]["privateLinkServiceConnectionState"]["status"]
+            logging.info(f"Checking connection '{connection['name']}'. Status: {status}.")
 
             if status.lower() == "pending":
-                # 1) Split the full name on the slash if it exists
-                if "/" in full_name:
-                    base_name, sub_name = full_name.split("/", 1)
-                    # e.g.
-                    # base_name -> "oai0-7e7elmgeqvsoy"
-                    # sub_name  -> "my-aisearch-122224-aoailink.7a9b0f6f-33aa-476f-9a12-6a6d3d9e3fc8"
-                else:
-                    # Some providers might not use slashes at all.
-                    base_name = full_name
-                    sub_name = full_name  # or do whatever is necessary
-
-                # 2) Construct the approval URL
-                approve_url = (
-                    f"https://management.azure.com/subscriptions/{subscription_id}/resourceGroups/{resource_group}/"
-                    f"providers/{service_type}/{base_name}/privateEndpointConnections/{sub_name}/approve"
-                    f"?api-version={api_version}"
-                )
+                # Use the 'id' property to build the approve URL
+                approve_url = f"https://management.azure.com{connection_id}/approve?api-version={api_version}"
 
                 logging.info(f"[approve_private_link_connections] approve_url: {approve_url}")
-
                 request_body = {
                     "properties": {
                         "privateLinkServiceConnectionState": {
@@ -187,19 +170,20 @@ def approve_private_link_connections(access_token, subscription_id, resource_gro
                 }
 
                 approve_response = requests.post(approve_url, headers=request_headers, json=request_body)
-
+                
                 if approve_response.status_code in [200, 202]:
                     logging.info(
-                        f"Approved private endpoint connection '{full_name}' "
+                        f"Approved private endpoint connection '{connection['name']}' "
                         f"for service '{service_name}'."
                     )
                 else:
                     logging.warning(
                         f"Warning: Failed to approve private endpoint connection "
-                        f"'{full_name}' for service '{service_name}'. "
+                        f"'{connection['name']}' for service '{service_name}'. "
                         f"Status Code: {approve_response.status_code}, "
                         f"Response: {approve_response.text}"
                     )
+
 
     except requests.HTTPError as http_err:
         logging.warning(
