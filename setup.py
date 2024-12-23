@@ -141,7 +141,7 @@ def approve_private_link_connections(access_token, subscription_id, resource_gro
         f"/resourceGroups/{resource_group}/providers/{service_type}/{service_name}"
         f"/privateEndpointConnections?api-version={api_version}"
     )
-    logging.info(f"[approve_private_link_connections] Request URL: {list_url}")
+    logging.debug(f"[approve_private_link_connections] Request URL: {list_url}")
 
     request_headers = {
         "Authorization": access_token,
@@ -165,14 +165,13 @@ def approve_private_link_connections(access_token, subscription_id, resource_gro
             connection_id = connection["id"]  # Full ARM ID
             connection_name = connection["name"]
             status = connection["properties"]["privateLinkServiceConnectionState"]["status"]
-            logging.info(f"Checking connection '{connection_name}'. Status: {status}.")
+            logging.info(f"[approve_private_link_connections] Checking connection '{connection_name}'. Status: {status}.")
 
-            # Approve only if status is 'Pending' or 'Approved' (re-approve)
-            if status.lower() in ["pending", "rejected"]:
+            # Approve only if status is 'Pending' 
+            if status.lower()== "pending":
                 # 1) GET the entire connection resource so we can PUT it back intact
                 single_connection_url = f"https://management.azure.com{connection_id}?api-version={api_version}"
-                logging.info(f"[approve_private_link_connections] GET single connection URL: {single_connection_url}")
-
+                logging.debug(f"[approve_private_link_connections] GET single connection URL: {single_connection_url}")
                 try:
                     single_conn_response = requests.get(single_connection_url, headers=request_headers)
                     single_conn_response.raise_for_status()
@@ -189,7 +188,7 @@ def approve_private_link_connections(access_token, subscription_id, resource_gro
                 full_conn_resource["properties"]["privateLinkServiceConnectionState"]["description"] = "Approved by setup script"
 
                 # 3) PUT the entire resource (with updated status)
-                logging.info(f"[approve_private_link_connections] PUT single connection URL: {single_connection_url}")
+                logging.debug(f"[approve_private_link_connections] PUT single connection URL: {single_connection_url}")
                 approve_response = requests.put(single_connection_url, headers=request_headers, json=full_conn_resource)
 
                 if approve_response.status_code in [200, 202]:
@@ -203,7 +202,7 @@ def approve_private_link_connections(access_token, subscription_id, resource_gro
                         f"Response: {approve_response.text}"
                     )
             elif status.lower() == "approved":
-                logging.info(f"Connection '{connection_name}' is already Approved. Skipping re-approval.")
+                logging.info(f"[approve_private_link_connections] Connection '{connection_name}' is already Approved. Skipping re-approval.")
                 continue
             
     except requests.HTTPError as http_err:
