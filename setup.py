@@ -140,7 +140,7 @@ def approve_private_link_connections(access_token, subscription_id, resource_gro
 
     try:
         response = requests.get(request_url, headers=request_headers)
-        response.raise_for_status()  # We still want to raise if we can't even list connections
+        response.raise_for_status() 
         response_json = response.json()
 
         if 'value' not in response_json:
@@ -155,9 +155,9 @@ def approve_private_link_connections(access_token, subscription_id, resource_gro
             status = connection["properties"]["privateLinkServiceConnectionState"]["status"]
             logging.info(f"Checking connection '{connection['name']}'. Status: {status}.")
 
-            if status.lower() == "pending":
+            if status.lower() == "pending" or status.lower() == "approved":
                 # Use the 'id' property to build the approve URL
-                approve_url = f"https://management.azure.com{connection_id}/approve?api-version={api_version}"
+                approve_url = f"https://management.azure.com{connection_id}?api-version={api_version}"
 
                 logging.info(f"[approve_private_link_connections] approve_url: {approve_url}")
                 request_body = {
@@ -169,7 +169,7 @@ def approve_private_link_connections(access_token, subscription_id, resource_gro
                     }
                 }
 
-                approve_response = requests.post(approve_url, headers=request_headers, json=request_body)
+                approve_response = requests.put(approve_url, headers=request_headers, json=request_body)
                 
                 if approve_response.status_code in [200, 202]:
                     logging.info(
