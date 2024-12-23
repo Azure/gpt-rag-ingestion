@@ -41,7 +41,7 @@ def call_search_api(search_service, search_api_version, resource_type, resource_
     response = None
     try:
         if method not in ["get", "put", "delete"]:
-            logging.warn(f"Invalid method {method} ")
+            logging.warning(f"[call_search_api] Invalid method {method} ")
 
         # get and put processing
         if method == "get":
@@ -53,16 +53,20 @@ def call_search_api(search_service, search_api_version, resource_type, resource_
         if method == "delete":
             response = requests.delete(search_endpoint, headers=headers)
             status_code = response.status_code
-            logging.info(f"Successfully called search API {method} {resource_type} {resource_name}. Code: {status_code}.")
+            logging.info(f"[call_search_api] Successfully called search API {method} {resource_type} {resource_name}. Code: {status_code}.")
 
         if response is not None:
             status_code = response.status_code
             if status_code >= 400:
-                logging.warning(f"{status_code} code when calling search API {method} {resource_type} {resource_name}. Reason: {response.reason}.")
-                response_text_dict = json.loads(response.text)
-                logging.warning(f"{status_code} code when calling search API {method} {resource_type} {resource_name}. Message: {response_text_dict['error']['message']}")                
+                logging.warning(f"[call_search_api] {status_code} code when calling search API {method} {resource_type} {resource_name}. Reason: {response.reason}.")
+                try:
+                    response_text_dict = json.loads(response.text)
+                    logging.warning(f"[call_search_api] {status_code} code when calling search API {method} {resource_type} {resource_name}. Message: {response_text_dict['error']['message']}")        
+                except json.JSONDecodeError:
+                    logging.warning(f"[call_search_api] {status_code} Response is not valid JSON. Raw response:\n{response.text}")
+        
             else:
-                logging.info(f"Successfully called search API {method} {resource_type} {resource_name}. Code: {status_code}.")
+                logging.info(f"[call_search_api] Successfully called search API {method} {resource_type} {resource_name}. Code: {status_code}.")
 
 
     except Exception as e:
@@ -255,7 +259,7 @@ def approve_search_shared_private_access(subscription_id, resource_group, storag
                 'Microsoft.Storage/storageAccounts', 
                 '2023-01-01'
             )
-            logging.info(f"Approved private link connections for Storage Account: {storage_account_name}.")
+            logging.info(f"[approve_private_link_connections] Approved private link connections for Storage Account: {storage_account_name}.")
         except Exception as e:
             logging.error(f"Failed to approve private link connections for Storage Account '{storage_account_name}': {e}")
             raise
@@ -270,7 +274,7 @@ def approve_search_shared_private_access(subscription_id, resource_group, storag
                 'Microsoft.Web/sites', 
                 '2022-09-01'
             )
-            logging.info(f"Approved private link connections for Function App: {function_app_name}.")
+            logging.info(f"[approve_private_link_connections] Approved private link connections for Function App: {function_app_name}.")
         except Exception as e:
             logging.error(f"Failed to approve private link connections for Function App '{function_app_name}': {e}")
             raise
