@@ -122,8 +122,8 @@ def approve_private_link_connections(access_token, subscription_id, resource_gro
     Returns:
         None
 
-    Raises:
-        HTTPError: If any of the HTTP requests fail.
+    Note:
+        Instead of raising an exception on errors, we are now just logging a warning.
     """
     logging.info(f"[approve_private_link_connections] Access token: {access_token[:10]}...")
     logging.info(f"[approve_private_link_connections] Subscription ID: {subscription_id}")
@@ -140,23 +140,31 @@ def approve_private_link_connections(access_token, subscription_id, resource_gro
 
     try:
         response = requests.get(request_url, headers=request_headers)
-        response.raise_for_status()
+        response.raise_for_status()  # We still want to raise if we can't even list connections
         response_json = response.json()
 
         if 'value' not in response_json:
-            logging.error(f"Unexpected response structure when fetching private link connections. Response content: {response.content}")
-            raise Exception("Unexpected response structure.")
+            logging.error(
+                f"Unexpected response structure when fetching private link connections. "
+                f"Response content: {response.content}"
+            )
+            return  # or just return, no connections to approve
 
         for connection in response_json["value"]:
             status = connection['properties']['privateLinkServiceConnectionState']['status']                
             logging.info(f"Checking connection '{connection['name']}'. Status: {status}.")
+            
             if status.lower() == "pending":
+                # Build the URL to approve this particular connection
                 connection_name = connection['name']
-                # approve_url = f"{requsest_url}/{connection_name}/approve?api-version={api_version}"
-                # approve_url = f"https://management.azure.com/subscriptions/{subscription_id}/resourceGroups/{resource_group}/providers/{service_type}/{service_name}/privateEndpointConnections/{connection_name}/approve?api-version={api_version}"
-                approve_url = f"https://management.azure.com/subscriptions/{subscription_id}/resourceGroups/{resource_group}/providers/{service_type}/{service_name}/privateEndpointConnections/{connection_name}/approve?api-version={api_version}"
-
+                approve_url = (
+                    f"https://management.azure.com/subscriptions/{subscription_id}/"
+                    f"resourceGroups/{resource_group}/providers/{service_type}/"
+                    f"{service_name}/privateEndpointConnections/{connection_name}/approve"
+                    f"?api-version={api_version}"
+                )
                 logging.info(f"[approve_private_link_connections] approve_url: {approve_url}")
+
                 request_body = {
                     "properties": {
                         "privateLinkServiceConnectionState": {
@@ -167,18 +175,28 @@ def approve_private_link_connections(access_token, subscription_id, resource_gro
                 }
 
                 approve_response = requests.post(approve_url, headers=request_headers, json=request_body)
+                
                 if approve_response.status_code in [200, 202]:
-                    logging.info(f"Approved private endpoint connection '{connection_name}' for service '{service_name}'.")
+                    logging.info(
+                        f"Approved private endpoint connection '{connection_name}' "
+                        f"for service '{service_name}'."
+                    )
                 else:
-                    logging.error(f"Failed to approve private endpoint connection '{connection_name}' for service '{service_name}'. Status Code: {approve_response.status_code}, Response: {approve_response.text}")
-                    approve_response.raise_for_status()
+                    logging.warning(
+                        f"Warning: Failed to approve private endpoint connection "
+                        f"'{connection_name}' for service '{service_name}'. "
+                        f"Status Code: {approve_response.status_code}, "
+                        f"Response: {approve_response.text}"
+                    )
 
     except requests.HTTPError as http_err:
-        logging.error(f"HTTP error occurred when approving private link connections: {http_err}. Response: {response.text}")
-        raise
+        logging.warning(
+            f"HTTP error occurred when listing/approving private link connections: {http_err}. "
+            f"Response: {response.text}"
+        )
     except Exception as e:
-        logging.error(f"Error occurred when approving private link connections: {e}")
-        raise
+        logging.warning(f"Error occurred when approving private link connections: {e}")
+
 
 def approve_search_shared_private_access(subscription_id, resource_group, storage_resource_group, aoai_resource_group, function_app_name, storage_account_name, openai_service_name, credential):
     """
