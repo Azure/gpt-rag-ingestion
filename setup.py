@@ -168,7 +168,7 @@ def approve_private_link_connections(access_token, subscription_id, resource_gro
             logging.info(f"Checking connection '{connection_name}'. Status: {status}.")
 
             # Approve only if status is 'Pending' or 'Approved' (re-approve)
-            if status.lower() in ["pending", "approved"]:
+            if status.lower() in ["pending", "rejected"]:
                 # 1) GET the entire connection resource so we can PUT it back intact
                 single_connection_url = f"https://management.azure.com{connection_id}?api-version={api_version}"
                 logging.info(f"[approve_private_link_connections] GET single connection URL: {single_connection_url}")
@@ -202,7 +202,10 @@ def approve_private_link_connections(access_token, subscription_id, resource_gro
                         f"for service '{service_name}'. Status Code: {approve_response.status_code}, "
                         f"Response: {approve_response.text}"
                     )
-
+            elif status.lower() == "approved":
+                logging.info(f"Connection '{connection_name}' is already Approved. Skipping re-approval.")
+                continue
+            
     except requests.HTTPError as http_err:
         logging.warning(
             f"HTTP error occurred when listing/approving private link connections: {http_err}. "
