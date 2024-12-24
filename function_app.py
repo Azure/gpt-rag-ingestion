@@ -55,7 +55,7 @@ app = func.FunctionApp()
 @app.function_name(name="sharepoint_index_files")
 @app.schedule(
     schedule="0 */10 * * * *", 
-    arg_name="timer",  # Changed from "sharepoint_index_files" to "timer"
+    arg_name="timer", 
     run_on_startup=True
 )
 async def sharepoint_index_files(timer: func.TimerRequest) -> None:
@@ -107,7 +107,6 @@ def document_chunking(req: func.HttpRequest) -> func.HttpResponse:
                 input_data = item["data"]
                 filename = get_filename(input_data["documentUrl"])
                 logging.info(f'[document_chunking_function] Chunking document: File {filename}, Content Type {input_data["documentContentType"]}.')
-                # logging.info(f'[document_chunking_function][{filename}] Input data: {json.dumps(input_data, indent=4)}')
             
             start_time = time.time()
 
