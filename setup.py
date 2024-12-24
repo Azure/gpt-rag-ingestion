@@ -4,7 +4,6 @@ import requests
 import argparse
 import json
 from azure.mgmt.web import WebSiteManagementClient
-from azure.identity import DefaultAzureCredential
 from azure.identity import ManagedIdentityCredential, AzureCliCredential, ChainedTokenCredential
 from azure.core.exceptions import ClientAuthenticationError, HttpResponseError
 # Set up logging configuration globally
@@ -42,7 +41,7 @@ def call_search_api(search_service, search_api_version, resource_type, resource_
     response = None
     try:
         if method not in ["get", "put", "delete"]:
-            logging.warn(f"Invalid method {method} ")
+            logging.warning(f"[call_search_api] Invalid method {method} ")
 
         # get and put processing
         if method == "get":
@@ -54,16 +53,20 @@ def call_search_api(search_service, search_api_version, resource_type, resource_
         if method == "delete":
             response = requests.delete(search_endpoint, headers=headers)
             status_code = response.status_code
-            logging.info(f"Successfully called search API {method} {resource_type} {resource_name}. Code: {status_code}.")
+            logging.info(f"[call_search_api] Successfully called search API {method} {resource_type} {resource_name}. Code: {status_code}.")
 
         if response is not None:
             status_code = response.status_code
             if status_code >= 400:
-                logging.warning(f"{status_code} code when calling search API {method} {resource_type} {resource_name}. Reason: {response.reason}.")
-                response_text_dict = json.loads(response.text)
-                logging.warning(f"{status_code} code when calling search API {method} {resource_type} {resource_name}. Message: {response_text_dict['error']['message']}")                
+                logging.warning(f"[call_search_api] {status_code} code when calling search API {method} {resource_type} {resource_name}. Reason: {response.reason}.")
+                try:
+                    response_text_dict = json.loads(response.text)
+                    logging.warning(f"[call_search_api] {status_code} code when calling search API {method} {resource_type} {resource_name}. Message: {response_text_dict['error']['message']}")        
+                except json.JSONDecodeError:
+                    logging.warning(f"[call_search_api] {status_code} Response is not valid JSON. Raw response:\n{response.text}")
+        
             else:
-                logging.info(f"Successfully called search API {method} {resource_type} {resource_name}. Code: {status_code}.")
+                logging.info(f"[call_search_api] Successfully called search API {method} {resource_type} {resource_name}. Code: {status_code}.")
 
 
     except Exception as e:
@@ -110,7 +113,8 @@ def get_function_key(subscription_id, resource_group, function_app_name, credent
 
 def approve_private_link_connections(access_token, subscription_id, resource_group, service_name, service_type, api_version):
     """
-    Approves private link service connections for a given service.
+    Approves private link service connections for a given service using
+    the "GET-then-PUT" pattern to ensure all required fields are present.
 
     Args:
         access_token (str): The access token used for authorization.
@@ -123,54 +127,97 @@ def approve_private_link_connections(access_token, subscription_id, resource_gro
     Returns:
         None
 
-    Raises:
-        HTTPError: If any of the HTTP requests fail.
+    Note:
+        Instead of raising an exception on errors, we log a warning.
+        This updated version performs a "GET-then-PUT" for each connection
+        to avoid 'InvalidValuesForRequestParameters' errors.
     """
-    request_url = f"https://management.azure.com/subscriptions/{subscription_id}/resourceGroups/{resource_group}/providers/{service_type}/{service_name}/privateEndpointConnections?api-version={api_version}"
+    logging.info(f"[approve_private_link_connections] Access token: {access_token[:10]}...")
+    logging.info(f"[approve_private_link_connections] Subscription ID: {subscription_id}")
+    logging.info(f"[approve_private_link_connections] Resource group: {resource_group}")
+    logging.info(f"[approve_private_link_connections] Service name: {service_name}")
+    logging.info(f"[approve_private_link_connections] Service type: {service_type}")
+    logging.info(f"[approve_private_link_connections] API version: {api_version}")
+
+    # List all private endpoint connections for the given resource
+    list_url = (
+        f"https://management.azure.com/subscriptions/{subscription_id}"
+        f"/resourceGroups/{resource_group}/providers/{service_type}/{service_name}"
+        f"/privateEndpointConnections?api-version={api_version}"
+    )
+    logging.debug(f"[approve_private_link_connections] Request URL: {list_url}")
+
     request_headers = {
         "Authorization": access_token,
         "Content-Type": "application/json"
     }
 
     try:
-        response = requests.get(request_url, headers=request_headers)
+        response = requests.get(list_url, headers=request_headers)
         response.raise_for_status()
         response_json = response.json()
 
         if 'value' not in response_json:
-            logging.error(f"Unexpected response structure when fetching private link connections. Response content: {response.content}")
-            raise Exception("Unexpected response structure.")
+            logging.error(
+                f"Unexpected response structure when fetching private link connections. "
+                f"Response content: {response.content}"
+            )
+            return  # No connections to approve or error in structure
 
+        # Iterate over all connections in the array
         for connection in response_json["value"]:
-            status = connection['properties']['privateLinkServiceConnectionState']['status']
-            logging.info(f"Checking connection '{connection['name']}'. Status: {status}.")
-            if status.lower() == "pending":
-                connection_name = connection['name']
-                approve_url = f"{request_url}/{connection_name}/approve?api-version={api_version}"
-                request_body = {
-                    "properties": {
-                        "privateLinkServiceConnectionState": {
-                            "status": "Approved",
-                            "description": "Approved by setup script"
-                        }
-                    }
-                }
+            connection_id = connection["id"]  # Full ARM ID
+            connection_name = connection["name"]
+            status = connection["properties"]["privateLinkServiceConnectionState"]["status"]
+            logging.info(f"[approve_private_link_connections] Checking connection '{connection_name}'. Status: {status}.")
 
-                approve_response = requests.post(approve_url, headers=request_headers, json=request_body)
+            # Approve only if status is 'Pending' 
+            if status.lower()== "pending":
+                # 1) GET the entire connection resource so we can PUT it back intact
+                single_connection_url = f"https://management.azure.com{connection_id}?api-version={api_version}"
+                logging.debug(f"[approve_private_link_connections] GET single connection URL: {single_connection_url}")
+                try:
+                    single_conn_response = requests.get(single_connection_url, headers=request_headers)
+                    single_conn_response.raise_for_status()
+                    full_conn_resource = single_conn_response.json()
+                except requests.HTTPError as http_err:
+                    logging.warning(
+                        f"Failed to GET full connection resource for '{connection_name}': {http_err}. "
+                        f"Response: {single_conn_response.text if 'single_conn_response' in locals() else ''}"
+                    )
+                    continue
+
+                # 2) Update the status to "Approved" within the retrieved resource
+                full_conn_resource["properties"]["privateLinkServiceConnectionState"]["status"] = "Approved"
+                full_conn_resource["properties"]["privateLinkServiceConnectionState"]["description"] = "Approved by setup script"
+
+                # 3) PUT the entire resource (with updated status)
+                logging.debug(f"[approve_private_link_connections] PUT single connection URL: {single_connection_url}")
+                approve_response = requests.put(single_connection_url, headers=request_headers, json=full_conn_resource)
+
                 if approve_response.status_code in [200, 202]:
-                    logging.info(f"Approved private endpoint connection '{connection_name}' for service '{service_name}'.")
+                    logging.info(
+                        f"Approved private endpoint connection '{connection_name}' for service '{service_name}'."
+                    )
                 else:
-                    logging.error(f"Failed to approve private endpoint connection '{connection_name}' for service '{service_name}'. Status Code: {approve_response.status_code}, Response: {approve_response.text}")
-                    approve_response.raise_for_status()
-
+                    logging.warning(
+                        f"Warning: Failed to approve private endpoint connection '{connection_name}' "
+                        f"for service '{service_name}'. Status Code: {approve_response.status_code}, "
+                        f"Response: {approve_response.text}"
+                    )
+            elif status.lower() == "approved":
+                logging.info(f"[approve_private_link_connections] Connection '{connection_name}' is already Approved. Skipping re-approval.")
+                continue
+            
     except requests.HTTPError as http_err:
-        logging.error(f"HTTP error occurred when approving private link connections: {http_err}. Response: {response.text}")
-        raise
+        logging.warning(
+            f"HTTP error occurred when listing/approving private link connections: {http_err}. "
+            f"Response: {response.text}"
+        )
     except Exception as e:
-        logging.error(f"Error occurred when approving private link connections: {e}")
-        raise
+        logging.warning(f"Error occurred when approving private link connections: {e}")
 
-def approve_search_shared_private_access(subscription_id, resource_group, function_app_name, storage_account_name, openai_service_name, credential):
+def approve_search_shared_private_access(subscription_id, resource_group, storage_resource_group, aoai_resource_group, function_app_name, storage_account_name, openai_service_name, credential):
     """
     Approves Shared Private Access requests for private endpoints for AI Search, storage account, function app, and Azure OpenAI Service.
 
@@ -186,7 +233,7 @@ def approve_search_shared_private_access(subscription_id, resource_group, functi
 
     Raises:
         Exception: If approval fails.
-    """    
+    """ 
     try:
         logging.info("Approving Shared Private Access requests for storage, function app, and Azure OpenAI Service if needed.")
         
@@ -201,18 +248,18 @@ def approve_search_shared_private_access(subscription_id, resource_group, functi
         except Exception as e:
             logging.error(f"Unexpected error when obtaining access token: {e}")
             raise
-        
+
         # Approve private link connection for storage account
         try:
             approve_private_link_connections(
                 access_token, 
                 subscription_id, 
-                resource_group, 
+                storage_resource_group, 
                 storage_account_name, 
                 'Microsoft.Storage/storageAccounts', 
-                '2023-05-01'
+                '2023-01-01'
             )
-            logging.info(f"Approved private link connections for Storage Account: {storage_account_name}.")
+            logging.info(f"[approve_private_link_connections] Approved private link connections for Storage Account: {storage_account_name}.")
         except Exception as e:
             logging.error(f"Failed to approve private link connections for Storage Account '{storage_account_name}': {e}")
             raise
@@ -225,9 +272,9 @@ def approve_search_shared_private_access(subscription_id, resource_group, functi
                 resource_group, 
                 function_app_name, 
                 'Microsoft.Web/sites', 
-                '2023-01-01'
+                '2022-09-01'
             )
-            logging.info(f"Approved private link connections for Function App: {function_app_name}.")
+            logging.info(f"[approve_private_link_connections] Approved private link connections for Function App: {function_app_name}.")
         except Exception as e:
             logging.error(f"Failed to approve private link connections for Function App '{function_app_name}': {e}")
             raise
@@ -237,10 +284,10 @@ def approve_search_shared_private_access(subscription_id, resource_group, functi
             approve_private_link_connections(
                 access_token, 
                 subscription_id, 
-                resource_group, 
+                aoai_resource_group, 
                 openai_service_name, 
                 'Microsoft.CognitiveServices/accounts', 
-                '2023-05-01'
+                '2022-10-01'
             )
             logging.info(f"Approved private link connections for Azure OpenAI Service: {openai_service_name}.")
         except Exception as e:
@@ -270,7 +317,6 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
         None
     """    
     logging.info(f"Getting function app {function_app_name} properties.") 
-    # credential = DefaultAzureCredential()
     credential = ChainedTokenCredential(
         ManagedIdentityCredential(),
         AzureCliCredential()
@@ -287,29 +333,40 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     storage_container = function_app_settings.properties["STORAGE_CONTAINER"]
     storage_account_name = function_app_settings.properties["STORAGE_ACCOUNT_NAME"]
     network_isolation = True if function_app_settings.properties["NETWORK_ISOLATION"].lower() == "true" else False
+    storage_container = function_app_settings.properties["STORAGE_CONTAINER"]
+    storage_account_name = function_app_settings.properties["STORAGE_ACCOUNT_NAME"]
+    azure_openai_embedding_deployment = function_app_settings.properties.get("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding")
+    azure_openai_embedding_model = function_app_settings.properties.get("AZURE_OPENAI_EMBEDDING_MODEL", "text-embedding-3-large")
+    azure_embeddings_vector_size = function_app_settings.properties.get("AZURE_EMBEDDINGS_VECTOR_SIZE", "3072")
+    azure_storage_resource_group = function_app_settings.properties["AZURE_STORAGE_ACCOUNT_RG"]
+    azure_aoai_resource_group = function_app_settings.properties["AZURE_AOAI_RG"]    
 
-    logging.info(f"Function endpoint: {function_endpoint}")
-    logging.info(f"Search service: {search_service}")
-    logging.info(f"Search analyzer name: {search_analyzer_name}")
-    logging.info(f"Search API version: {search_api_version}")
-    logging.info(f"Search index interval: {search_index_interval}")
-    logging.info(f"Search index name: {search_index_name}")
-    logging.info(f"Storage container: {storage_container}")
-    logging.info(f"Storage account name: {storage_account_name}")
-
-
+    logging.info(f"[execute_setup] Function endpoint: {function_endpoint}")
+    logging.info(f"[execute_setup] Search service: {search_service}")
+    logging.info(f"[execute_setup] Search analyzer name: {search_analyzer_name}")
+    logging.info(f"[execute_setup] Search API version: {search_api_version}")
+    logging.info(f"[execute_setup] Search index interval: {search_index_interval}")
+    logging.info(f"[execute_setup] Search index name: {search_index_name}")
+    logging.info(f"[execute_setup] Storage container: {storage_container}")
+    logging.info(f"[execute_setup] Storage account name: {storage_account_name}")
+    logging.info(f"[execute_setup] Embedding deployment name: {azure_openai_embedding_deployment}")
+    logging.info(f"[execute_setup] Embedding model: {azure_openai_embedding_model}")
+    logging.info(f"[execute_setup] Embedding vector size: {azure_embeddings_vector_size}")
+    logging.info(f"[execute_setup] Resource group: {resource_group}")  
+    logging.info(f"[execute_setup] Storage resource group: {azure_storage_resource_group}") 
+    logging.info(f"[execute_setup] Azure OpenAI resource group: {azure_aoai_resource_group}")        
+    
     # NL2SQL Elements
     storage_container_nl2sql = "nl2sql"
     search_index_name_nl2sql_queries = "nl2sql-queries"
     search_index_name_nl2sql_tables = "nl2sql-tables"
     search_index_name_nl2sql_columns = "nl2sql-columns"
 
-    logging.info(f"NL2SQL Storage container: {storage_container_nl2sql}")
-    logging.info(f"NL2SQL Search index name (queries): {search_index_name_nl2sql_queries}")
-    logging.info(f"NL2SQL Search index name (tables): {search_index_name_nl2sql_tables}")
-    logging.info(f"NL2SQL Search index name (columns): {search_index_name_nl2sql_columns}")    
+    logging.info(f"[execute_setup] NL2SQL Storage container: {storage_container_nl2sql}")
+    logging.info(f"[execute_setup] NL2SQL Search index name (queries): {search_index_name_nl2sql_queries}")
+    logging.info(f"[execute_setup] NL2SQL Search index name (tables): {search_index_name_nl2sql_tables}")
+    logging.info(f"[execute_setup] NL2SQL Search index name (columns): {search_index_name_nl2sql_columns}")    
 
-    
     ###########################################################################
     # Get function key to be used later when creating the skillset
     ########################################################################### 
@@ -322,7 +379,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     # Approve Search Shared Private Links (if needed)
     ########################################################################### 
     logging.info("Approving search shared private links.")  
-    approve_search_shared_private_access(subscription_id, resource_group, function_app_name, storage_account_name, azure_openai_service_name, credential)
+    approve_search_shared_private_access(subscription_id, resource_group, azure_storage_resource_group, azure_aoai_resource_group, function_app_name, storage_account_name, azure_openai_service_name, credential)
 
     ###########################################################################
     # Creating blob containers
@@ -354,7 +411,8 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     start_time = time.time()
 
     # Define storage connection string without account key
-    storage_connection_string = f"ResourceId=/subscriptions/{subscription_id}/resourceGroups/{resource_group}/providers/Microsoft.Storage/storageAccounts/{storage_account_name}/;"
+    # TODO: Use storage account resource group
+    storage_connection_string = f"ResourceId=/subscriptions/{subscription_id}/resourceGroups/{azure_storage_resource_group}/providers/Microsoft.Storage/storageAccounts/{storage_account_name}/;"
 
     # Creating main datasource
     create_datasource(search_service, search_api_version, f"{search_index_name}", storage_connection_string, storage_container, credential)
@@ -377,7 +435,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     # Creating indexes
     ###############################################################################
 
-    def create_index_body(index_name, fields, content_field_name, keyword_field_name, vector_dimensions, vector_profile_name="myHnswProfile", vector_algorithm_name="myHnswConfig"):
+    def create_index_body(index_name, fields, content_field_name, keyword_field_name, vector_dimensions, vector_profile_name="myHnswProfile", vector_algorithm_name="myHnswConfig", dimensions=3072):
         body = {
             "name": index_name,
             "fields": fields,
@@ -581,13 +639,13 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                     "type": "Collection(Edm.Single)",
                     "searchable": True,
                     "retrievable": True,
-                    "dimensions": 1536,
+                    "dimensions": azure_embeddings_vector_size,
                     "vectorSearchProfile": vector_profile_name
                 }
             ],
             "content_field_name": "content",
             "keyword_field_name": "category",
-            "vector_dimensions": 1536
+            "vector_dimensions": azure_embeddings_vector_size
         },
         {
             "index_name": search_index_name_nl2sql_queries,
@@ -648,13 +706,13 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                     "type": "Collection(Edm.Single)",
                     "searchable": True,
                     "retrievable": True,
-                    "dimensions": 1536,
+                    "dimensions": azure_embeddings_vector_size,
                     "vectorSearchProfile": vector_profile_name
                 }
             ],
             "content_field_name": "question",
             "keyword_field_name": "question",
-            "vector_dimensions": 1536
+            "vector_dimensions": azure_embeddings_vector_size
         },
         {
             "index_name": search_index_name_nl2sql_tables,
@@ -693,13 +751,13 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                     "type": "Collection(Edm.Single)",
                     "searchable": True,
                     "retrievable": True,
-                    "dimensions": 1536,
+                    "dimensions": azure_embeddings_vector_size,
                     "vectorSearchProfile": vector_profile_name
                 }
             ],
             "content_field_name": "description",
             "keyword_field_name": "description",
-            "vector_dimensions": 1536
+            "vector_dimensions": azure_embeddings_vector_size
         },
         {
             "index_name": search_index_name_nl2sql_columns,
@@ -748,13 +806,13 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                     "type": "Collection(Edm.Single)",
                     "searchable": True,
                     "retrievable": True,
-                    "dimensions": 1536,
+                    "dimensions": azure_embeddings_vector_size,
                     "vectorSearchProfile": vector_profile_name
                 }
             ],
             "content_field_name": "description",
             "keyword_field_name": "description",
-            "vector_dimensions": 1536
+            "vector_dimensions": azure_embeddings_vector_size
         }
     ]
 
@@ -767,7 +825,8 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
             keyword_field_name=index["keyword_field_name"],
             vector_dimensions=index["vector_dimensions"],
             vector_profile_name=vector_profile_name,
-            vector_algorithm_name=vector_algorithm_name
+            vector_algorithm_name=vector_algorithm_name,
+            dimensions=azure_embeddings_vector_size
         )
         # Delete existing index if it exists
         call_search_api(search_service, search_api_version, "indexes", index["index_name"], "delete", credential)
@@ -935,7 +994,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
 
     # creating skill sets for the NL2SQL indexes
 
-    def create_embedding_skillset(skillset_name, resource_uri, deployment_id, model_name, input_field, output_field, dimensions=1536):
+    def create_embedding_skillset(skillset_name, resource_uri, deployment_id, model_name, input_field, output_field, dimensions):
         skill = {
             "@odata.type": "#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill",
             "name": f"{skillset_name}-embedding-skill",
@@ -969,9 +1028,9 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
 
     # Configuration parameters
     resource_uri = f"https://{azure_openai_service_name}.openai.azure.com/"
-    deployment_id = "text-embedding-ada-002"  # Example deployment ID
-    model_name = "text-embedding-ada-002"
- 
+    deployment_id = azure_openai_embedding_deployment  # Example deployment ID
+    model_name = azure_openai_embedding_model
+
     # Define skillsets configurations
     skillsets = [
         {
@@ -1000,7 +1059,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
             model_name=model_name,
             input_field=skillset["input_field"],
             output_field=skillset["output_field"],
-            dimensions=1536
+            dimensions=azure_embeddings_vector_size
         )
 
         # Delete existing skillset if it exists
@@ -1230,7 +1289,7 @@ def main(subscription_id=None, resource_group=None, function_app_name=None, sear
     if subscription_id is None:
         subscription_id = input("Enter subscription ID: ")
     if resource_group is None:
-        resource_group = input("Enter resource group: ")
+        resource_group = input("Enter function app resource group: ")
     if function_app_name is None:
         function_app_name = input("Enter chunking function app name: ")
 
@@ -1245,7 +1304,7 @@ if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')    
     parser = argparse.ArgumentParser(description='Script to do the data ingestion setup for Azure Cognitive Search.')
     parser.add_argument('-s', '--subscription_id', help='Subscription ID')
-    parser.add_argument('-r', '--resource_group', help='Resource group')
+    parser.add_argument('-r', '--resource_group', help='Resource group (Function App)')
     parser.add_argument('-f', '--function_app_name', help='Chunking function app name')
     parser.add_argument('-a', '--search_principal_id', default='none', help='Entra ID of the search service')
     parser.add_argument('-m', '--azure_search_use_mis', help='Use Search Service Managed Identity to Connect to data ingestion function')
@@ -1256,6 +1315,15 @@ if __name__ == '__main__':
     # format search_use_mis to boolean
     search_use_mis = args.azure_search_use_mis.lower() == "true" if args.azure_search_use_mis not in [None, ""] else False
 
+    # Log all arguments
+    logging.info(f"[main] Subscription ID: {args.subscription_id}")
+    logging.info(f"[main] Resource group: {args.resource_group}") 
+    logging.info(f"[main] Function app name: {args.function_app_name}")
+    logging.info(f"[main] Search principal ID: {args.search_principal_id}")
+    logging.info(f"[main] Azure Search use MIS: {search_use_mis}")
+    logging.info(f"[main] Enable managed identities: {args.enable_managed_identities}")
+    logging.info(f"[main] Enable environment credentials: {args.enable_env_credentials}")
+
     main(subscription_id=args.subscription_id, resource_group=args.resource_group, function_app_name=args.function_app_name, search_principal_id=args.search_principal_id, 
-        azure_search_use_mis=search_use_mis, enable_managed_identities=args.enable_managed_identities, enable_env_credentials=args.enable_env_credentials)    
+        azure_search_use_mis=search_use_mis, enable_managed_identities=args.enable_managed_identities, enable_env_credentials=args.enable_env_credentials)
     
