@@ -48,9 +48,9 @@ for logger_name in suppress_loggers:
 
 app = func.FunctionApp()
 
-# -------------------------------
+# ---------------------------------------------
 # SharePoint Connector Functions (Timer Triggered)
-# -------------------------------
+# ---------------------------------------------
 
 @app.function_name(name="sharepoint_index_files")
 @app.schedule(
@@ -59,7 +59,7 @@ app = func.FunctionApp()
     run_on_startup=True
 )
 async def sharepoint_index_files(timer: func.TimerRequest) -> None:
-    logging.info("[sharepoint_index_files_function] Started sharepoint files indexing function.")
+    logging.debug("[sharepoint_index_files_function] Started sharepoint files indexing function.")
     try:
         indexer = SharepointFilesIndexer()
         await indexer.run() 
@@ -73,7 +73,7 @@ async def sharepoint_index_files(timer: func.TimerRequest) -> None:
     run_on_startup=False
 )
 async def sharepoint_purge_deleted_files(timer: func.TimerRequest) -> None:
-    logging.info("[sharepoint_purge_deleted_files_function] Started sharepoint purge deleted files function.")
+    logging.debug("[sharepoint_purge_deleted_files_function] Started sharepoint purge deleted files function.")
     try:
         purger = SharepointDeletedFilesPurger()
         await purger.run() 

@@ -15,12 +15,22 @@
     "AZURE_FORMREC_SERVICE": "",
     "FORM_REC_API_VERSION": "",
     "AZURE_SEARCH_SERVICE": "",
+    "AZURE_SEARCH_INDEX_NAME": "ragindex",
     "AZURE_OPENAI_SERVICE_NAME": "",
     "AZURE_OPENAI_CHATGPT_DEPLOYMENT": "chat",
     "AZURE_OPENAI_EMBEDDING_DEPLOYMENT": "text-embedding",
     "AZURE_EMBEDDINGS_VECTOR_SIZE": "3072",
     "AZURE_OPENAI_API_VERSION": "2024-10-21",
+    "SHAREPOINT_TENANT_ID": "your_actual_tenant_id",
+    "SHAREPOINT_CLIENT_ID": "your_actual_client_id",
+    "SHAREPOINT_SITE_DOMAIN": "your_actual_site_domain",
+    "SHAREPOINT_SITE_NAME": "your_actual_site_name",
+    "SHAREPOINT_SITE_FOLDER": "/your/folder/path", 
+    "SHAREPOINT_FILES_FORMAT": "pdf,docx,pptx",
+    "SHAREPOINT_CONNECTOR_ENABLED": "false",
     "STORAGE_CONTAINER": "documents",
-    "STORAGE_CONTAINER_IMAGES": "documents-images"
+    "STORAGE_CONTAINER_IMAGES": "documents-images",
+    "STORAGE_ACCOUNT_NAME": "your-storage-account-name",
+    "MULTIMODALITY": "true"
   }
 }

@@ -98,7 +98,7 @@ class DocAnalysisChunker(BaseChunker):
             retries (int): The number of times to retry the document analysis in case of failure. Defaults to 3 retries.
 
         Returns:
-            tuple: A tuple containing the analyzed document content and any analysis errors encountered.
+            tuple: A tuple containing the analysis result and any errors encountered.
 
         Raises:
             Exception: If the document analysis fails after the specified number of retries.
@@ -111,7 +111,7 @@ class DocAnalysisChunker(BaseChunker):
                 logging.error(f"[doc_analysis_chunker][{self.filename}] docint analyze document failed on attempt {attempt + 1}/{retries}: {str(e)}")
                 if attempt == retries - 1:
                     raise
-        return None, None
+        return None, None, None
 
     def _process_document_chunks(self, document):
         """
