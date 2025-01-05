@@ -1321,7 +1321,7 @@ def main(subscription_id=None, resource_group=None, function_app_name=None, sear
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')    
-    parser = argparse.ArgumentParser(description='Script to do the data ingestion setup for Azure Cognitive Search.')
+    parser = argparse.ArgumentParser(description='Script to do the data ingestion setup for Azure AI Search.')
     parser.add_argument('-s', '--subscription_id', help='Subscription ID')
     parser.add_argument('-r', '--resource_group', help='Resource group (Function App)')
     parser.add_argument('-f', '--function_app_name', help='Chunking function app name')
