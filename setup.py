@@ -650,7 +650,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                     "vectorSearchProfile": vector_profile_name
                 },
                 {
-                    "name": "imageCaptionsVector",
+                    "name": "captionVector",
                     "type": "Collection(Edm.Single)",
                     "searchable": True,
                     "retrievable": True,
@@ -963,8 +963,8 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                             "inputs": []
                         },
                         {
-                            "name": "imageCaptionsVector",
-                            "source": "/document/chunks/*/imageCaptionsVector",
+                            "name": "captionVector",
+                            "source": "/document/chunks/*/captionVector",
                             "inputs": []
                         },                                                                              
                         {

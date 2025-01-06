@@ -438,12 +438,12 @@ class MultimodalChunker(DocAnalysisChunker):
 
         # 3) Combine vectors
         #    You may store all figure vectors as a list or you could average them, etc.
-        if "vectorCaption" not in chunk:
-            chunk["vectorCaption"] = []
-        if isinstance(chunk["vectorCaption"], list):
-            chunk["vectorCaption"].extend(figure_vector)
+        if "captionVector" not in chunk:
+            chunk["captionVector"] = []
+        if isinstance(chunk["captionVector"], list):
+            chunk["captionVector"].extend(figure_vector)
         else:
-            logging.warning(f"[metodo_append_figures_to_chunk] 'vectorCaption' is not a list in chunk {chunk.get('chunk_id')}")
+            logging.warning(f"[metodo_append_figures_to_chunk] 'captionVector' is not a list in chunk {chunk.get('chunk_id')}")
 
 
     def _find_chunks_for_figure(self, figure_id, chunks):
@@ -543,10 +543,10 @@ class MultimodalChunker(DocAnalysisChunker):
         logging.debug(f"[multimodal_chunker][{self.filename}] Added caption to chunk {chunk.get('chunk_id')}")
 
         # Append the caption vector
-        if "imageCaptionsVector" not in chunk:
-            chunk["imageCaptionsVector"] = []
-        if isinstance(chunk["imageCaptionsVector"], list):
-            chunk["imageCaptionsVector"].append(caption_vector)
+        if "captionVector" not in chunk:
+            chunk["captionVector"] = []
+        if isinstance(chunk["captionVector"], list):
+            chunk["captionVector"].append(caption_vector)
             logging.debug(f"[multimodal_chunker][{self.filename}] Added caption vector to chunk {chunk.get('chunk_id')}")
         else:
-            logging.warning(f"[multimodal_chunker][{self.filename}] imageCaptionsVector is not a list in chunk {chunk.get('chunk_id')}")
+            logging.warning(f"[multimodal_chunker][{self.filename}] captionVector is not a list in chunk {chunk.get('chunk_id')}")
