@@ -12,7 +12,7 @@ import azure.functions as func
 from chunking import DocumentChunker
 from connectors import SharepointFilesIndexer, SharepointDeletedFilesPurger
 from connectors import ImagesDeletedFilesPurger
-from tools import BlobStorageClient
+from tools import BlobClient
 from utils.file_utils import get_filename
 
 # -------------------------------
@@ -55,7 +55,7 @@ app = func.FunctionApp()
 
 @app.function_name(name="sharepoint_index_files")
 @app.schedule(
-    schedule="0 */10 * * * *", 
+    schedule="0 */30 * * * *", 
     arg_name="timer", 
     run_on_startup=True
 )
@@ -69,7 +69,7 @@ async def sharepoint_index_files(timer: func.TimerRequest) -> None:
 
 @app.function_name(name="sharepoint_purge_deleted_files")
 @app.schedule(
-    schedule="0 */10 * * * *", 
+    schedule="0 */60 * * * *", 
     arg_name="timer", 
     run_on_startup=False
 )
@@ -142,7 +142,7 @@ def document_chunking(req: func.HttpRequest) -> func.HttpResponse:
             start_time = time.time()
 
             # Enrich the input data with the document bytes and file name
-            blob_client = BlobStorageClient(input_data["documentUrl"])
+            blob_client = BlobClient(input_data["documentUrl"])
             document_bytes = blob_client.download_blob()
             input_data['documentBytes'] = document_bytes          
             input_data['fileName'] = filename
