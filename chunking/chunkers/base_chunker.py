@@ -134,7 +134,8 @@ class BaseChunker:
         else:
             self.document_bytes = None
             logging.warning(f"[base_chunker][{self.filename}] Document bytes not provided.")
-
+        self.embeddings_vector_size = int(os.getenv("AZURE_EMBEDDINGS_VECTOR_SIZE", "3072"))
+        
     def get_chunks(self):
         """Abstract method to be implemented by subclasses."""
         pass
@@ -208,10 +209,12 @@ class BaseChunker:
             "url": self.url,
             "filepath": self.filename,
             "content": truncated_content,
+            "imageCaptions": "",
             "summary": summary,
             "category": "",
             "length": len(truncated_content),  # Length in characters
             "contentVector": content_vector,
+            "captionVector": [0.0] * self.embeddings_vector_size,
             "title": self._extract_title_from_filename(self.filename) if not title else title,
             "page": page,
             "offset": offset,
@@ -219,8 +222,6 @@ class BaseChunker:
             "relatedFiles": related_files          
         }
 
-
-    
     def _extract_title_from_filename(self, filename):
         """
         Extracts a title from a filename by removing the extension and 

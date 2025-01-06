@@ -418,7 +418,7 @@ class MultimodalChunker(DocAnalysisChunker):
         return abs(area) / 2.0
 
 
-    def _append_figures_to_chunk(self, chunk, figure_urls, combined_caption, figure_vector):
+    def _append_figures_to_chunk(self, chunk, figure_urls, combined_caption, caption_vector):
         """
         Appends the combined figure data (URLs, a single combined caption string,
         and a list of caption vectors) to the chunk.
@@ -429,22 +429,15 @@ class MultimodalChunker(DocAnalysisChunker):
         chunk["relatedImages"].extend(figure_urls)
 
         # 2) Combined caption text
-        #    Storing in a new field named "caption" (or "imageCaptions" as needed)
-        if "caption" not in chunk:
-            chunk["caption"] = ""
-        if chunk["caption"]:
-            chunk["caption"] += "\n"
-        chunk["caption"] += combined_caption
+        if "imageCaptions" not in chunk:
+            chunk["imageCaptions"] = ""
+        if chunk["imageCaptions"]:
+            chunk["imageCaptions"] += "\n"
+        chunk["imageCaptions"] += combined_caption
 
-        # 3) Combine vectors
-        #    You may store all figure vectors as a list or you could average them, etc.
-        if "captionVector" not in chunk:
-            chunk["captionVector"] = []
-        if isinstance(chunk["captionVector"], list):
-            chunk["captionVector"].extend(figure_vector)
-        else:
-            logging.warning(f"[metodo_append_figures_to_chunk] 'captionVector' is not a list in chunk {chunk.get('chunk_id')}")
-
+        # 3) Assign the caption vector to the chunk
+        chunk["captionVector"] = caption_vector
+        
 
     def _find_chunks_for_figure(self, figure_id, chunks):
         """
@@ -519,34 +512,3 @@ class MultimodalChunker(DocAnalysisChunker):
         except Exception as e:
             logging.error(f"[multimodal_chunker][{self.filename}] Failed to generate caption for figure {figure.get('id', 'unknown')}: {str(e)}")
             return "No caption available."
-
-    def _append_figure_to_chunk(self, chunk, url, caption, caption_vector):
-        """
-        Appends the figure's URL, caption, and embedding vector to the specified chunk.
-
-        Args:
-            chunk (dict): The chunk to which the figure information will be appended.
-            url (str): The URL of the uploaded figure image.
-            caption (str): The generated caption for the figure.
-            caption_vector (list): The embedding vector of the caption.
-        """
-        # Append the image URL
-        if "relatedImages" not in chunk:
-            chunk["relatedImages"] = []
-        chunk["relatedImages"].append(url)
-        logging.debug(f"[multimodal_chunker][{self.filename}] Added image URL to chunk {chunk.get('chunk_id')}")
-
-        # Append the image caption
-        if "imageCaptions" not in chunk:
-            chunk["imageCaptions"] = ""
-        chunk["imageCaptions"] += f"{caption}\n"
-        logging.debug(f"[multimodal_chunker][{self.filename}] Added caption to chunk {chunk.get('chunk_id')}")
-
-        # Append the caption vector
-        if "captionVector" not in chunk:
-            chunk["captionVector"] = []
-        if isinstance(chunk["captionVector"], list):
-            chunk["captionVector"].append(caption_vector)
-            logging.debug(f"[multimodal_chunker][{self.filename}] Added caption vector to chunk {chunk.get('chunk_id')}")
-        else:
-            logging.warning(f"[multimodal_chunker][{self.filename}] captionVector is not a list in chunk {chunk.get('chunk_id')}")
