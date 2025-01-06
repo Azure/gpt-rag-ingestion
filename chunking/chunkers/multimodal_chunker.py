@@ -384,7 +384,7 @@ class MultimodalChunker(DocAnalysisChunker):
             # Accumulate the total area
             total_area += polygon_area
 
-            logging.info(
+            logging.debug(
                 f"[multimodal_chunker][{self.filename}] Figure on Page {page_number}, Bounding Region {idx}: "
                 f"Polygon Coordinates: {polygon}, "
                 f"Polygon Area: {polygon_area:.2f}, "
