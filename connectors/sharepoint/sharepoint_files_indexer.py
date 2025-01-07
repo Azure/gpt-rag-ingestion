@@ -202,10 +202,7 @@ class SharepointFilesIndexer:
         logging.info("[sharepoint_files_indexer] Started sharepoint files index run.")
 
         if not self.connector_enabled:
-            logging.info(
-                "[sharepoint_files_indexer] SharePoint connector is disabled. "
-                "Set SHAREPOINT_CONNECTOR_ENABLED to 'true' to enable the connector."
-            )
+            logging.info("[sharepoint_files_indexer] SharePoint connector is disabled. Set SHAREPOINT_CONNECTOR_ENABLED to 'true' to enable the connector.")
             return
 
         # Initialize clients and configurations

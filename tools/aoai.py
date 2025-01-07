@@ -83,12 +83,13 @@ class AzureOpenAIClient:
             logging.error(f"[aoai]{self.document_filename} Failed to initialize AzureOpenAI client: {e}")
             raise
 
-    def get_completion(self, prompt, max_tokens=800, retry_after=True):
+    def get_completion(self, prompt, image_base64=None, max_tokens=800, retry_after=True):
         """
         Generates a completion for the given prompt using the Azure OpenAI service.
 
         Args:
             prompt (str): The input prompt for the model.
+            image_base64 (str, optional): Base64 encoded image to be included with the prompt. Defaults to None.
             max_tokens (int, optional): The maximum number of tokens to generate. Defaults to 800.
             retry_after (bool, optional): Flag to determine if the method should retry after rate limiting. Defaults to True.
 
@@ -102,10 +103,26 @@ class AzureOpenAIClient:
         prompt = self._truncate_input(prompt, self.max_gpt_model_input_tokens)
 
         try:
+
             input_messages = [
                 {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": f"{prompt}"}
             ]
+
+            if not image_base64:
+                input_messages.append({"role": "user", "content": prompt})
+            else:
+                input_messages.append({"role": "user", "content": [
+                        {
+                            "type": "text",
+                            "text": prompt
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url":f"data:image/jpeg;base64,{image_base64}"
+                            }
+                        } 
+                ]})
 
             response = self.client.chat.completions.create(
                 messages=input_messages,
