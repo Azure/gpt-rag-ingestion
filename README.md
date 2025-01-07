@@ -129,7 +129,7 @@ This outlines the ingestion workflow for **query** elements.
 
 ### Sharepoint Indexing
 
-The SharePoint connector operates through two primary processes, cada um deles roda em uma function da Data Ingestion Function App:
+The SharePoint connector operates through two primary processes, each running in a separate function within the Data Ingestion Function App:
 
 1. **Indexing SharePoint Files**: `sharepoint_index_files` function retrieves files from SharePoint, processes them, and indexes their content into the Azure AI Search Index (`ragindex`).
 2. **Purging Deleted Files**: `sharepoint_purge_deleted_files` identifies and removes files that have been deleted from SharePoint to keep the search index up-to-date.
