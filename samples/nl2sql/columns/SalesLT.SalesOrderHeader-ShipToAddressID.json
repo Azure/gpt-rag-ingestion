@@ -1,0 +1,5 @@
+{
+    "table_name": "SalesLT.SalesOrderHeader",
+    "column_name": "ShipToAddressID",
+    "description": "The ID of the location to send goods. Foreign key to the Address table."
+}

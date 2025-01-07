@@ -1,0 +1,5 @@
+{
+    "table_name": "SalesLT.SalesOrderDetail",
+    "column_name": "ProductID",
+    "description": "Product sold to customer. Foreign key to Product.ProductID."
+}

@@ -1,0 +1,5 @@
+{
+    "table_name": "SalesLT.ProductModel",
+    "column_name": "ProductModelID",
+    "description": "Primary key for ProductModel records."
+}

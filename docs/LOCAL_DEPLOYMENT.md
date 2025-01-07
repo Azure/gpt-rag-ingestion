@@ -21,9 +21,9 @@ Once the cloud resources (such as Azure OpenAI, Azure KeyVault) have been provis
    
 6. When opening it for the first time, create a virtual environment and point it to [Python version 3.10 or 3.11](https://www.python.org/downloads/release/python-31011/). <BR>Follow the examples illustrated in the images below.  
 
-![Creating Python Environment 01](media/06.03.2024_12.15.23_REC.png)
+![Creating Python Environment 01](../media/local_deployment_env01.png)
 
-![Creating Python Environment 02](media/06.03.2024_12.16.15_REC.png)
+![Creating Python Environment 02](../media/local_deployment_env02.png)
    
 7. Create a copy and then rename the file `local.settings.json.template` to `local.settings.json` and update it with your environment information.  
    
@@ -33,18 +33,10 @@ Once the cloud resources (such as Azure OpenAI, Azure KeyVault) have been provis
 
 **Note:** you can download this [Postman Collection](../tests/gpt-rag-ingestion.postman_collection.json) to test your orchestrator endpoint.
 
-### Key Vault Access Policies
-
-The function uses credentials to access **Azure OpenAI** and **Document Intelligence**, which are stored as **secrets** in the solution's **Key Vault**. Since you will be running from your machine and we are using Managed Identities, it's not possible to use the identity of the function running on Azure. Therefore, you must assign **List** and **Get** access policies to the identity used by the DefaultAzureCredential class for the secrets of the Key Vault used by the solution. If you are running a VM on Azure (as we do in the case of network isolation configuration), it will be the identity of the **VM**. Otherwise, it will be the identity of the **User** logged into Visual Studio or Azure CLI, as explained here [DefaultAzureCredential](https://learn.microsoft.com/en-us/python/api/azure-identity/azure.identity.defaultazurecredential).
-
-Here’s an example of a virtual machine (VM) with **List** and **Get** permissions on the solution’s secrets:
-
-![KeyVault](media/02.04.2024_09.47.18_REC.png)
-
 ### Storage Account Role
 
-To read the content of the **blob storage** when testing in a network-isolated environment, you'll also need to assign the **Storage Blob Data Contributor** role to the identity used by **DefaultAzureCredential**. If you're using the VM's identity, follow the example below:
+To read the content of the **blob storage** when testing in a network-isolated environment, you'll also need to assign the **Storage Blob Data Contributor** role to the identity used to run the program locally. If you're using the VM's identity, follow the example below:
 
 Azure Storage Account **Storage Blob Data Contributor** role.
 
-![KeyVault](media/02.04.2024_13.48.29_REC.png)
+![Storage Account](../media/local_deployment_storage.png)

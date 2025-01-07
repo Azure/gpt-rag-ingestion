@@ -7,8 +7,4 @@ def get_file_extension(file_path: str) -> Optional[str]:
     return file_path.split(".")[-1]
 
 def get_filename(file_path: str) -> str:
-    match = re.search(r'documents/(.*/)?(.*)', file_path)
-    filepath = ""
-    if match:
-        filepath = (match.group(1) or '') + (match.group(2) or '')
-    return filepath
+    return file_path.rsplit('/', 1)[-1]
