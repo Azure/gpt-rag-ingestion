@@ -1033,9 +1033,8 @@ def execute_setup(
                 "name": "document-chunking",
                 "description": "Extract chunks from documents.",
                 "httpMethod": "POST",
-                "timeout": "PT3M50S",
-                "context": "/document/pages/*",
-                # "context":"/document", changed with new skillset
+                "timeout": "PT230S",
+                "context": "/document",
                 "batchSize": 1,
                 "inputs": [
                     {
@@ -1052,20 +1051,7 @@ def execute_setup(
                     },
                 ],
                 "outputs": [{"name": "chunks", "targetName": "chunks"}],
-            },
-            {
-                "@odata.type": "#Microsoft.Skills.Text.SplitSkill",
-                "name": "Split Skill",
-                "description": "Split skill to chunk documents",
-                "context": "/document",
-                "defaultLanguageCode": "en",
-                "textSplitMode": "pages",
-                "maximumPageLength": 50000,
-                "pageOverlapLength": 0,
-                "maximumPagesToTake": 0,
-                "inputs": [{"name": "text", "source": "/document/content"}],
-                "outputs": [{"name": "textItems", "targetName": "pages"}],
-            },
+            }
         ],
         "indexProjections": {
             "selectors": [
@@ -1170,81 +1156,6 @@ def execute_setup(
             "parameters": {"projectionMode": "skipIndexingParentDocuments"},
         },
     }
-    # "indexProjections": {
-    #     "selectors": [
-    #         {
-    #             "targetIndexName":"ragindex",
-    #             "parentKeyFieldName": "parent_id",
-    #             "sourceContext": "/document/chunks/*",
-    #             "mappings": [
-    #                 {
-    #                 "name": "chunk_id",
-    #                 "source": "/document/chunks/*/chunk_id",
-    #                 "inputs": []
-    #                 },
-    #                 {
-    #                     "name": "offset",
-    #                     "source": "/document/chunks/*/offset",
-    #                     "inputs": []
-    #                 },
-    #                 {
-    #                     "name": "length",
-    #                     "source": "/document/chunks/*/length",
-    #                     "inputs": []
-    #                 },
-    #                 {
-    #                     "name": "page",
-    #                     "source": "/document/chunks/*/page",
-    #                     "inputs": []
-    #                 },
-    #                 {
-    #                     "name": "title",
-    #                     "source": "/document/chunks/*/title",
-    #                     "inputs": []
-    #                 },
-    #                 {
-    #                     "name": "category",
-    #                     "source": "/document/chunks/*/category",
-    #                     "inputs": []
-    #                 },
-    #                 {
-    #                     "name": "url",
-    #                     "source": "/document/chunks/*/url",
-    #                     "inputs": []
-    #                 },
-    #                 {
-    #                     "name": "filepath",
-    #                     "source": "/document/chunks/*/filepath",
-    #                     "inputs": []
-    #                 },
-    #                 {
-    #                     "name": "content",
-    #                     "source": "/document/chunks/*/content",
-    #                     "inputs": []
-    #                 },
-    #                 {
-    #                     "name": "contentVector",
-    #                     "source": "/document/chunks/*/contentVector",
-    #                     "inputs": []
-    #                 },
-    #                 {
-    #                     "name": "metadata_storage_path",
-    #                     "source": "/document/metadata_storage_path",
-    #                     "inputs": []
-    #                 },
-    #                 {
-    #                     "name": "metadata_storage_name",
-    #                     "source": "/document/metadata_storage_name",
-    #                     "inputs": []
-    #                 }
-    #             ]
-    #         }
-    #     ],
-    #     "parameters": {
-    #         "projectionMode": "skipIndexingParentDocuments"
-    #     }
-    # }
-
     if azure_search_use_mis:
         body["skills"][0]["uri"] = f"{function_endpoint}/api/document-chunking"
         body["skills"][0]["authResourceId"] = f"api://{search_principal_id}"
@@ -1271,6 +1182,97 @@ def execute_setup(
         credential,
         body,
     )
+
+    # creating skill sets for the NL2SQL indexes
+
+    def create_embedding_skillset(
+        skillset_name,
+        resource_uri,
+        deployment_id,
+        model_name,
+        input_field,
+        output_field,
+        dimensions,
+    ):
+        skill = {
+            "@odata.type": "#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill",
+            "name": f"{skillset_name}-embedding-skill",
+            "description": f"Generates embeddings for {input_field}.",
+            "resourceUri": resource_uri,
+            "deploymentId": deployment_id,
+            "modelName": model_name,
+            "dimensions": dimensions,
+            "context": "/document",
+            "inputs": [{"name": "text", "source": f"/document/{input_field}"}],
+            "outputs": [{"name": "embedding", "targetName": output_field}],
+        }
+
+        skillset_body = {
+            "name": skillset_name,
+            "description": f"Skillset for generating embeddings for {skillset_name} index.",
+            "skills": [skill],
+        }
+
+        return skillset_body
+
+    # Configuration parameters
+    resource_uri = f"https://{azure_openai_service_name}.openai.azure.com/"
+    deployment_id = azure_openai_embedding_deployment  # Example deployment ID
+    model_name = azure_openai_embedding_model
+
+    # Define skillsets configurations
+    skillsets = [
+        {
+            "skillset_name": "queries-skillset",
+            "input_field": "question",
+            "output_field": "contentVector",
+        },
+        {
+            "skillset_name": "tables-skillset",
+            "input_field": "description",
+            "output_field": "contentVector",
+        },
+        {
+            "skillset_name": "columns-skillset",
+            "input_field": "description",
+            "output_field": "contentVector",
+        },
+    ]
+
+    # Iterate and create skillsets
+    for skillset in skillsets:
+        body = create_embedding_skillset(
+            skillset_name=skillset["skillset_name"],
+            resource_uri=resource_uri,
+            deployment_id=deployment_id,
+            model_name=model_name,
+            input_field=skillset["input_field"],
+            output_field=skillset["output_field"],
+            dimensions=azure_embeddings_vector_size,
+        )
+
+        # Delete existing skillset if it exists
+        call_search_api(
+            search_service,
+            search_api_version,
+            "skillsets",
+            skillset["skillset_name"],
+            "delete",
+            credential,
+        )
+
+        # Create the new skillset
+        call_search_api(
+            search_service,
+            search_api_version,
+            "skillsets",
+            skillset["skillset_name"],
+            "put",
+            credential,
+            body,
+        )
+
+        logging.info(f"Skillset '{skillset['skillset_name']}' created successfully.")
 
     # creating skill sets for the NL2SQL indexes
 
@@ -1403,6 +1405,135 @@ def execute_setup(
         credential,
         body,
     )
+
+    # creating indexers for the NL2SQL indexes
+    def create_indexer_body(
+        indexer_name,
+        index_name,
+        data_source_name,
+        skillset_name,
+        field_mappings=None,
+        indexing_parameters=None,
+    ):
+        body = {
+            "name": indexer_name,
+            "dataSourceName": data_source_name,
+            "targetIndexName": index_name,
+            "skillsetName": skillset_name,
+            "schedule": {"interval": "PT2H"},  # Adjust as needed
+            "fieldMappings": field_mappings if field_mappings else [],
+            "outputFieldMappings": [
+                {
+                    "sourceFieldName": "/document/contentVector",
+                    "targetFieldName": "contentVector",
+                }
+            ],
+            "parameters": {"configuration": {"parsingMode": "json"}},
+        }
+        if indexing_parameters:
+            body["parameters"] = indexing_parameters
+        return body
+
+    # Define field mappings for the 'queries-indexer'
+    field_mappings_queries = [
+        {
+            "sourceFieldName": "metadata_storage_path",
+            "targetFieldName": "id",
+            "mappingFunction": {"name": "fixedLengthEncode"},
+        },
+        {"sourceFieldName": "question", "targetFieldName": "question"},
+        {"sourceFieldName": "query", "targetFieldName": "query"},
+        {"sourceFieldName": "selected_tables", "targetFieldName": "selected_tables"},
+        {"sourceFieldName": "selected_columns", "targetFieldName": "selected_columns"},
+        {"sourceFieldName": "reasoning", "targetFieldName": "reasoning"},
+    ]
+
+    # Define field mappings for the 'tables-indexer'
+    field_mappings_tables = [
+        {
+            "sourceFieldName": "metadata_storage_path",
+            "targetFieldName": "id",
+            "mappingFunction": {"name": "fixedLengthEncode"},
+        },
+        {"sourceFieldName": "table_name", "targetFieldName": "table_name"},
+        {"sourceFieldName": "description", "targetFieldName": "description"},
+    ]
+
+    # Define field mappings for the 'columns-indexer'
+    field_mappings_columns = [
+        {
+            "sourceFieldName": "metadata_storage_path",
+            "targetFieldName": "id",
+            "mappingFunction": {"name": "fixedLengthEncode"},
+        },
+        {"sourceFieldName": "table_name", "targetFieldName": "table_name"},
+        {"sourceFieldName": "column_name", "targetFieldName": "column_name"},
+        {"sourceFieldName": "description", "targetFieldName": "description"},
+    ]
+
+    # Define indexing parameters for the 'queries-indexer'
+    indexing_parameters = {"configuration": {"parsingMode": "json"}}
+
+    # Define indexers configurations
+    indexers = [
+        {
+            "indexer_name": "queries-indexer",
+            "index_name": f"{search_index_name_nl2sql_queries}",
+            "data_source_name": f"{search_index_name_nl2sql_queries}-datasource",
+            "skillset_name": "queries-skillset",
+            "field_mappings": field_mappings_queries,
+            "indexing_parameters": indexing_parameters,
+        },
+        {
+            "indexer_name": "tables-indexer",
+            "index_name": f"{search_index_name_nl2sql_tables}",
+            "data_source_name": f"{search_index_name_nl2sql_tables}-datasource",
+            "skillset_name": "tables-skillset",
+            "field_mappings": field_mappings_tables,
+            "indexing_parameters": indexing_parameters,
+        },
+        {
+            "indexer_name": "columns-indexer",
+            "index_name": f"{search_index_name_nl2sql_columns}",
+            "data_source_name": f"{search_index_name_nl2sql_columns}-datasource",
+            "skillset_name": "columns-skillset",
+            "field_mappings": field_mappings_columns,
+            "indexing_parameters": indexing_parameters,
+        },
+    ]
+
+    # Iterate and create indexers
+    for indexer in indexers:
+        body = create_indexer_body(
+            indexer_name=indexer["indexer_name"],
+            index_name=indexer["index_name"],
+            data_source_name=indexer["data_source_name"],
+            skillset_name=indexer["skillset_name"],
+            field_mappings=indexer["field_mappings"],
+        )
+
+        # Delete existing indexer if it exists
+        call_search_api(
+            search_service,
+            search_api_version,
+            "indexers",
+            indexer["indexer_name"],
+            "delete",
+            credential,
+        )
+
+        # Create the new indexer
+        call_search_api(
+            search_service,
+            search_api_version,
+            "indexers",
+            indexer["indexer_name"],
+            "put",
+            credential,
+            body,
+        )
+
+        logging.info(f"Indexer '{indexer['indexer_name']}' created successfully.")
 
     # creating indexers for the NL2SQL indexes
     def create_indexer_body(
