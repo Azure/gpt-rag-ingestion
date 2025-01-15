@@ -4,6 +4,7 @@ from azure.core.exceptions import ResourceNotFoundError, AzureError
 from urllib.parse import urlparse, unquote
 import logging
 import os
+import time
 
 class BlobClient:
     def __init__(self, blob_url, credential=None):
