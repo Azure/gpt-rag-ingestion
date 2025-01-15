@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 
 class AISearchClient:
     """
-    AISearchClient provides methods to index documents into an Azure Cognitive Search index
+    AISearchClient provides methods to index documents into an Azure AI Search index
     using Managed Identity or Azure CLI credentials for authentication.
     """
 
@@ -39,7 +39,7 @@ class AISearchClient:
         Retrieves a cached SearchClient for the specified index or creates a new one if not cached.
 
         Parameters:
-            index_name (str): The name of the Azure Cognitive Search index.
+            index_name (str): The name of the Azure AI Search index.
 
         Returns:
             SearchClient: An instance of SearchClient for the specified index.
@@ -59,10 +59,10 @@ class AISearchClient:
 
     async def index_document(self, index_name: str, document: dict):
         """
-        Indexes a single document into the specified Azure Cognitive Search index.
+        Indexes a single document into the specified Azure AI Search index.
 
         Parameters:
-            index_name (str): The name of the Azure Cognitive Search index.
+            index_name (str): The name of the Azure AI Search index.
             document (dict): The JSON document to be indexed.
         """
         client = await self.get_search_client(index_name)
@@ -81,10 +81,10 @@ class AISearchClient:
 
     async def delete_document(self, index_name: str, key_field: str, key_value: str):
         """
-        Deletes a document from the specified Azure Cognitive Search index.
+        Deletes a document from the specified Azure AI Search index.
 
         Parameters:
-            index_name (str): The name of the Azure Cognitive Search index.
+            index_name (str): The name of the Azure AI Search index.
             key_field (str): The name of the key field in the index.
             key_value (str): The value of the key field for the document to delete.
         """
@@ -100,10 +100,10 @@ class AISearchClient:
 
     async def delete_documents(self, index_name: str, key_field: str, key_values: List[str]):
         """
-        Deletes multiple documents from the specified Azure Cognitive Search index.
+        Deletes multiple documents from the specified Azure AI Search index.
 
         Parameters:
-            index_name (str): The name of the Azure Cognitive Search index.
+            index_name (str): The name of the Azure AI Search index.
             key_field (str): The name of the key field in the index.
             key_values (List[str]): A list of key values identifying the documents to delete.
         """
@@ -117,7 +117,7 @@ class AISearchClient:
             # Prepare the delete actions
             actions = [{"@search.action": "delete", key_field: key_value} for key_value in key_values]
 
-            # Azure Cognitive Search supports batch operations, but there might be limits on batch size.
+            # Azure AI Search supports batch operations, but there might be limits on batch size.
             # Here, we assume that the list is within acceptable limits. For very large lists, consider batching.
             result = await client.upload_documents(documents=actions)
 

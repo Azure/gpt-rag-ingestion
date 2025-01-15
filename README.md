@@ -7,8 +7,9 @@ Part of [GPT-RAG](https://github.com/Azure/gpt-rag)
 1. [**GPT-RAG - Data Ingestion Component**](#gpt-rag---data-ingestion-component)
    - [1.1 Document Ingestion Process](#document-ingestion-process)
    - [1.2 Document Chunking Process](#document-chunking-process)
-   - [1.3 NL2SQL Data Ingestion](#nl2sql-ingestion-process)
-   - [1.4 Sharepoint Indexing](#sharepoint-indexing)   
+   - [1.3 Multimodal Ingestion](#multimodal-ingestion)
+   - [1.4 NL2SQL Data Ingestion](#nl2sql-ingestion-process)
+   - [1.5 Sharepoint Indexing](#sharepoint-indexing)   
 2. [**How-to: Developer**](#how-to-developer)
    - [2.1 Redeploying the Ingestion Component](#redeploying-the-ingestion-component)
    - [2.2 Running Locally](#running-locally)
@@ -60,6 +61,38 @@ This setup ensures each document is processed by the most suitable chunker, lead
 **Customization**
 
 The chunking process is customizable. You can modify existing chunkers or create new ones to meet specific data processing needs, optimizing the pipeline.
+
+### Multimodal Ingestion
+
+This repository supports image ingestion for a multimodal RAG scenario. For an overview of how multimodality is implemented in GPT-RAG, see [Multimodal RAG Overview](https://github.com/Azure/GPT-RAG/blob/main/docs/MULTIMODAL_RAG.md).
+
+To enable multimodal ingestion, set the `MULTIMODALITY` environment variable to `true` before starting to index your data.
+
+When `MULTIMODALITY` is set to `true`, the data ingestion pipeline extends its capabilities to handle both text and images within your source documents, using the `MultimodalChunker`. Below is an overview of how this **multimodal ingestion process** works, including image extraction, captioning, and cleanup.
+
+1. **Thresholded Image Extraction**  
+   - The system uses **Document Intelligence** to parse each document, detecting text elements as well as embedded images. This approach **extends** the standard `DocAnalysisChunker` by adding **image extraction** steps on top of the usual text-based process.
+   - To avoid clutter and maintain relevance, an **area threshold** is applied so that only images exceeding a certain percentage of the page size are ingested. This ensures very small or irrelevant images are skipped.  
+   - Any images meeting or exceeding this threshold are then extracted for further processing.
+
+2. **Image Storage in Blob Container**  
+   - Detected images are **downloaded** and placed in a dedicated Blob Storage container (by default `documents-images`).  
+   - Each image is assigned a blob name and a URL, enabling the ingestion pipeline (and later queries) to reference where the image is stored.
+
+3. **Textual Content and Captions**  
+   - Alongside normal text chunking (paragraphs, sections, etc.), each extracted image is **captioned** to generate a concise textual description of its contents.  
+   - These captions are combined with the surrounding text, allowing chunks to contain both **plain text** and **image references** (with descriptive captions).
+
+4. **Unified Embeddings and Indexing**  
+   - The ingestion pipeline produces **embeddings** for both text chunks and the generated image captions, storing them in the AI Search Index.  
+   - The index is adapted to include fields for `contentVector` (text embeddings) and `captionVector` (image caption embeddings), as well as references to any related images in the `documents-images` container.  
+   - This architecture allows **multimodal retrieval**, where queries can match either the main text or the descriptive captions.
+
+5. **Image Cleanup Routine**  
+   - A dedicated **purging process** periodically checks the `documents-images` container and removes any images **no longer referenced** in the AI Search Index.  
+   - This ensures storage is kept in sync with ingested content, avoiding orphaned or stale images that are no longer needed.
+
+By activating `MULTIMODALITY`, your ingestion process captures both text and visuals in a single workflow, providing a richer knowledge base for Retrieval Augmented Generation scenarios. Queries can match not just textual content but also relevant image captions, retrieving valuable visual context stored in `documents-images`.
 
 ### NL2SQL Ingestion Process
 
@@ -237,4 +270,4 @@ Here are the formats supported by each chunker. The file extension determines wh
 
 ### External Resources
 - [AI Search Enrichment Pipeline](https://learn.microsoft.com/en-us/azure/search/cognitive-search-concept-intro)
-- [Azure Open AI Embeddings Generator](https://github.com/Azure-Samples/azure-search-power-skills/tree/57214f6e8773029a638a8f56840ab79fd38574a2/Vector/EmbeddingGenerator)
+- [Azure OpenAI Embeddings Generator](https://github.com/Azure-Samples/azure-search-power-skills/tree/57214f6e8773029a638a8f56840ab79fd38574a2/Vector/EmbeddingGenerator)

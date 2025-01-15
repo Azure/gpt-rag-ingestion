@@ -98,7 +98,7 @@ class DocAnalysisChunker(BaseChunker):
             retries (int): The number of times to retry the document analysis in case of failure. Defaults to 3 retries.
 
         Returns:
-            tuple: A tuple containing the analyzed document content and any analysis errors encountered.
+            tuple: A tuple containing the analysis result and any errors encountered.
 
         Raises:
             Exception: If the document analysis fails after the specified number of retries.
@@ -111,7 +111,7 @@ class DocAnalysisChunker(BaseChunker):
                 logging.error(f"[doc_analysis_chunker][{self.filename}] docint analyze document failed on attempt {attempt + 1}/{retries}: {str(e)}")
                 if attempt == retries - 1:
                     raise
-        return None, None
+        return None, None, None
 
     def _process_document_chunks(self, document):
         """
@@ -165,18 +165,12 @@ class DocAnalysisChunker(BaseChunker):
         Yields:
             tuple: A tuple containing the chunked content and the number of tokens in the chunk.
         """
-        content, placeholders, tables = self._replace_html_tables(content)
         splitter = self._choose_splitter()
 
         chunks = splitter.split_text(content)
-        chunks = self._restore_original_tables(chunks, placeholders, tables)
 
         for chunked_content in chunks:
             chunk_size = self.token_estimator.estimate_tokens(chunked_content)
-            if chunk_size > self.max_chunk_size:
-                logging.info(f"[doc_analysis_chunker][{self.filename}] truncating {chunk_size} size chunk to fit within {self.max_chunk_size} tokens")
-                chunked_content = self._truncate_chunk(chunked_content)
-
             yield chunked_content, chunk_size
 
     def _replace_html_tables(self, content):

@@ -30,6 +30,9 @@ tenacity==8.5.0
 aiohttp==3.9.0b0
 webvtt-py==0.5.1
 
+# Image library
+Pillow==11.1.0
+
 # DO NOT include azure-functions-worker in this file
 # The Python Worker is managed by Azure Functions platform
 # Manually managing azure-functions-worker may cause unexpected issues

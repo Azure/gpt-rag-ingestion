@@ -33,10 +33,96 @@ Once the cloud resources (such as Azure OpenAI, Azure KeyVault) have been provis
 
 **Note:** you can download this [Postman Collection](../tests/gpt-rag-ingestion.postman_collection.json) to test your orchestrator endpoint.
 
-### Storage Account Role
+### Roles You Have to Assign to Your User
 
-To read the content of the **blob storage** when testing in a network-isolated environment, you'll also need to assign the **Storage Blob Data Contributor** role to the identity used to run the program locally. If you're using the VM's identity, follow the example below:
+Since we're now using managed identities, you need to assign the following roles to your user. Each role assignment can be done using the Azure CLI scripts provided below or you can assign the role via the Azure Portal.
 
-Azure Storage Account **Storage Blob Data Contributor** role.
+1. **Azure OpenAI Resource 'Cognitive Services OpenAI User' Role**
 
-![Storage Account](../media/local_deployment_storage.png)
+    ```bash
+    subscriptionId='your-subscription-id'
+    resourceGroupName='your-resource-group-name'
+    openAIAccountName='your-azure-openai-service-name'
+    principalId='your-user-object-id-in-microsoft-entra-id'
+
+    az role assignment create \
+      --role "Cognitive Services OpenAI User" \
+      --assignee $principalId \
+      --scope /subscriptions/$subscriptionId/resourceGroups/$resourceGroupName/providers/Microsoft.CognitiveServices/accounts/$openAIAccountName
+    ```
+
+2. **Azure AI Search 'Search Service Contributor' and 'Search Index Data Contributor' Roles**
+
+    ```bash
+    subscriptionId='your-subscription-id'
+    resourceGroupName='your-resource-group-name'
+    aiSearchResource='your-ai-search-resource-name'
+    principalId='your-user-object-id-in-microsoft-entra-id'
+
+    az role assignment create \
+      --role "Search Service Contributor" \
+      --assignee $principalId \
+      --scope /subscriptions/$subscriptionId/resourceGroups/$resourceGroupName/providers/Microsoft.Search/searchServices/$aiSearchResource
+
+    az role assignment create \
+      --role "Search Index Data Contributor" \
+      --assignee $principalId \
+      --scope /subscriptions/$subscriptionId/resourceGroups/$resourceGroupName/providers/Microsoft.Search/searchServices/$aiSearchResource
+    ```
+
+3. **Storage Blob Data Contributor**
+
+    To read the content of the **blob storage**, assign the **Storage Blob Data Contributor** role to the identity used to run the program locally. 
+
+    **Using Azure CLI:**
+
+    ```bash
+    subscriptionId='your-subscription-id'
+    resourceGroupName='your-resource-group-name'
+    storageAccountName='your-storage-account-name'
+    principalId='your-user-object-id-in-microsoft-entra-id'
+
+    az role assignment create \
+      --role "Storage Blob Data Contributor" \
+      --assignee $principalId \
+      --scope /subscriptions/$subscriptionId/resourceGroups/$resourceGroupName/providers/Microsoft.Storage/storageAccounts/$storageAccountName
+    ```
+
+4. **Key Vault 'Secret Management' Roles**
+
+    Assign the necessary permissions to manage secrets within your Key Vault.
+
+    ```bash
+    subscriptionId='your-subscription-id'
+    resourceGroupName='your-resource-group-name'
+    keyVaultName='your-key-vault-name'
+    principalId='your-user-object-id-in-microsoft-entra-id'
+
+    az keyvault set-policy \
+      --name $keyVaultName \
+      --object-id $principalId \
+      --secret-permissions get list set
+    ```
+
+5. **Cognitive Services User**
+
+    Assign the **Cognitive Services User** role to allow access to Cognitive Services resources.
+
+    ```bash
+    subscriptionId='your-subscription-id'
+    resourceGroupName='your-resource-group-name'
+    cognitiveServicesName='your-cognitive-services-account-name'
+    principalId='your-user-object-id-in-microsoft-entra-id'
+
+    az role assignment create \
+      --role "Cognitive Services User" \
+      --assignee $principalId \
+      --scope /subscriptions/$subscriptionId/resourceGroups/$resourceGroupName/providers/Microsoft.CognitiveServices/accounts/$cognitiveServicesName
+    ```
+
+---
+
+> [!Note] 
+> Replace the placeholder values (e.g., `'your-subscription-id'`, `'your-resource-group-name'`, etc.) with your actual Azure resource details and your user's Object ID from Microsoft Entra ID.
+
+By following these scripts, you ensure that your user has the necessary permissions to interact with the required Azure services when running the data ingestion locally with VS Code.

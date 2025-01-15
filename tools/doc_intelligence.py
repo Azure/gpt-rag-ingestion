@@ -36,7 +36,7 @@ class DocumentIntelligenceClient:
 
         # API configuration
         self.DOCINT_40_API = '2023-10-31-preview'
-        self.DEFAULT_API_VERSION = '2023-07-31'
+        self.DEFAULT_API_VERSION = '2024-11-30'
         self.api_version = os.getenv('FORM_REC_API_VERSION', os.getenv('DOCINT_API_VERSION', self.DEFAULT_API_VERSION))
         self.docint_40_api = self.api_version >= self.DOCINT_40_API
 
@@ -124,6 +124,7 @@ class DocumentIntelligenceClient:
         """
         result = {}
         errors = []
+        result_id = None
 
         # Get the file extension from the filename
         file_ext = self._get_file_extension(filename)
@@ -196,6 +197,15 @@ class DocumentIntelligenceClient:
             errors.append(error_message)
             return result, errors
 
+        # Extract result_id
+        try:
+            result_id = get_url.split("/")[-1].split("?")[0]
+            logging.debug(f"[docintelligence][{filename}] Extracted result_id: {result_id}")
+        except Exception as e:
+            error_message = f"Error extracting result_id: {e}"
+            logging.error(f"[docintelligence][{filename}] {error_message}")
+            errors.append(error_message)
+
         result_headers = headers.copy()
         result_headers["Content-Type"] = "application/json-patch+json"
 
@@ -223,6 +233,10 @@ class DocumentIntelligenceClient:
                 errors.append(error_message)
                 break
 
+        # enrich result
+        result['result_id'] = result_id
+        result['model_id'] = model
+
         return result, errors
 
 
@@ -239,6 +253,7 @@ class DocumentIntelligenceClient:
         """
         result = {}
         errors = []
+        result_id = None
 
         filename = os.path.basename(urlparse(file_url).path)
         file_ext = self._get_file_extension(file_url)
@@ -331,6 +346,15 @@ class DocumentIntelligenceClient:
             errors.append(error_message)
             return result, errors
 
+        # Extract result_id
+        try:
+            result_id = get_url.split("/")[-1].split("?")[0]
+            logging.debug(f"[docintelligence][{filename}] Extracted result_id: {result_id}")
+        except Exception as e:
+            error_message = f"Error extracting result_id: {e}"
+            logging.error(f"[docintelligence][{filename}] {error_message}")
+            errors.append(error_message)
+
         result_headers = headers.copy()
         result_headers["Content-Type"] = "application/json-patch+json"
 
@@ -358,4 +382,57 @@ class DocumentIntelligenceClient:
                 errors.append(error_message)
                 break
 
+        # enrich result
+        result['result_id'] = result_id
+        result['model_id'] = model
+
         return result, errors
+
+
+    def get_figure(self, model_id: str, result_id: str, figure_id: str) -> bytes:
+        """
+        Retrieves the binary image data for a specific figure from the Document Intelligence service.
+
+        Args:
+            model_id (str): The ID of the document model used for analysis.
+            result_id (str): The ID of the analysis result.
+            figure_id (str): The ID of the figure to retrieve.
+
+        Returns:
+            bytes: The binary image data of the figure.
+
+        Raises:
+            Exception: If the request fails or the response is invalid.
+        """
+        endpoint = f"https://{self.service_name}.cognitiveservices.azure.com/documentintelligence/documentModels/{model_id}/analyzeResults/{result_id}/figures/{figure_id}"
+        url = f"{endpoint}?api-version={self.api_version}"
+
+        try:
+            token = self.credential.get_token("https://cognitiveservices.azure.com/.default")
+            headers = {
+                "Authorization": f"Bearer {token.token}",
+                "x-ms-useragent": "gpt-rag/1.0.0"
+            }
+            logging.debug(f"[docintelligence] Fetching figure {figure_id} from result {result_id} using model {model_id}.")
+        except ClientAuthenticationError as e:
+            error_message = f"Authentication failed while fetching figure: {e}"
+            logging.error(f"[docintelligence] {error_message}")
+            raise Exception(error_message)
+        except Exception as e:
+            error_message = f"Unexpected error during authentication while fetching figure: {e}"
+            logging.error(f"[docintelligence] {error_message}")
+            raise Exception(error_message)
+
+        try:
+            response = requests.get(url, headers=headers)
+            if response.status_code == 200:
+                logging.debug(f"[docintelligence] Successfully retrieved figure {figure_id}.")
+                return response.content  # Returns binary data
+            else:
+                error_message = f"Failed to retrieve figure {figure_id}, status code {response.status_code}: {response.text}"
+                logging.error(f"[docintelligence] {error_message}")
+                raise Exception(error_message)
+        except Exception as e:
+            error_message = f"Error when sending GET request for figure {figure_id}: {e}"
+            logging.error(f"[docintelligence] {error_message}")
+            raise Exception(error_message)

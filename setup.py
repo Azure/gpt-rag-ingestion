@@ -411,7 +411,6 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     start_time = time.time()
 
     # Define storage connection string without account key
-    # TODO: Use storage account resource group
     storage_connection_string = f"ResourceId=/subscriptions/{subscription_id}/resourceGroups/{azure_storage_resource_group}/providers/Microsoft.Storage/storageAccounts/{storage_account_name}/;"
 
     # Creating main datasource
@@ -435,7 +434,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     # Creating indexes
     ###############################################################################
 
-    def create_index_body(index_name, fields, content_field_name, keyword_field_name, vector_dimensions, vector_profile_name="myHnswProfile", vector_algorithm_name="myHnswConfig", dimensions=3072):
+    def create_index_body(index_name, fields, content_fields_name, keyword_field_name, vector_profile_name="myHnswProfile", vector_algorithm_name="myHnswConfig"):
         body = {
             "name": index_name,
             "fields": fields,
@@ -468,10 +467,11 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                     {
                         "name": "my-semantic-config",
                         "prioritizedFields": {
-                            "prioritizedContentFields": [
+                             "prioritizedContentFields": [
                                 {
-                                    "fieldName": content_field_name
+                                    "fieldName": field_name
                                 }
+                                for field_name in content_fields_name
                             ],
                             "prioritizedKeywordsFields": [
                                 {
@@ -557,6 +557,13 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                     "analyzer": search_analyzer_name 
                 },
                 {
+                    "name": "imageCaptions",
+                    "type": "Edm.String",
+                    "searchable": True,
+                    "retrievable": True,
+                    "analyzer": search_analyzer_name 
+                },                
+                {
                     "name": "page",
                     "type": "Edm.Int32",
                     "searchable": False,
@@ -641,11 +648,18 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                     "retrievable": True,
                     "dimensions": azure_embeddings_vector_size,
                     "vectorSearchProfile": vector_profile_name
+                },
+                {
+                    "name": "captionVector",
+                    "type": "Collection(Edm.Single)",
+                    "searchable": True,
+                    "retrievable": True,
+                    "dimensions": azure_embeddings_vector_size,
+                    "vectorSearchProfile": vector_profile_name
                 }
             ],
-            "content_field_name": "content",
-            "keyword_field_name": "category",
-            "vector_dimensions": azure_embeddings_vector_size
+            "content_fields_name": ["content", "imageCaptions"],
+            "keyword_field_name": "category"
         },
         {
             "index_name": search_index_name_nl2sql_queries,
@@ -710,9 +724,8 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                     "vectorSearchProfile": vector_profile_name
                 }
             ],
-            "content_field_name": "question",
-            "keyword_field_name": "question",
-            "vector_dimensions": azure_embeddings_vector_size
+            "content_fields_name": ["question"],
+            "keyword_field_name": "question"
         },
         {
             "index_name": search_index_name_nl2sql_tables,
@@ -755,9 +768,8 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                     "vectorSearchProfile": vector_profile_name
                 }
             ],
-            "content_field_name": "description",
-            "keyword_field_name": "description",
-            "vector_dimensions": azure_embeddings_vector_size
+            "content_fields_name": ["description"],
+            "keyword_field_name": "description"
         },
         {
             "index_name": search_index_name_nl2sql_columns,
@@ -810,9 +822,8 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                     "vectorSearchProfile": vector_profile_name
                 }
             ],
-            "content_field_name": "description",
-            "keyword_field_name": "description",
-            "vector_dimensions": azure_embeddings_vector_size
+            "content_fields_name": ["description"],
+            "keyword_field_name": "description"
         }
     ]
 
@@ -821,12 +832,10 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
         body = create_index_body(
             index_name=index["index_name"],
             fields=index["fields"],
-            content_field_name=index["content_field_name"],
+            content_fields_name=index["content_fields_name"],
             keyword_field_name=index["keyword_field_name"],
-            vector_dimensions=index["vector_dimensions"],
             vector_profile_name=vector_profile_name,
-            vector_algorithm_name=vector_algorithm_name,
-            dimensions=azure_embeddings_vector_size
+            vector_algorithm_name=vector_algorithm_name
         )
         # Delete existing index if it exists
         call_search_api(search_service, search_api_version, "indexes", index["index_name"], "delete", credential)
@@ -939,6 +948,11 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                             "inputs": []
                         },
                         {
+                            "name": "imageCaptions",
+                            "source": "/document/chunks/*/imageCaptions",
+                            "inputs": []
+                        },                        
+                        {
                             "name": "summary",
                             "source": "/document/chunks/*/summary",
                             "inputs": []
@@ -947,7 +961,12 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                             "name": "source",
                             "source": "/document/chunks/*/source",
                             "inputs": []
-                        },                                                      
+                        },
+                        {
+                            "name": "captionVector",
+                            "source": "/document/chunks/*/captionVector",
+                            "inputs": []
+                        },                                                                              
                         {
                             "name": "contentVector",
                             "source": "/document/chunks/*/contentVector",
@@ -1302,7 +1321,7 @@ def main(subscription_id=None, resource_group=None, function_app_name=None, sear
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')    
-    parser = argparse.ArgumentParser(description='Script to do the data ingestion setup for Azure Cognitive Search.')
+    parser = argparse.ArgumentParser(description='Script to do the data ingestion setup for Azure AI Search.')
     parser.add_argument('-s', '--subscription_id', help='Subscription ID')
     parser.add_argument('-r', '--resource_group', help='Resource group (Function App)')
     parser.add_argument('-f', '--function_app_name', help='Chunking function app name')

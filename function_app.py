@@ -11,7 +11,8 @@ import azure.functions as func
 
 from chunking import DocumentChunker
 from connectors import SharepointFilesIndexer, SharepointDeletedFilesPurger
-from tools import BlobStorageClient
+from connectors import ImagesDeletedFilesPurger
+from tools import BlobClient
 from utils.file_utils import get_filename
 
 # -------------------------------
@@ -48,37 +49,67 @@ for logger_name in suppress_loggers:
 
 app = func.FunctionApp()
 
-# -------------------------------
+# ---------------------------------------------
 # SharePoint Connector Functions (Timer Triggered)
-# -------------------------------
+# ---------------------------------------------
 
 @app.function_name(name="sharepoint_index_files")
 @app.schedule(
-    schedule="0 */10 * * * *", 
+    schedule="0 */30 * * * *", 
     arg_name="timer", 
     run_on_startup=True
 )
 async def sharepoint_index_files(timer: func.TimerRequest) -> None:
-    logging.info("[sharepoint_index_files_function] Started sharepoint files indexing function.")
+    logging.debug("[sharepoint_index_files] Started sharepoint files indexing function.")
     try:
         indexer = SharepointFilesIndexer()
         await indexer.run() 
     except Exception as e:
-        logging.error(f"[sharepoint_index_files_function] An unexpected error occurred: {e}", exc_info=True)
+        logging.error(f"[sharepoint_index_files] An unexpected error occurred: {e}", exc_info=True)
 
 @app.function_name(name="sharepoint_purge_deleted_files")
 @app.schedule(
-    schedule="0 */10 * * * *", 
+    schedule="0 */60 * * * *", 
     arg_name="timer", 
     run_on_startup=False
 )
 async def sharepoint_purge_deleted_files(timer: func.TimerRequest) -> None:
-    logging.info("[sharepoint_purge_deleted_files_function] Started sharepoint purge deleted files function.")
+    logging.debug("[sharepoint_purge_deleted_files] Started sharepoint purge deleted files function.")
     try:
         purger = SharepointDeletedFilesPurger()
         await purger.run() 
     except Exception as e:
-        logging.error(f"[sharepoint_purge_deleted_files_function] An unexpected error occurred: {e}", exc_info=True)
+        logging.error(f"[sharepoint_purge_deleted_files] An unexpected error occurred: {e}", exc_info=True)
+
+# ---------------------------------------------
+# Deleted Files Image Purger (Timer Triggered)
+# ---------------------------------------------
+
+@app.function_name(name="multimodality_images_purger")
+@app.schedule(schedule="0 0 0 * * *",   # runs at 00:00 UTC daily
+             arg_name="timer",
+             run_on_startup=True,
+             use_monitor=True)
+async def images_purge_timer(timer: func.TimerRequest):
+    if timer.past_due:
+        logging.info("[multimodality_images_purger] Timer is past due.")
+    
+    logging.info("[multimodality_images_purger] Timer trigger started.")
+
+    # Purge only runs when MULTIMODALITY == 'true'
+    multi_var = (os.getenv("MULTIMODALITY") or "").lower()
+    should_run_multimodality = multi_var in ["true", "1", "yes"]
+
+    # Only run if MULTIMODALITY == true
+    if not should_run_multimodality:
+        logging.info("[multimodality_images_purger] MULTIMODALITY != true. Skipping purge.")
+        return
+
+    try:
+        purger = ImagesDeletedFilesPurger()
+        await purger.run()
+    except Exception as e:
+        logging.error(f"[multimodality_images_purger] Error running images purge: {e}")
 
 # -------------------------------
 # Document Chunking Function (HTTP Triggered by AI Search)
@@ -111,7 +142,7 @@ def document_chunking(req: func.HttpRequest) -> func.HttpResponse:
             start_time = time.time()
 
             # Enrich the input data with the document bytes and file name
-            blob_client = BlobStorageClient(input_data["documentUrl"])
+            blob_client = BlobClient(input_data["documentUrl"])
             document_bytes = blob_client.download_blob()
             input_data['documentBytes'] = document_bytes          
             input_data['fileName'] = filename
