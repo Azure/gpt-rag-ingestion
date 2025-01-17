@@ -1,0 +1,62 @@
+# .github/workflows/azure-dev.yml
+name: Build and deploy
+on: 
+  push: 
+    branches: 
+      - develop
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install azd
+        uses: Azure/setup-azd@v1.0.0
+
+      - name: Install Azure CLI
+        uses: azure/cli@v2
+        with:
+          version: latest
+
+      - name: Log in with Azure (Client Credentials)
+        if: ${{ env.AZURE_CREDENTIALS != '' }}
+        run: |
+            $info = $Env:AZURE_CREDENTIALS | ConvertFrom-Json -AsHashtable;
+            Write-Host "::add-mask::$($info.clientSecret)"
+  
+            azd auth login `
+              --client-id "$($info.clientId)" `
+              --client-secret "$($info.clientSecret)" `
+              --tenant-id "$($info.tenantId)"
+        shell: pwsh
+        env:
+            AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+  
+      - name: Refresh Enviroment
+        run: azd env refresh --no-prompt
+        env:
+            AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME }}
+            AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+            AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  
+      - name: Deploy Application
+        run: azd deploy --no-prompt
+        env:
+            AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME }}
+            AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+            AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
