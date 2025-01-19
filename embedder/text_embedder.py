@@ -69,7 +69,26 @@ class TextEmbedder():
             return embedding            
         except Exception as e:
             error_message = str(e)
-            seconds = self.extract_retry_seconds(error_message) * 2
-            logging.warning(f"Embeddings model deployment rate limit exceeded, retrying in {seconds} seconds...")
-            time.sleep(seconds)
-            raise e # to make tenacity retry
+
+            # handle rate limit errors 
+            if "rate limit" in error_message.lower():
+                seconds = self.extract_retry_seconds(error_message)*2
+                logging.warning(f"Rate limit exceed, retrying in {seconds} seconds...")
+                time.sleep(seconds)
+                raise e # retry with tenacity 
+            
+            # handle invalid model errors 
+            elif "invalid model" in error_message or "model not found" in error_message:
+                logging.error(f"Invalid model error: {self.AZURE_OPENAI_EMBEDDING_DEPLOYMENT}")
+                raise ValueError(f"Invalid model error: {self.AZURE_OPENAI_EMBEDDING_DEPLOYMENT}")
+            
+            # handle authentication errors 
+            elif "authentication" in error_message or "unauthorized" in error_message:
+                logging.error("Authentication failed. Please check your API key and endpoint.")
+                raise ValueError("Authentication failed. Please check your API and endpoint.")
+            
+            # handle other errors 
+            else:
+                logging.error(f"An unexpected error occurred: {error_message}")
+                raise ValueError(f"An unexpected error occurred: {error_message}")
+
