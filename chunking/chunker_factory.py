@@ -1,7 +1,7 @@
 import logging
 from .chunkers.doc_analysis_chunker import DocAnalysisChunker
 from .chunkers.langchain_chunker import LangChainChunker
-
+from .exceptions import DocIntNotAvailableError
 from tools import DocumentIntelligenceClient
 
 class ChunkerFactory:
@@ -38,9 +38,7 @@ class ChunkerFactory:
                 return DocAnalysisChunker(data)
             else:
                 logging.info(f"[chunker_factory][{filename}] Processing 'pptx' and 'docx' files requires Doc Intelligence 4.0.")                
-                raise RuntimeError("Processing 'pptx' and 'docx' files requires Doc Intelligence 4.0.")
-        # elif extension in ('nl2sql'):
-        #     return NL2SQLChunker(data)
+                raise DocIntNotAvailableError("Processing 'pptx' and 'docx' files requires Doc Intelligence 4.0.")
         else:
             return LangChainChunker(data)
         
