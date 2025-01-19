@@ -5,7 +5,7 @@ import re
 from langchain.text_splitter import MarkdownTextSplitter, RecursiveCharacterTextSplitter
 
 from .base_chunker import BaseChunker
-from ..exceptions import UnsupportedFormatError
+from ..exceptions import UnsupportedFormatError, DocAnalysisError
 from tools import DocumentIntelligenceClient
 
 
@@ -84,7 +84,7 @@ class DocAnalysisChunker(BaseChunker):
         document, analysis_errors = self._analyze_document_with_retry()
         if analysis_errors:
             formatted_errors = ', '.join(map(str, analysis_errors))
-            raise Exception(f"Error in doc_analysis_chunker analyzing {self.filename}: {formatted_errors}")
+            raise DocAnalysisError(f"Error in doc_analysis_chunker analyzing {self.filename}: {formatted_errors}")
 
         chunks = self._process_document_chunks(document)
         
