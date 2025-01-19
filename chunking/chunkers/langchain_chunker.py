@@ -72,8 +72,21 @@ class LangChainChunker(BaseChunker):
             raise UnsupportedFormatError(f"[langchain_chunker] {self.filename} {self.extension} format is not supported")
         
         blob_data = self.document_bytes
-        # Decode the bytes into text (assuming it's UTF-8 encoded)
-        text = blob_data.decode('utf-8')
+        # try different ecnodings in order of likelihood 
+        encodings = ['utf-8', 'latin-1', 'cp1252', 'ascii']
+        text = None 
+
+        for encoding in encodings: 
+            try: 
+                text = blob_data.decode(encoding)
+                break 
+            except UnicodeDecodeError: 
+                continue 
+
+        if text is None: 
+            # final fallback: use utf-8 with replace error handler 
+            text = blob_data.decode('utf-8', errors='replace')
+            logging.warning(f"[langchain_chunker] {self.filename} could not be decoded using any of the encodings {encodings}, using utf-8 with replace error handler")
 
         text_chunks = self._chunk_content(text)
         skipped_chunks = 0
