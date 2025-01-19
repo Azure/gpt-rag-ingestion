@@ -127,6 +127,10 @@ def document_chunking(req: func.HttpRequest) -> func.HttpResponse:
         error_message = f"Invalid request: {e}"
         logging.error(f"[document_chunking_function] {error_message}", exc_info=True)
         return func.HttpResponse(error_message, status_code=400)
+    except Exception as e: 
+        error_message = f"An unexpected error occured: {str(e)}"
+        logging.error(f"[document_chunking_function] {error_message}", exc_info=True)
+        return func.HttpResponse(error_message, status_code=500)
     
 class DateTimeEncoder(JSONEncoder):
     # Override the default method
