@@ -106,7 +106,8 @@ class DocumentChunker:
 
             logging.info(f"[document_chunking][{filename}] chunking document.")
 
-            chunks, errors, warnings = DocumentChunker().chunk_document(data)
+            # Use self instead of creating a new DocumentChunker instance
+            chunks, errors, warnings = self.chunk_document(data)
 
         except jsonschema.exceptions.ValidationError as e:
             error_message = f"Invalid request: {e}"
