@@ -201,7 +201,11 @@ class BaseChunker:
 
         # Use summary for embedding if available; otherwise, use truncated content
         embedding_text = embedding_text if embedding_text else truncated_content
-        content_vector = self.aoai_client.get_embeddings(embedding_text)
+        try:
+            content_vector = self.aoai_client.get_embeddings(embedding_text)
+        except Exception as e:
+            logging.error(f"[base_chunker][{self.filename}] Failed to generate embeddings: {e}")            
+            content_vector = []
 
         return {
             "chunk_id": chunk_id,
