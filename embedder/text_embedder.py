@@ -51,16 +51,6 @@ class TextEmbedder():
 
             return text
 
-    @retry(reraise=True, wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(6))
-    def embed_content(self, text, clean_text=True, use_single_precision=True):
-        embedding_precision = 9 if use_single_precision else 18
-        if clean_text:
-            text = self.clean_text(text)
-        response = client.embeddings.create(input=text, model=self.AZURE_OPENAI_EMBEDDING_DEPLOYMENT)
-
-        embedding = [round(x, embedding_precision) for x in response.data[0].embedding] # type: ignore
-        return embedding
-
     def extract_retry_seconds(self, error_message):
         match = re.search(r'retry after (\d+)', error_message)
         if match:
