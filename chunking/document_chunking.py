@@ -2,6 +2,7 @@ import logging
 import time
 import json
 import jsonschema
+import psutil
 
 from utils import get_file_extension, get_filename
 from .chunker_factory import ChunkerFactory
@@ -101,13 +102,23 @@ class DocumentChunker:
         
         try:
             start_time = time.time()
+            process = psutil.Process()
+            initial_memory = process.memory_info().rss / 1024 / 1024  # Memory in MB
 
             filename = data['documentUrl'].split('/')[-1]
+            logging.info(f"[document_chunking][{filename}] Starting chunking process. Initial memory usage: {initial_memory:.1f}MB")
 
-            logging.info(f"[document_chunking][{filename}] chunking document.")
-
-            # Use self instead of creating a new DocumentChunker instance
+            # Log progress before chunking
+            logging.info(f"[document_chunking][{filename}] Initializing chunker...")
             chunks, errors, warnings = self.chunk_document(data)
+            
+            # Log memory usage after chunking
+            current_memory = process.memory_info().rss / 1024 / 1024
+            memory_diff = current_memory - initial_memory
+            logging.info(
+                f"[document_chunking][{filename}] Chunking complete. "
+                f"Memory usage: {current_memory:.1f}MB (diff:{memory_diff:+.1f}MB)"
+            )
 
         except jsonschema.exceptions.ValidationError as e:
             error_message = f"Invalid request: {e}"
