@@ -132,7 +132,7 @@ class BaseChunker:
         self.filename = os.path.basename(decoded_path)
         
         # Get the file extension (including the dot)
-        self.extension = os.path.splitext(self.filename)[1].lower()
+        self.extension = os.path.splitext(self.filename)[1].lower().lstrip('.')
         
         # Add debug logging
         logging.debug(f"[base_chunker] Original URL path: {parsed_url.path}")
