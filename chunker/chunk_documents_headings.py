@@ -60,20 +60,6 @@ def check_timeout(start_time):
     else:
         return False
 
-
-def indexer_error_message(error_type, exception=None):
-    error_message = "no error message"
-    if error_type == "timeout":
-        error_message = "Terminating the function so it doesn't run indefinitely. The AI Search indexer's timout is 3m50s. If the document is large (more than 100 pages), try dividing it into smaller files. If you are encountering many 429 errors in the function log, try increasing the embedding model's quota as the retrial logic delays processing."
-    elif error_type == "embedding":
-        error_message = (
-            "Error when embedding the chunk, if it is a 429 error code please consider increasing your embeddings model quota: "
-            + str(exception)
-        )
-    logging.info(f"Error: {error_message}")
-    return {"message": error_message}
-
-
 def has_supported_file_extension(file_path: str) -> bool:
     """Checks if the given file format is supported based on its file extension.
     Args:

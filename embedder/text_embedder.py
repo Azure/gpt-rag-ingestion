@@ -51,16 +51,6 @@ class TextEmbedder():
 
             return text
 
-    @retry(reraise=True, wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(6))
-    def embed_content(self, text, clean_text=True, use_single_precision=True):
-        embedding_precision = 9 if use_single_precision else 18
-        if clean_text:
-            text = self.clean_text(text)
-        response = client.embeddings.create(input=text, model=self.AZURE_OPENAI_EMBEDDING_DEPLOYMENT)
-
-        embedding = [round(x, embedding_precision) for x in response.data[0].embedding] # type: ignore
-        return embedding
-
     def extract_retry_seconds(self, error_message):
         match = re.search(r'retry after (\d+)', error_message)
         if match:
@@ -79,7 +69,26 @@ class TextEmbedder():
             return embedding            
         except Exception as e:
             error_message = str(e)
-            seconds = self.extract_retry_seconds(error_message) * 2
-            logging.warning(f"Embeddings model deployment rate limit exceeded, retrying in {seconds} seconds...")
-            time.sleep(seconds)
-            raise e # to make tenacity retry
+
+            # handle rate limit errors 
+            if "rate limit" in error_message.lower():
+                seconds = self.extract_retry_seconds(error_message)*2
+                logging.warning(f"Rate limit exceed, retrying in {seconds} seconds...")
+                time.sleep(seconds)
+                raise e # retry with tenacity 
+            
+            # handle invalid model errors 
+            elif "invalid model" in error_message or "model not found" in error_message:
+                logging.error(f"Invalid model error: {self.AZURE_OPENAI_EMBEDDING_DEPLOYMENT}")
+                raise ValueError(f"Invalid model error: {self.AZURE_OPENAI_EMBEDDING_DEPLOYMENT}")
+            
+            # handle authentication errors 
+            elif "authentication" in error_message or "unauthorized" in error_message:
+                logging.error("Authentication failed. Please check your API key and endpoint.")
+                raise ValueError("Authentication failed. Please check your API and endpoint.")
+            
+            # handle other errors 
+            else:
+                logging.error(f"An unexpected error occurred: {error_message}")
+                raise ValueError(f"An unexpected error occurred: {error_message}")
+

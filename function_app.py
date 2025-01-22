@@ -1,152 +1,144 @@
-import azure.functions as func
-
-app = func.FunctionApp()
+import logging
+import json
+# import asyncio
+import os
+import time
+import datetime
 from json import JSONEncoder
 
+import jsonschema
+import azure.functions as func
 
-class DateTimeEncoder(JSONEncoder):
-    # Override the default method
-    def default(self, obj):
-        import datetime
+from chunking import DocumentChunker
+from tools import BlobStorageClient
+from utils.file_utils import get_filename
 
-        if isinstance(obj, (datetime.date, datetime.datetime)):
-            return obj.isoformat()
+# -------------------------------
+# Logging configuration
+# -------------------------------
+log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
+log_level = getattr(logging, log_level, logging.INFO)
+logging.basicConfig(
+    level=logging.INFO, 
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+suppress_loggers = [
+    'azure',
+    'azure.core',
+    'azure.core.pipeline',
+    'azure.core.pipeline.policies.http_logging_policy',
+    'azsdk-python-search-documents',
+    'azsdk-python-identity',
+    'azure.ai.openai',  # Assuming 'aoai' refers to Azure OpenAI
+    'azure.identity',
+    'azure.storage',
+    'azure.ai.*',  # Wildcard-like suppression for any azure.ai sub-loggers
+    # Add any other specific loggers if necessary
+]
+for logger_name in suppress_loggers:
+    logger = logging.getLogger(logger_name)
+    logger.setLevel(logging.WARNING)
+    logger.propagate = False  
+
+# -------------------------------
+# Azure Functions
+# -------------------------------
+
+app = func.FunctionApp()
 
 
+# -------------------------------
+# Document Chunking Function (HTTP Triggered by AI Search)
+# -------------------------------
+
+# Document Chunking Function (HTTP Triggered by AI Search)
 @app.route(route="document-chunking", auth_level=func.AuthLevel.FUNCTION)
 def document_chunking(req: func.HttpRequest) -> func.HttpResponse:
-    import jsonschema
-    import logging
-    import time
-    
-    logging.info('Invoked document_chunking skill.')
-
     try:
         body = req.get_json()
-        logging.info(f"REQUEST BODY: {body}")
         jsonschema.validate(body, schema=get_request_schema())
 
         if body:
+            # Log the incoming request
+            logging.info(f'[document_chunking_function] Invoked document_chunking skill. Number of items: {len(body["values"])}.')
+
+            input_data = {}
+
+            # Processing one item at a time to avoid exceeding the AI Search custom skill timeout (230 seconds)
+            # BatchSize should be set to 1 in the Skillset definition, if it is not set, will process just the last item
+            count_items = len(body["values"])
+            filename = ""
+            if count_items > 1:
+                logging.warning('BatchSize should be set to 1 in the Skillset definition. Processing only the last item.')
+            for i, item in enumerate(body["values"]):
+                input_data = item["data"]
+                filename = get_filename(input_data["documentUrl"])
+                logging.info(f'[document_chunking_function] Chunking document: File {filename}, Content Type {input_data["documentContentType"]}.')
+            
             start_time = time.time()
-            result = process_documents(body)
+
+            # Enrich the input data with the document bytes and file name
+            blob_client = BlobStorageClient(input_data["documentUrl"])
+            document_bytes = blob_client.download_blob()
+            input_data['documentBytes'] = document_bytes          
+            input_data['fileName'] = filename
+
+            # Chunk the document
+            chunks, errors, warnings = DocumentChunker().chunk_documents(input_data)
+
+            # Enrich chunks with metadata to be indexed
+            for chunk in chunks: chunk["source"] = "blob"
+         
+            # Debug logging
+            for idx, chunk in enumerate(chunks):
+                processed_chunk = chunk.copy()
+                processed_chunk.pop('contentVector', None)
+                if 'content' in processed_chunk and isinstance(processed_chunk['content'], str):
+                    processed_chunk['content'] = processed_chunk['content'][:100]
+                logging.debug(f"[document_chunking][{filename}] Chunk {idx + 1}: {json.dumps(processed_chunk, indent=4)}")
+
+
+            # Format results
+            values = {
+                "recordId": item['recordId'],
+                "data": {"chunks": chunks},
+                "errors": errors,
+                "warnings": warnings
+            }
+            
+            results = {"values": [values]}
+            result = json.dumps(results, ensure_ascii=False, cls=DateTimeEncoder)
+
             end_time = time.time()
             elapsed_time = end_time - start_time
-            logging.info(f'[document_chunking] Finished document_chunking skill in {elapsed_time:.2f} seconds.')
+            
+            logging.info(f'[document_chunking_function] Finished document_chunking skill in {elapsed_time:.2f} seconds.')
             return func.HttpResponse(result, mimetype="application/json")
         else:
             error_message = "Invalid body."
-            logging.error(error_message)
+            logging.error(f"[document_chunking_function] {error_message}", exc_info=True)
             return func.HttpResponse(error_message, status_code=400)
     except ValueError as e:
-        error_message = "Invalid body: {0}".format(e)
-        logging.error(f"Value Error: {error_message}")
+        error_message = f"Invalid body: {e}"
+        logging.error(f"[document_chunking_function] {error_message}", exc_info=True)
         return func.HttpResponse(error_message, status_code=400)
     except jsonschema.exceptions.ValidationError as e:
-        error_message = "Invalid request: {0}".format(e)
-        logging.error(f"Invalid request: {error_message}")
+        error_message = f"Invalid request: {e}"
+        logging.error(f"[document_chunking_function] {error_message}", exc_info=True)
         return func.HttpResponse(error_message, status_code=400)
-    except Exception as e:
-        error_message = "An error occurred: {0}".format(e)
-        logging.error(f"An error occurred: {error_message}")
+    except Exception as e: 
+        error_message = f"An unexpected error occured: {str(e)}"
+        logging.error(f"[document_chunking_function] {error_message}", exc_info=True)
         return func.HttpResponse(error_message, status_code=500)
-
-
-def format_messages(messages):
-    formatted = [{"message": msg} for msg in messages]
-    return formatted
-
-
-def process_documents(body):
-    import json
-    import logging
-    import os
-    import chunker.chunk_documents_headings
-    import chunker.chunk_documents_raw
-    import chunker.chunk_documents_headings
-
-    values = body["values"]
-    results = {}
-    results["values"] = []
-    use_default_chunking = os.getenv("USE_DEFAULT_CHUNKING", "false")
-    for value in values:
-        # perform operation on each record (document)
-        data = value["data"]
-
-        chunks = []
-        errors = []
-        warnings = []
-
-        output_record = {
-            "recordId": value["recordId"],
-            "data": None,
-            "errors": None,
-            "warnings": None,
-        }
-
-        # Execute the new chunking method if environment variable is set
-        if use_default_chunking == "false":
-            logging.info(f"Chunking {data['documentUrl'].split('/')[-1]}.")
-            chunks, errors, warnings = chunker.chunk_documents_headings.chunk_document(
-                data
-            )
-
-        elif chunker.chunk_documents_headings.has_supported_file_extension(
-            data["documentUrl"]
-        ):
-            logging.info(
-                f"Chunking (doc intelligence) {data['documentUrl'].split('/')[-1]}."
-            )
-            chunks, errors, warnings = chunker.chunk_documents_headings.chunk_document(
-                data
-            )
-
-        elif chunker.chunk_documents_raw.has_supported_file_extension(
-            data["documentUrl"]
-        ):
-            logging.info(f"Chunking (raw) {data['documentUrl'].split('/')[-1]}.")
-            chunks, errors, warnings = chunker.chunk_documents_raw.chunk_document(data)
-
-        # errors = []
-        # warnings = []å
-        # chunks = [{
-        #             "filepath": '123',
-        #             "chunk_id": 0,
-        #             "offset": 0,
-        #             "length": 0,
-        #             "page": 1,
-        #             "title": "default",
-        #             "category": "default",
-        #             "url": '123',
-        #             "content": data['documentUrl'],
-        #             "contentVector": [0.1] * 1536,
-        #             },
-        #             {
-        #                 "filepath": '123',
-        #                 "chunk_id": 2,
-        #                 "offset": 0,
-        #                 "length": 0,
-        #                 "page": 1,
-        #                 "title": "default",
-        #                 "category": "default",
-        #                 "url": '123',
-        #                 "content": data['documentUrl'],
-        #                 "contentVector": [0.1] * 1536,
-        #             }]
-
-        if len(warnings) > 0:
-            output_record["warnings"] = format_messages(warnings)
-
-        if len(errors) > 0:
-            output_record["errors"] = format_messages(errors)
-
-        output_record["data"] = {"docintContent": chunks}
-
-        if output_record != None:
-            results["values"].append(output_record)
-
-        return json.dumps(results, ensure_ascii=False, cls=DateTimeEncoder)
-
-
+    
+class DateTimeEncoder(JSONEncoder):
+    # Override the default method
+    def default(self, obj):
+        if isinstance(obj, (datetime.date, datetime.datetime)):
+            return obj.isoformat()
+        return super().default(obj)    
+    
 def get_request_schema():
     return {
         "$schema": "http://json-schema.org/draft-04/schema#",
@@ -163,19 +155,12 @@ def get_request_schema():
                             "type": "object",
                             "properties": {
                                 "documentUrl": {"type": "string", "minLength": 1},
-                                "documentContent": {"type": "string"},
-                                "documentSasToken": {"type": "string", "minLength": 1},
-                                "documentContentType": {
-                                    "type": "string",
-                                    "minLength": 1,
-                                },
+                              
+                                "documentSasToken": {"type": "string", "minLength": 0},
+
+                                "documentContentType": {"type": "string", "minLength": 1}
                             },
-                            "required": [
-                                "documentContent",
-                                "documentUrl",
-                                "documentSasToken",
-                                "documentContentType",
-                            ],
+                            "required": ["documentUrl", "documentContentType"],
                         },
                     },
                     "required": ["recordId", "data"],
