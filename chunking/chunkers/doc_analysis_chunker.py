@@ -58,7 +58,14 @@ class DocAnalysisChunker(BaseChunker):
         self.minimum_chunk_size = minimum_chunk_size or int(os.getenv("MIN_CHUNK_SIZE", "100"))
         self.token_overlap = token_overlap or int(os.getenv("TOKEN_OVERLAP", "100"))
         self.docint_client = DocumentIntelligenceClient()
-        self.supported_formats = self.docint_client.file_extensions
+        
+        # Ensure supported formats include the leading dot
+        self.supported_formats = [f".{ext.lower()}" if not ext.startswith('.') else ext.lower() 
+                                for ext in self.docint_client.file_extensions]
+        
+        # Add debug logging for format detection
+        logging.debug(f"[doc_analysis_chunker] File extension detected: {self.extension}")
+        logging.debug(f"[doc_analysis_chunker] Supported formats: {self.supported_formats}")
 
     def get_chunks(self):
         """

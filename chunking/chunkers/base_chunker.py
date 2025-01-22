@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+from urllib.parse import unquote, urlparse
 
 from tools import AzureOpenAIClient, GptTokenEstimator
 from utils.file_utils import get_file_extension
@@ -122,18 +123,26 @@ class BaseChunker:
         self.url = data['documentUrl']
         self.sas_token = data.get('documentSasToken', "")
         self.file_url = f"{self.url}{self.sas_token}"
-        self.filename = data['fileName']
-        self.extension = get_file_extension(self.url)
+        self.document_bytes = data.get('documentBytes', None)
+        document_url = data.get('documentUrl', '')
+        
+        # Parse and decode the URL to get the correct filename
+        parsed_url = urlparse(document_url)
+        decoded_path = unquote(parsed_url.path)  # Decode URL-encoded characters
+        self.filename = os.path.basename(decoded_path)
+        
+        # Get the file extension (including the dot)
+        self.extension = os.path.splitext(self.filename)[1].lower()
+        
+        # Add debug logging
+        logging.debug(f"[base_chunker] Original URL path: {parsed_url.path}")
+        logging.debug(f"[base_chunker] Decoded filename: {self.filename}")
+        logging.debug(f"[base_chunker] Detected extension: {self.extension}")
+        
         document_content = data.get('documentContent') 
         self.document_content = document_content if document_content else ""
         self.token_estimator = GptTokenEstimator()
         self.aoai_client = AzureOpenAIClient(document_filename=self.filename)
-        document_bytes = data.get('documentBytes') 
-        if document_bytes:
-            self.document_bytes = document_bytes 
-        else:
-            self.document_bytes = None
-            logging.warning(f"[base_chunker][{self.filename}] Document bytes not provided.")
 
     def get_chunks(self):
         """Abstract method to be implemented by subclasses."""
