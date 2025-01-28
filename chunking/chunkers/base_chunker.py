@@ -2,6 +2,7 @@ import logging
 import os
 import re
 
+from charset_normalizer import detect
 from tools import AzureOpenAIClient, GptTokenEstimator
 from utils.file_utils import get_file_extension
 
@@ -281,4 +282,16 @@ class BaseChunker:
 
         return text
 
-                  
+    def decode_to_utf8(self,blob_data):
+        # Detect the encoding
+        detected = detect(blob_data)
+        encoding = detected.get('encoding', 'utf-8')  # Default to UTF-8 if detection fails
+        # Decode the data to text using the detected encoding
+        try:
+            text = blob_data.decode(encoding)
+        except (UnicodeDecodeError, LookupError):
+            # Fallback in case of errors
+            logging.info(f"[base_chunker][{self.filename}] Failed to decode with detected encoding: {encoding}. Falling back to 'utf-8'.")
+            text = blob_data.decode('utf-8', errors='replace')
+        
+        return text
