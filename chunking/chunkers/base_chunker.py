@@ -288,7 +288,7 @@ class BaseChunker:
         encoding = detected.get('encoding', 'utf-8')  # Default to UTF-8 if detection fails
         # Decode the data to text using the detected encoding
         try:
-            text = blob_data.decode(encoding)
+            text = blob_data.decode(encoding, errors='replace')
         except (UnicodeDecodeError, LookupError):
             # Fallback in case of errors
             logging.info(f"[base_chunker][{self.filename}] Failed to decode with detected encoding: {encoding}. Falling back to 'utf-8'.")
