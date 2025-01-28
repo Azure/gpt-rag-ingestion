@@ -59,9 +59,13 @@ class DocAnalysisChunker(BaseChunker):
         self.token_overlap = token_overlap or int(os.getenv("TOKEN_OVERLAP", "100"))
         self.docint_client = DocumentIntelligenceClient()
         
-        # Ensure supported formats include the leading dot
-        self.supported_formats = [f".{ext.lower()}" if not ext.startswith('.') else ext.lower() 
-                                for ext in self.docint_client.file_extensions]
+        # Update format handling to ensure consistent format comparison
+        self.supported_formats = set(
+            f".{ext.lower().lstrip('.')}" for ext in self.docint_client.file_extensions
+        )
+        
+        # Ensure extension is in the correct format for comparison
+        self.extension = f".{self.extension.lower().lstrip('.')}"
         
         # Add debug logging for format detection
         logging.debug(f"[doc_analysis_chunker] File extension detected: {self.extension}")
