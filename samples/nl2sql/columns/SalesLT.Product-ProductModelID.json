@@ -1,5 +1,6 @@
 {
     "table_name": "SalesLT.Product",
     "column_name": "ProductModelID",
-    "description": "Product is a member of this product model. Foreign key to ProductModel.ProductModelID."
+    "description": "Product is a member of this product model. Foreign key to ProductModel.ProductModelID.",
+    "datasource": "adventureworks"
 }

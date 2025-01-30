@@ -1,5 +1,6 @@
 {
     "table_name": "SalesLT.SalesOrderHeader",
     "column_name": "OrderDate",
-    "description": "Date the sales order was created."
+    "description": "Date the sales order was created.",
+    "datasource": "adventureworks"
 }

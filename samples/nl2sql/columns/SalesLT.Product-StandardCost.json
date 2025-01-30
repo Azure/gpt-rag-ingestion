@@ -1,5 +1,6 @@
 {
     "table_name": "SalesLT.Product",
     "column_name": "StandardCost",
-    "description": "Standard cost of the product."
+    "description": "Standard cost of the product.",
+    "datasource": "adventureworks"
 }

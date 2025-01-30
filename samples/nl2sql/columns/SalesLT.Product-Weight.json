@@ -1,5 +1,6 @@
 {
     "table_name": "SalesLT.Product",
     "column_name": "Weight",
-    "description": "Product weight."
+    "description": "Product weight.",
+    "datasource": "adventureworks"
 }

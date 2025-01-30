@@ -1,5 +1,6 @@
 {
     "table_name": "SalesLT.SalesOrderHeader",
     "column_name": "SubTotal",
-    "description": "Sales subtotal. Computed as SUM(SalesOrderDetail.LineTotal) for the appropriate SalesOrderID."
+    "description": "Sales subtotal. Computed as SUM(SalesOrderDetail.LineTotal) for the appropriate SalesOrderID.",
+    "datasource": "adventureworks"
 }

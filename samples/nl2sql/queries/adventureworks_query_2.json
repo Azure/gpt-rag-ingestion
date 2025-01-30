@@ -1,4 +1,5 @@
 {
+    "datasource": "adventureworks",    
     "question": "How many customers have placed orders in the last month?",
     "query": "SELECT COUNT(DISTINCT CustomerID) AS NumberOfCustomers FROM SalesLT.SalesOrderHeader WHERE OrderDate >= DATEADD(month, -1, GETDATE())",
     "selected_tables": [

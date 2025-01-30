@@ -1,5 +1,6 @@
 {
     "table_name": "SalesLT.SalesOrderHeader",
     "column_name": "SalesOrderNumber",
-    "description": "Unique sales order identification number."
+    "description": "Unique sales order identification number.",
+    "datasource": "adventureworks"
 }

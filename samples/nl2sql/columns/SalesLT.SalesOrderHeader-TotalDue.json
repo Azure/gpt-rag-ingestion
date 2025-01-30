@@ -1,5 +1,6 @@
 {
     "table_name": "SalesLT.SalesOrderHeader",
     "column_name": "TotalDue",
-    "description": "Total due from customer. Computed as Subtotal + TaxAmt + Freight."
+    "description": "Total due from customer. Computed as Subtotal + TaxAmt + Freight.",
+    "datasource": "adventureworks"
 }

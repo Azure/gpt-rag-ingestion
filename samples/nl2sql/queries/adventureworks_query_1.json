@@ -1,4 +1,5 @@
 {
+    "datasource": "adventureworks",
     "question": "What are the top 5 most expensive products currently available for sale?",
     "query": "SELECT TOP 5 ProductID, Name, ListPrice FROM SalesLT.Product WHERE SellEndDate IS NULL ORDER BY ListPrice DESC",
     "selected_tables": [

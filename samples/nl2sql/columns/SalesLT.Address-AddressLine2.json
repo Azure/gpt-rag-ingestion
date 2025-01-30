@@ -1,5 +1,6 @@
 {
     "table_name": "SalesLT.Address",
     "column_name": "AddressLine2",
-    "description": "Second street address line."
+    "description": "Second street address line.",
+    "datasource": "adventureworks"
 }

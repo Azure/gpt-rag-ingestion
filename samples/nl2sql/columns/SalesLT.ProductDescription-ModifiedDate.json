@@ -1,5 +1,6 @@
 {
     "table_name": "SalesLT.ProductDescription",
     "column_name": "ModifiedDate",
-    "description": "Date and time the record was last updated."
+    "description": "Date and time the record was last updated.",
+    "datasource": "adventureworks"
 }

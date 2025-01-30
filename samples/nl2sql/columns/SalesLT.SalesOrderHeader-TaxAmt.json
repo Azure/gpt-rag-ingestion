@@ -1,5 +1,6 @@
 {
     "table_name": "SalesLT.SalesOrderHeader",
     "column_name": "TaxAmt",
-    "description": "Tax amount."
+    "description": "Tax amount.",
+    "datasource": "adventureworks"
 }

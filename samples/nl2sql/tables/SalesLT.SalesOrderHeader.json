@@ -1,4 +1,5 @@
 {
+    "datasource": "adventureworks",
     "table_name": "SalesLT.SalesOrderHeader",
     "description": "Contains details about sales orders, including shipping and financial data."
 }

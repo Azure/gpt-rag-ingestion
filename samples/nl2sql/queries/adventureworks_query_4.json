@@ -1,4 +1,5 @@
 {
+    "datasource": "adventureworks",
     "question": "List all products that have been discontinued, including their discontinuation date.",
     "query": "SELECT ProductID, Name, DiscontinuedDate FROM SalesLT.Product WHERE DiscontinuedDate IS NOT NULL",
     "selected_tables": [

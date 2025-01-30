@@ -1,5 +1,6 @@
 {
     "table_name": "SalesLT.Address",
     "column_name": "StateProvince",
-    "description": "Name of state or province."
+    "description": "Name of state or province.",
+    "datasource": "adventureworks"
 }

@@ -1,5 +1,6 @@
 {
     "table_name": "SalesLT.Address",
     "column_name": "CountryRegion",
-    "description": "Country or region of the address."
+    "description": "Country or region of the address.",
+    "datasource": "adventureworks"
 }

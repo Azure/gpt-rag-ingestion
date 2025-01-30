@@ -1,4 +1,5 @@
 {
+    "datasource": "adventureworks",
     "question": "What are the total sales and tax amounts for each sales order placed in the last year?",
     "query": "SELECT SalesOrderID, SubTotal, TaxAmt FROM SalesLT.SalesOrderHeader WHERE OrderDate >= DATEADD(year, -1, GETDATE())",
     "selected_tables": [

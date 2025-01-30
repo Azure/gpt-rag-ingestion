@@ -1,4 +1,5 @@
 {
+    "datasource": "adventureworks",
     "question": "What are the names and email addresses of customers who purchased products in the 'Bikes' category?",
     "query": "SELECT DISTINCT c.FirstName, c.LastName, c.EmailAddress FROM SalesLT.Customer c JOIN SalesLT.SalesOrderHeader soh ON c.CustomerID = soh.CustomerID JOIN SalesLT.SalesOrderDetail sod ON soh.SalesOrderID = sod.SalesOrderID JOIN SalesLT.Product p ON sod.ProductID = p.ProductID JOIN SalesLT.ProductCategory pc ON p.ProductCategoryID = pc.ProductCategoryID WHERE pc.Name = 'Bikes'",
     "selected_tables": [

@@ -1,5 +1,6 @@
 {
     "table_name": "SalesLT.Customer",
     "column_name": "Phone",
-    "description": "Phone number associated with the person."
+    "description": "Phone number associated with the person.",
+    "datasource": "adventureworks"
 }

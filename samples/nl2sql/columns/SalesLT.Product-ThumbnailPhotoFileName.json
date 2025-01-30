@@ -1,5 +1,6 @@
 {
     "table_name": "SalesLT.Product",
     "column_name": "ThumbnailPhotoFileName",
-    "description": "Small image file name."
+    "description": "Small image file name.",
+    "datasource": "adventureworks"
 }

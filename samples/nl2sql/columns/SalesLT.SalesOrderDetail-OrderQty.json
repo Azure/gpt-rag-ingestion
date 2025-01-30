@@ -1,5 +1,6 @@
 {
     "table_name": "SalesLT.SalesOrderDetail",
     "column_name": "OrderQty",
-    "description": "Quantity ordered per product."
+    "description": "Quantity ordered per product.",
+    "datasource": "adventureworks"
 }

@@ -674,6 +674,16 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                     "facetable": False
                 },
                 {
+                    "name": "datasource",
+                    "type": "Edm.String",
+                    "searchable": True,
+                    "filterable": True,
+                    "retrievable": True,
+                    "sortable": False,
+                    "facetable": False,
+                    "analyzer": "standard.lucene"
+                },              
+                {
                     "name": "question",
                     "type": "Edm.String",
                     "searchable": True,
@@ -1167,7 +1177,11 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
             "mappingFunction" : {
                 "name" : "fixedLengthEncode"
             }
-        },      
+        },
+        {
+            "sourceFieldName": "datasource",
+            "targetFieldName": "datasource"
+        },              
         {
             "sourceFieldName": "question",
             "targetFieldName": "question"

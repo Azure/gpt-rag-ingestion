@@ -1,5 +1,6 @@
 {
     "table_name": "SalesLT.SalesOrderHeader",
     "column_name": "Comment",
-    "description": "Sales representative comments."
+    "description": "Sales representative comments.",
+    "datasource": "adventureworks"
 }

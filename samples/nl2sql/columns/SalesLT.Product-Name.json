@@ -1,5 +1,6 @@
 {
     "table_name": "SalesLT.Product",
     "column_name": "Name",
-    "description": "Name of the product."
+    "description": "Name of the product.",
+    "datasource": "adventureworks"
 }

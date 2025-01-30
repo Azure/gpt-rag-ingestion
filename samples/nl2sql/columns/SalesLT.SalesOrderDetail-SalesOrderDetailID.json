@@ -1,5 +1,6 @@
 {
     "table_name": "SalesLT.SalesOrderDetail",
     "column_name": "SalesOrderDetailID",
-    "description": "Primary key. One incremental unique number per product sold."
+    "description": "Primary key. One incremental unique number per product sold.",
+    "datasource": "adventureworks"
 }
