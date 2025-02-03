@@ -1,6 +1,0 @@
-{
-    "table_name": "SalesLT.ProductDescription",
-    "column_name": "rowguid",
-    "description": "ROWGUIDCOL number uniquely identifying the record. Used to support a merge replication sample.",
-    "datasource": "adventureworks"
-}

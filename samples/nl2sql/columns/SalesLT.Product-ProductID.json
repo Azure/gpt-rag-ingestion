@@ -1,6 +1,0 @@
-{
-    "table_name": "SalesLT.Product",
-    "column_name": "ProductID",
-    "description": "Primary key for Product records.",
-    "datasource": "adventureworks"
-}

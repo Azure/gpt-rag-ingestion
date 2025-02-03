@@ -1,0 +1,51 @@
+{
+    "table": "dimension_customer",
+    "description": "Customer dimension table containing details of customers, their categories, and billing information.",
+    "datasource": "wwi_sales_star_schema",
+    "columns": [
+        {
+            "name": "CustomerKey",
+            "description": "Primary key for customer records."
+        },
+        {
+            "name": "WWICustomerID",
+            "description": "Identifier for the customer in the worldwide database."
+        },
+        {
+            "name": "Customer",
+            "description": "Name of the customer or business."
+        },
+        {
+            "name": "BillToCustomer",
+            "description": "Parent customer account to which billing is assigned."
+        },
+        {
+            "name": "Category",
+            "description": "Customer category, e.g., 'Novelty Shop'."
+        },
+        {
+            "name": "BuyingGroup",
+            "description": "Buying group associated with the customer, if applicable."
+        },
+        {
+            "name": "PrimaryContact",
+            "description": "Name of the primary contact person for the customer."
+        },
+        {
+            "name": "PostalCode",
+            "description": "Postal code associated with the customer location."
+        },
+        {
+            "name": "ValidFrom",
+            "description": "Start date when this record became valid (datetime)."
+        },
+        {
+            "name": "ValidTo",
+            "description": "End date when this record is valid (datetime, default: 12/31/9999 for current records)."
+        },
+        {
+            "name": "LineageKey",
+            "description": "Key used for tracking data lineage."
+        }
+    ]
+}

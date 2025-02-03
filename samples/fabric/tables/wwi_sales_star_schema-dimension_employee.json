@@ -1,0 +1,39 @@
+{
+    "table": "dimension_employee",
+    "description": "Employee dimension table containing employee details and sales role information.",
+    "datasource": "wwi_sales_star_schema",
+    "columns": [
+        {
+            "name": "EmployeeKey",
+            "description": "Primary key for employee records."
+        },
+        {
+            "name": "WWIEmployeeID",
+            "description": "Identifier for the employee in the worldwide database."
+        },
+        {
+            "name": "Employee",
+            "description": "Full name of the employee."
+        },
+        {
+            "name": "PreferredName",
+            "description": "Preferred or commonly used name of the employee."
+        },
+        {
+            "name": "IsSalesperson",
+            "description": "Indicates if the employee is a salesperson (boolean: True/False)."
+        },
+        {
+            "name": "ValidFrom",
+            "description": "Start date when this record became valid (datetime)."
+        },
+        {
+            "name": "ValidTo",
+            "description": "End date when this record is valid (datetime, default: 12/31/9999 for current records)."
+        },
+        {
+            "name": "LineageKey",
+            "description": "Key used for tracking data lineage."
+        }
+    ]
+}

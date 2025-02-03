@@ -1,6 +1,0 @@
-{
-    "table_name": "SalesLT.SalesOrderDetail",
-    "column_name": "UnitPriceDiscount",
-    "description": "Discount amount.",
-    "datasource": "adventureworks"
-}

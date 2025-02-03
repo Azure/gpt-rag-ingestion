@@ -1,0 +1,83 @@
+{
+    "table": "dimension_stock_item",
+    "description": "Stock item dimension table containing details of products available for sale, including packaging, pricing, and inventory attributes.",
+    "datasource": "wwi_sales_star_schema",
+    "columns": [
+        {
+            "name": "StockItemKey",
+            "description": "Primary key for stock item records."
+        },
+        {
+            "name": "WWIStockItemID",
+            "description": "Identifier for the stock item in the worldwide database."
+        },
+        {
+            "name": "StockItem",
+            "description": "Name or description of the stock item."
+        },
+        {
+            "name": "Color",
+            "description": "Color of the stock item (N/A if not applicable)."
+        },
+        {
+            "name": "SellingPackage",
+            "description": "Selling package type, e.g., 'Bag', 'Pair', 'Packet'."
+        },
+        {
+            "name": "BuyingPackage",
+            "description": "Buying package type, e.g., 'Carton', 'Packet'."
+        },
+        {
+            "name": "Brand",
+            "description": "Brand of the stock item (N/A if not applicable)."
+        },
+        {
+            "name": "Size",
+            "description": "Size of the stock item (e.g., '250g', 'XL', 'L', 'M')."
+        },
+        {
+            "name": "LeadTimeDays",
+            "description": "Number of days required for stock replenishment."
+        },
+        {
+            "name": "QuantityPerOuter",
+            "description": "Number of items per outer package."
+        },
+        {
+            "name": "IsChillerStock",
+            "description": "Indicates if the item requires chilled storage (boolean: True/False)."
+        },
+        {
+            "name": "Barcode",
+            "description": "Barcode identifier for the stock item (N/A if not applicable)."
+        },
+        {
+            "name": "TaxRate",
+            "description": "Applicable tax rate (percentage)."
+        },
+        {
+            "name": "UnitPrice",
+            "description": "Price per unit of the stock item."
+        },
+        {
+            "name": "RecommendedRetailPrice",
+            "description": "Suggested retail price per unit."
+        },
+        {
+            "name": "TypicalWeightPerUnit",
+            "description": "Typical weight of a single unit of the item."
+        },
+        {
+            "name": "ValidFrom",
+            "description": "Start date when this record became valid (datetime)."
+        },
+        {
+            "name": "ValidTo",
+            "description": "End date when this record is valid (datetime, default: 12/31/9999 for current records)."
+        },
+        {
+            "name": "LineageKey",
+            "description": "Key used for tracking data lineage."
+        }
+    ]
+}

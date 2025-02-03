@@ -1,6 +1,0 @@
-{
-    "table_name": "SalesLT.ProductModel",
-    "column_name": "CatalogDescription",
-    "description": "Collection of XML schemas for the CatalogDescription column in the Sales.ProductModel table.",
-    "datasource": "adventureworks"
-}

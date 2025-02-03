@@ -1,0 +1,55 @@
+{
+    "table": "aggregate_sale_by_date_city",
+    "description": "Aggregated sales data by date and city, including revenue, tax, and profit summaries.",
+    "datasource": "wwi_sales_aggregated_data",
+    "columns": [
+        {
+            "name": "Date",
+            "description": "Transaction date (datetime)."
+        },
+        {
+            "name": "CalendarMonthLabel",
+            "description": "Formatted calendar month label (e.g., 'CY2000-Jan')."
+        },
+        {
+            "name": "Day",
+            "description": "Day of the month."
+        },
+        {
+            "name": "ShortMonth",
+            "description": "Abbreviated month name (e.g., 'Jan')."
+        },
+        {
+            "name": "CalendarYear",
+            "description": "Year of the transaction."
+        },
+        {
+            "name": "City",
+            "description": "City where the sale occurred."
+        },
+        {
+            "name": "StateProvince",
+            "description": "State or province of the city."
+        },
+        {
+            "name": "SalesTerritory",
+            "description": "Sales territory associated with the city."
+        },
+        {
+            "name": "SumOfTotalExcludingTax",
+            "description": "Total sales amount before tax."
+        },
+        {
+            "name": "SumOfTaxAmount",
+            "description": "Total tax amount collected."
+        },
+        {
+            "name": "SumOfTotalIncludingTax",
+            "description": "Total sales amount including tax."
+        },
+        {
+            "name": "SumOfProfit",
+            "description": "Total profit from sales."
+        }
+    ]
+}

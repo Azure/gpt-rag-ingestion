@@ -1,6 +1,0 @@
-{
-    "table_name": "SalesLT.Address",
-    "column_name": "AddressID",
-    "description": "Primary key for Address records.",
-    "datasource": "adventureworks"
-}

@@ -1,6 +1,0 @@
-{
-    "table_name": "SalesLT.SalesOrderHeader",
-    "column_name": "PurchaseOrderNumber",
-    "description": "Customer purchase order number reference.",
-    "datasource": "adventureworks"
-}

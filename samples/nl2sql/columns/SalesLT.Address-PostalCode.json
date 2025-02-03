@@ -1,6 +1,0 @@
-{
-    "table_name": "SalesLT.Address",
-    "column_name": "PostalCode",
-    "description": "Postal code for the street address.",
-    "datasource": "adventureworks"
-}

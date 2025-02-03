@@ -1,5 +1,0 @@
-{
-    "datasource": "adventureworks",
-    "table_name": "SalesLT.Customer",
-    "description": "Contains personal and business information related to customers."
-}

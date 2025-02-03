@@ -1,0 +1,63 @@
+{
+    "table": "dimension_city",
+    "description": "City dimension table containing details of locations associated with sales and customers.",
+    "datasource": "wwi_sales_star_schema",
+    "columns": [
+        {
+            "name": "CityKey",
+            "description": "Primary key for city records."
+        },
+        {
+            "name": "WWICityID",
+            "description": "Identifier for the city in the worldwide database."
+        },
+        {
+            "name": "City",
+            "description": "Name of the city."
+        },
+        {
+            "name": "StateProvince",
+            "description": "State or province where the city is located."
+        },
+        {
+            "name": "Country",
+            "description": "Country where the city is located."
+        },
+        {
+            "name": "Continent",
+            "description": "Continent where the city is located."
+        },
+        {
+            "name": "SalesTerritory",
+            "description": "Sales territory associated with the city."
+        },
+        {
+            "name": "Region",
+            "description": "Geographical region of the city."
+        },
+        {
+            "name": "Subregion",
+            "description": "Subregion within the region."
+        },
+        {
+            "name": "Location",
+            "description": "Geographical coordinates (POINT format: latitude, longitude)."
+        },
+        {
+            "name": "LatestRecordedPopulation",
+            "description": "Most recent recorded population count."
+        },
+        {
+            "name": "ValidFrom",
+            "description": "Start date when this record became valid (datetime)."
+        },
+        {
+            "name": "ValidTo",
+            "description": "End date when this record is valid (datetime, default: 12/31/9999 for current records)."
+        },
+        {
+            "name": "LineageKey",
+            "description": "Key used for tracking data lineage."
+        }
+    ]
+}

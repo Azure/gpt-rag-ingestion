@@ -1,6 +1,0 @@
-{
-    "table_name": "SalesLT.Product",
-    "column_name": "Size",
-    "description": "Product size.",
-    "datasource": "adventureworks"
-}

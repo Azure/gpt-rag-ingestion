@@ -1,6 +1,0 @@
-{
-    "table_name": "SalesLT.SalesOrderHeader",
-    "column_name": "CustomerID",
-    "description": "Customer identification number. Foreign key to Customer.CustomerID.",
-    "datasource": "adventureworks"
-}

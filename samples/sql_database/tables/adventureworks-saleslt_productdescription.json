@@ -1,0 +1,23 @@
+{
+    "table": "SalesLT.ProductDescription",
+    "datasource": "adventureworks",
+    "description": "Contains descriptions for products, with multilingual support.",
+    "columns": [
+        {
+            "name": "ProductDescriptionID",
+            "description": "Primary key for ProductDescription records."
+        },
+        {
+            "name": "Description",
+            "description": "Description of the product."
+        },
+        {
+            "name": "rowguid",
+            "description": "ROWGUIDCOL number uniquely identifying the record. Used to support a merge replication sample."
+        },
+        {
+            "name": "ModifiedDate",
+            "description": "Date and time the record was last updated."
+        }
+    ]
+}
