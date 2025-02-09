@@ -1,0 +1,67 @@
+{
+    "table": "SalesLT.Customer",
+    "datasource": "adventureworks",
+    "description": "Contains personal and business information related to customers.",
+    "columns": [
+        {
+            "name": "CustomerID",
+            "description": "Primary key for Customer records."
+        },
+        {
+            "name": "NameStyle",
+            "description": "0 = Western style (first name, last name), 1 = Eastern style (last name, first name) order."
+        },
+        {
+            "name": "Title",
+            "description": "A courtesy title, such as Mr. or Ms."
+        },
+        {
+            "name": "FirstName",
+            "description": "First name of the person."
+        },
+        {
+            "name": "MiddleName",
+            "description": "Middle name or initial of the person."
+        },
+        {
+            "name": "LastName",
+            "description": "Last name of the person."
+        },
+        {
+            "name": "Suffix",
+            "description": "Surname suffix, such as Sr. or Jr."
+        },
+        {
+            "name": "CompanyName",
+            "description": "The customer's organization."
+        },
+        {
+            "name": "SalesPerson",
+            "description": "The customer's sales person, an employee of AdventureWorks Cycles."
+        },
+        {
+            "name": "EmailAddress",
+            "description": "E-mail address for the person."
+        },
+        {
+            "name": "Phone",
+            "description": "Phone number associated with the person."
+        },
+        {
+            "name": "PasswordHash",
+            "description": "Password for the e-mail account."
+        },
+        {
+            "name": "PasswordSalt",
+            "description": "Random value concatenated with the password string before the password is hashed."
+        },
+        {
+            "name": "rowguid",
+            "description": "ROWGUIDCOL number uniquely identifying the record. Used to support a merge replication sample."
+        },
+        {
+            "name": "ModifiedDate",
+            "description": "Date and time the record was last updated."
+        }
+    ]
+}

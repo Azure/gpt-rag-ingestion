@@ -1,0 +1,95 @@
+{
+    "table": "SalesLT.SalesOrderHeader",
+    "datasource": "adventureworks",
+    "description": "Contains details about sales orders, including shipping and financial data.",
+    "columns": [
+        {
+            "name": "SalesOrderID",
+            "description": "Primary key for SalesOrderHeader records."
+        },
+        {
+            "name": "RevisionNumber",
+            "description": "Incremental number to track changes to the sales order over time."
+        },
+        {
+            "name": "OrderDate",
+            "description": "Date the sales order was created."
+        },
+        {
+            "name": "DueDate",
+            "description": "Date the order is due to the customer."
+        },
+        {
+            "name": "ShipDate",
+            "description": "Date the order was shipped to the customer."
+        },
+        {
+            "name": "Status",
+            "description": "Order current status. 1 = In process; 2 = Approved; 3 = Backordered; 4 = Rejected; 5 = Shipped; 6 = Cancelled."
+        },
+        {
+            "name": "OnlineOrderFlag",
+            "description": "0 = Order placed by salesperson, 1 = Order placed online by customer."
+        },
+        {
+            "name": "SalesOrderNumber",
+            "description": "Unique sales order identification number."
+        },
+        {
+            "name": "PurchaseOrderNumber",
+            "description": "Customer purchase order number reference."
+        },
+        {
+            "name": "AccountNumber",
+            "description": "Financial accounting number reference."
+        },
+        {
+            "name": "CustomerID",
+            "description": "Customer identification number. Foreign key to Customer.CustomerID."
+        },
+        {
+            "name": "ShipToAddressID",
+            "description": "The ID of the location to send goods. Foreign key to the Address table."
+        },
+        {
+            "name": "BillToAddressID",
+            "description": "The ID of the location to send invoices. Foreign key to the Address table."
+        },
+        {
+            "name": "ShipMethod",
+            "description": "Shipping method. Foreign key to ShipMethod.ShipMethodID."
+        },
+        {
+            "name": "CreditCardApprovalCode",
+            "description": "Approval code provided by the credit card company."
+        },
+        {
+            "name": "SubTotal",
+            "description": "Sales subtotal. Computed as SUM(SalesOrderDetail.LineTotal) for the appropriate SalesOrderID."
+        },
+        {
+            "name": "TaxAmt",
+            "description": "Tax amount."
+        },
+        {
+            "name": "Freight",
+            "description": "Shipping cost."
+        },
+        {
+            "name": "TotalDue",
+            "description": "Total due from customer. Computed as Subtotal + TaxAmt + Freight."
+        },
+        {
+            "name": "Comment",
+            "description": "Sales representative comments."
+        },
+        {
+            "name": "rowguid",
+            "description": "ROWGUIDCOL number uniquely identifying the record. Used to support a merge replication sample."
+        },
+        {
+            "name": "ModifiedDate",
+            "description": "Date and time the record was last updated."
+        }
+    ]
+}

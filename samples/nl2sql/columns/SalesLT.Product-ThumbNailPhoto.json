@@ -1,5 +1,0 @@
-{
-    "table_name": "SalesLT.Product",
-    "column_name": "ThumbNailPhoto",
-    "description": "Small image of the product."
-}

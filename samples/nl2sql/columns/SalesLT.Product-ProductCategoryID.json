@@ -1,5 +1,0 @@
-{
-    "table_name": "SalesLT.Product",
-    "column_name": "ProductCategoryID",
-    "description": "Product is a member of this product category. Foreign key to ProductCategory.ProductCategoryID."
-}

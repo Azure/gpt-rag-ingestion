@@ -1,5 +1,0 @@
-{
-    "table_name": "SalesLT.SalesOrderHeader",
-    "column_name": "BillToAddressID",
-    "description": "The ID of the location to send invoices. Foreign key to the Address table."
-}

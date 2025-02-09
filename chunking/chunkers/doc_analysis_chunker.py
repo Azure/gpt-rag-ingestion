@@ -2,8 +2,7 @@ import logging
 import os
 import re
 
-from langchain.text_splitter import MarkdownTextSplitter, RecursiveCharacterTextSplitter
-
+from langchain_text_splitters import MarkdownTextSplitter, RecursiveCharacterTextSplitter
 from .base_chunker import BaseChunker
 from ..exceptions import UnsupportedFormatError
 from tools import DocumentIntelligenceClient

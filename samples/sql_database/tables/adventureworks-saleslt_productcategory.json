@@ -1,0 +1,27 @@
+{
+    "table": "SalesLT.ProductCategory",
+    "datasource": "adventureworks",
+    "description": "Contains categories for products, including parent-child relationships.",
+    "columns": [
+        {
+            "name": "ProductCategoryID",
+            "description": "Primary key for ProductCategory records."
+        },
+        {
+            "name": "ParentProductCategoryID",
+            "description": "Product category identification number of immediate ancestor category. Foreign key to ProductCategory.ProductCategoryID."
+        },
+        {
+            "name": "Name",
+            "description": "Category description."
+        },
+        {
+            "name": "rowguid",
+            "description": "ROWGUIDCOL number uniquely identifying the record. Used to support a merge replication sample."
+        },
+        {
+            "name": "ModifiedDate",
+            "description": "Date and time the record was last updated."
+        }
+    ]
+}

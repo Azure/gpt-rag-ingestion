@@ -1,0 +1,27 @@
+{
+    "table": "SalesLT.ProductModel",
+    "datasource": "adventureworks",
+    "description": "Contains information related to product models and their descriptions.",
+    "columns": [
+        {
+            "name": "ProductModelID",
+            "description": "Primary key for ProductModel records."
+        },
+        {
+            "name": "Name",
+            "description": "Name of the product model."
+        },
+        {
+            "name": "CatalogDescription",
+            "description": "Collection of XML schemas for the CatalogDescription column in the Sales.ProductModel table."
+        },
+        {
+            "name": "rowguid",
+            "description": "ROWGUIDCOL number uniquely identifying the record. Used to support a merge replication sample."
+        },
+        {
+            "name": "ModifiedDate",
+            "description": "Date and time the record was last updated."
+        }
+    ]
+}

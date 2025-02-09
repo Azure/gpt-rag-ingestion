@@ -44,7 +44,7 @@ class NL2SQLChunker(BaseChunker):
 
         blob_data = self.document_bytes
         # Decode the bytes into text (assuming it's UTF-8 encoded)
-        text = blob_data.decode('utf-8')
+        text = self.decode_to_utf8(blob_data)
 
         # Parse the JSON data
         try:

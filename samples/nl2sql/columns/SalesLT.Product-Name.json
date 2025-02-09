@@ -1,5 +1,0 @@
-{
-    "table_name": "SalesLT.Product",
-    "column_name": "Name",
-    "description": "Name of the product."
-}

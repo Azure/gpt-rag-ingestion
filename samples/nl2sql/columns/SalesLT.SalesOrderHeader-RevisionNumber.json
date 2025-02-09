@@ -1,5 +1,0 @@
-{
-    "table_name": "SalesLT.SalesOrderHeader",
-    "column_name": "RevisionNumber",
-    "description": "Incremental number to track changes to the sales order over time."
-}

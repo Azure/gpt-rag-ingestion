@@ -1,5 +1,0 @@
-{
-    "table_name": "SalesLT.Product",
-    "column_name": "DiscontinuedDate",
-    "description": "Date the product was discontinued."
-}

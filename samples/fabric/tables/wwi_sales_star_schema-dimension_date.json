@@ -1,0 +1,63 @@
+{
+    "table": "dimension_date",
+    "description": "Date dimension table containing calendar, fiscal, and ISO-related date attributes.",
+    "datasource": "wwi-sales-star-schema",
+    "columns": [
+        {
+            "name": "Date",
+            "description": "Full date value (datetime)."
+        },
+        {
+            "name": "DayNumber",
+            "description": "Day number within the month."
+        },
+        {
+            "name": "Day",
+            "description": "Day of the month as an integer."
+        },
+        {
+            "name": "Month",
+            "description": "Full month name (e.g., 'February')."
+        },
+        {
+            "name": "ShortMonth",
+            "description": "Abbreviated month name (e.g., 'Feb')."
+        },
+        {
+            "name": "CalendarMonthNumber",
+            "description": "Month number within the calendar year (1-12)."
+        },
+        {
+            "name": "CalendarMonthLabel",
+            "description": "Calendar month label including year (e.g., 'CY2009-Feb')."
+        },
+        {
+            "name": "CalendarYear",
+            "description": "Calendar year (e.g., 2009)."
+        },
+        {
+            "name": "CalendarYearLabel",
+            "description": "Formatted calendar year label (e.g., 'CY2009')."
+        },
+        {
+            "name": "FiscalMonthNumber",
+            "description": "Month number within the fiscal year (varies based on fiscal calendar)."
+        },
+        {
+            "name": "FiscalMonthLabel",
+            "description": "Formatted fiscal month label (e.g., 'FY2009-Feb')."
+        },
+        {
+            "name": "FiscalYear",
+            "description": "Fiscal year (e.g., 2009)."
+        },
+        {
+            "name": "FiscalYearLabel",
+            "description": "Formatted fiscal year label (e.g., 'FY2009')."
+        },
+        {
+            "name": "ISOWeekNumber",
+            "description": "ISO standard week number within the year (1-53)."
+        }
+    ]
+}

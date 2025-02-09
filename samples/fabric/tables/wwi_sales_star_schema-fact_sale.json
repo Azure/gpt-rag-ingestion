@@ -1,0 +1,103 @@
+{
+    "table": "fact_sale",
+    "description": "Sales fact table containing details of transactions including products, customers, sales locations, and pricing.",
+    "datasource": "wwi-sales-star-schema",
+    "columns": [
+        {
+            "name": "SaleKey",
+            "description": "Primary key for sales transactions."
+        },
+        {
+            "name": "CityKey",
+            "description": "Foreign key referencing the sales city."
+        },
+        {
+            "name": "CustomerKey",
+            "description": "Foreign key referencing the customer."
+        },
+        {
+            "name": "BillToCustomerKey",
+            "description": "Foreign key referencing the customer billed for the sale."
+        },
+        {
+            "name": "StockItemKey",
+            "description": "Foreign key referencing the stock item sold."
+        },
+        {
+            "name": "InvoiceDateKey",
+            "description": "Date when the invoice was issued (datetime)."
+        },
+        {
+            "name": "DeliveryDateKey",
+            "description": "Date when the product was delivered (datetime)."
+        },
+        {
+            "name": "SalespersonKey",
+            "description": "Foreign key referencing the salesperson responsible for the sale."
+        },
+        {
+            "name": "WWInvoiceID",
+            "description": "Warehouse and wholesale invoice identifier."
+        },
+        {
+            "name": "Description",
+            "description": "Description of the product sold."
+        },
+        {
+            "name": "Package",
+            "description": "Type of packaging for the product."
+        },
+        {
+            "name": "Quantity",
+            "description": "Number of items sold in the transaction."
+        },
+        {
+            "name": "UnitPrice",
+            "description": "Price per unit of the product."
+        },
+        {
+            "name": "TaxRate",
+            "description": "Applicable tax rate (percentage)."
+        },
+        {
+            "name": "TotalExcludingTax",
+            "description": "Total amount for the sale before taxes."
+        },
+        {
+            "name": "TaxAmount",
+            "description": "Tax amount applied to the transaction."
+        },
+        {
+            "name": "Profit",
+            "description": "Profit generated from the sale."
+        },
+        {
+            "name": "TotalIncludingTax",
+            "description": "Total amount for the sale including taxes."
+        },
+        {
+            "name": "TotalDryItems",
+            "description": "Total count of dry items in the transaction."
+        },
+        {
+            "name": "TotalChillerItems",
+            "description": "Total count of chiller items in the transaction."
+        },
+        {
+            "name": "LineageKey",
+            "description": "Key used for tracking data lineage."
+        },
+        {
+            "name": "Year",
+            "description": "Transaction year (e.g., 2000)."
+        },
+        {
+            "name": "Quarter",
+            "description": "Transaction quarter (1-4)."
+        },
+        {
+            "name": "Month",
+            "description": "Transaction month (1-12)."
+        }
+    ]
+}

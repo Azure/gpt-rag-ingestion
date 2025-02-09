@@ -3,7 +3,7 @@ import os
 import re
 from .base_chunker import BaseChunker
 from ..exceptions import UnsupportedFormatError
-from langchain.text_splitter import MarkdownTextSplitter, RecursiveCharacterTextSplitter, PythonCodeTextSplitter
+from langchain_text_splitters import MarkdownTextSplitter, RecursiveCharacterTextSplitter, PythonCodeTextSplitter, RecursiveJsonSplitter
 
 class LangChainChunker(BaseChunker):
     """
@@ -72,9 +72,8 @@ class LangChainChunker(BaseChunker):
             raise UnsupportedFormatError(f"[langchain_chunker] {self.filename} {self.extension} format is not supported")
         
         blob_data = self.document_bytes
-        # Decode the bytes into text (assuming it's UTF-8 encoded)
-        text = blob_data.decode('utf-8')
-
+        text = self.decode_to_utf8(blob_data)
+        
         text_chunks = self._chunk_content(text)
         skipped_chunks = 0
         chunk_id = 0
@@ -122,6 +121,11 @@ class LangChainChunker(BaseChunker):
             splitter = PythonCodeTextSplitter.from_tiktoken_encoder(
                 chunk_size=self.max_chunk_size, 
                 chunk_overlap=self.token_overlap
+            )
+        elif file_format == "json":
+            splitter = RecursiveJsonSplitter(
+                # as the json splitter doesn't have a token estimator we multiply the max_chunk_size by 4 (average number of characters per token)
+                max_chunk_size=self.max_chunk_size * 4
             )
         else:
             sentence_endings = [".", "!", "?"]

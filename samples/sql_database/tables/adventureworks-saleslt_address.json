@@ -1,0 +1,43 @@
+{
+    "table": "SalesLT.Address",
+    "datasource": "adventureworks",
+    "description": "Contains information related to customer addresses.",
+    "columns": [
+        {
+            "name": "AddressID",
+            "description": "Primary key for Address records."
+        },
+        {
+            "name": "AddressLine1",
+            "description": "First street address line."
+        },
+        {
+            "name": "AddressLine2",
+            "description": "Second street address line."
+        },
+        {
+            "name": "City",
+            "description": "Name of the city."
+        },
+        {
+            "name": "StateProvince",
+            "description": "Name of state or province."
+        },
+        {
+            "name": "CountryRegion",
+            "description": "Country or region of the address."
+        },
+        {
+            "name": "PostalCode",
+            "description": "Postal code for the street address."
+        },
+        {
+            "name": "rowguid",
+            "description": "ROWGUIDCOL number uniquely identifying the record. Used to support a merge replication sample."
+        },
+        {
+            "name": "ModifiedDate",
+            "description": "Date and time the record was last updated."
+        }
+    ]
+}

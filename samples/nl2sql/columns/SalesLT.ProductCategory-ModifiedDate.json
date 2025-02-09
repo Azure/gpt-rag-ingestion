@@ -1,5 +1,0 @@
-{
-    "table_name": "SalesLT.ProductCategory",
-    "column_name": "ModifiedDate",
-    "description": "Date and time the record was last updated."
-}

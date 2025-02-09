@@ -1,5 +1,0 @@
-{
-    "table_name": "SalesLT.ProductCategory",
-    "column_name": "ProductCategoryID",
-    "description": "Primary key for ProductCategory records."
-}
