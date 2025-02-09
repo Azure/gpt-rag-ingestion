@@ -1,0 +1,13 @@
+{
+    "datasource": "wwi-sales-aggregated-data",
+    "question": "What are the top 5 cities with the highest total profit?",
+    "query": "EVALUATE TOPN(5, SUMMARIZE(aggregate_sale_by_date_city, aggregate_sale_by_date_city[City], aggregate_sale_by_date_city[SumOfProfit]), aggregate_sale_by_date_city[SumOfProfit], DESC)",
+    "selected_tables": [
+      "aggregate_sale_by_date_city"
+    ],
+    "selected_columns": [
+      "aggregate_sale_by_date_city[City]",
+      "aggregate_sale_by_date_city[SumOfProfit]"
+    ],
+    "reasoning": "This DAX query retrieves the top 5 cities based on the total profit generated from sales. It uses the aggregate_sale_by_date_city table, summarizes the data by city and profit, and then selects the top 5 entries sorted in descending order of profit."
+}

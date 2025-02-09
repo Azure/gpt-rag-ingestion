@@ -1,0 +1,75 @@
+{
+    "table": "SalesLT.Product",
+    "datasource": "adventureworks",
+    "description": "Contains details of products, including product identifiers, pricing, and attributes.",
+    "columns": [
+        {
+            "name": "ProductID",
+            "description": "Primary key for Product records."
+        },
+        {
+            "name": "Name",
+            "description": "Name of the product."
+        },
+        {
+            "name": "ProductNumber",
+            "description": "Unique product identification number."
+        },
+        {
+            "name": "Color",
+            "description": "Product color."
+        },
+        {
+            "name": "StandardCost",
+            "description": "Standard cost of the product."
+        },
+        {
+            "name": "ListPrice",
+            "description": "Selling price."
+        },
+        {
+            "name": "Size",
+            "description": "Product size."
+        },
+        {
+            "name": "Weight",
+            "description": "Product weight."
+        },
+        {
+            "name": "ProductCategoryID",
+            "description": "Product is a member of this product category. Foreign key to ProductCategory.ProductCategoryID."
+        },
+        {
+            "name": "ProductModelID",
+            "description": "Product is a member of this product model. Foreign key to ProductModel.ProductModelID."
+        },
+        {
+            "name": "SellStartDate",
+            "description": "Date the product was available for sale."
+        },
+        {
+            "name": "SellEndDate",
+            "description": "Date the product was no longer available for sale."
+        },
+        {
+            "name": "DiscontinuedDate",
+            "description": "Date the product was discontinued."
+        },
+        {
+            "name": "ThumbNailPhoto",
+            "description": "Small image of the product."
+        },
+        {
+            "name": "ThumbnailPhotoFileName",
+            "description": "Small image file name."
+        },
+        {
+            "name": "rowguid",
+            "description": "ROWGUIDCOL number uniquely identifying the record. Used to support a merge replication sample."
+        },
+        {
+            "name": "ModifiedDate",
+            "description": "Date and time the record was last updated."
+        }
+    ]
+}

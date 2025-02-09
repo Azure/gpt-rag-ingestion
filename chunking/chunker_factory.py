@@ -69,6 +69,6 @@ class ChunkerFactory:
             'vtt',
             'xlsx', 'xls',
             'pdf', 'png', 'jpeg', 'jpg', 'bmp', 'tiff',
-            'docx', 'pptx'
+            'docx', 'pptx', 'json'
         ]
         return ', '.join(extensions)

@@ -1,4 +1,0 @@
-{
-    "table_name": "SalesLT.ProductCategory",
-    "description": "Contains categories for products, including parent-child relationships."
-}

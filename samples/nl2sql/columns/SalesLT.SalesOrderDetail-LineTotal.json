@@ -1,5 +1,0 @@
-{
-    "table_name": "SalesLT.SalesOrderDetail",
-    "column_name": "LineTotal",
-    "description": "Per product subtotal. Computed as UnitPrice * (1 - UnitPriceDiscount) * OrderQty."
-}

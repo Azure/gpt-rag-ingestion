@@ -1,5 +1,0 @@
-{
-    "table_name": "SalesLT.Product",
-    "column_name": "ProductNumber",
-    "description": "Unique product identification number."
-}

@@ -360,12 +360,10 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     storage_container_nl2sql = "nl2sql"
     search_index_name_nl2sql_queries = "nl2sql-queries"
     search_index_name_nl2sql_tables = "nl2sql-tables"
-    search_index_name_nl2sql_columns = "nl2sql-columns"
-
+ 
     logging.info(f"[execute_setup] NL2SQL Storage container: {storage_container_nl2sql}")
     logging.info(f"[execute_setup] NL2SQL Search index name (queries): {search_index_name_nl2sql_queries}")
     logging.info(f"[execute_setup] NL2SQL Search index name (tables): {search_index_name_nl2sql_tables}")
-    logging.info(f"[execute_setup] NL2SQL Search index name (columns): {search_index_name_nl2sql_columns}")    
 
     ###########################################################################
     # Get function key to be used later when creating the skillset
@@ -420,7 +418,6 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     nl2sql_subfolders = {
         "queries": search_index_name_nl2sql_queries,
         "tables": search_index_name_nl2sql_tables,
-        "columns": search_index_name_nl2sql_columns
     }
 
     for subfolder, index_name in nl2sql_subfolders.items():
@@ -674,6 +671,16 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                     "facetable": False
                 },
                 {
+                    "name": "datasource",
+                    "type": "Edm.String",
+                    "searchable": True,
+                    "filterable": True,
+                    "retrievable": True,
+                    "sortable": False,
+                    "facetable": False,
+                    "analyzer": "standard.lucene"
+                },              
+                {
                     "name": "question",
                     "type": "Edm.String",
                     "searchable": True,
@@ -743,21 +750,42 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                     "name": "table_name",
                     "type": "Edm.String",
                     "searchable": True,
-                    "filterable": False,
                     "retrievable": True,
-                    "sortable": False,
-                    "facetable": False,
                     "analyzer": "standard.lucene"
                 },
                 {
                     "name": "description",
                     "type": "Edm.String",
                     "searchable": True,
-                    "filterable": False,
                     "retrievable": True,
-                    "sortable": False,
-                    "facetable": False,
                     "analyzer": "standard.lucene"
+                },
+                {
+                    "name": "datasource",
+                    "type": "Edm.String",
+                    "searchable": True,
+                    "retrievable": True,
+                    "analyzer": "standard.lucene"
+                },
+                {
+                    "name": "columns",
+                    "type": "Collection(Edm.ComplexType)",
+                    "fields": [
+                        {
+                            "name": "name",
+                            "type": "Edm.String",
+                            "searchable": True,
+                            "retrievable": True,
+                            "analyzer": "standard.lucene"
+                        },
+                        {
+                            "name": "description",
+                            "type": "Edm.String",
+                            "searchable": True,
+                            "retrievable": True,
+                            "analyzer": "standard.lucene"
+                        }
+                    ]
                 },
                 {
                     "name": "contentVector",
@@ -768,60 +796,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                     "vectorSearchProfile": vector_profile_name
                 }
             ],
-            "content_fields_name": ["description"],
-            "keyword_field_name": "description"
-        },
-        {
-            "index_name": search_index_name_nl2sql_columns,
-            "fields": [
-                {
-                    "name": "id",
-                    "type": "Edm.String",
-                    "key": True,
-                    "searchable": False,
-                    "filterable": False,
-                    "sortable": False,
-                    "facetable": False
-                },
-                {
-                    "name": "table_name",
-                    "type": "Edm.String",
-                    "searchable": True,
-                    "filterable": True,
-                    "retrievable": True,
-                    "sortable": False,
-                    "facetable": False,
-                    "analyzer": "standard.lucene"
-                },
-                {
-                    "name": "column_name",
-                    "type": "Edm.String",
-                    "searchable": True,
-                    "filterable": False,
-                    "retrievable": True,
-                    "sortable": False,
-                    "facetable": False,
-                    "analyzer": "standard.lucene"
-                },
-                {
-                    "name": "description",
-                    "type": "Edm.String",
-                    "searchable": True,
-                    "filterable": False,
-                    "retrievable": True,
-                    "sortable": False,
-                    "facetable": False,
-                    "analyzer": "standard.lucene"
-                },
-                {
-                    "name": "contentVector",
-                    "type": "Collection(Edm.Single)",
-                    "searchable": True,
-                    "retrievable": True,
-                    "dimensions": azure_embeddings_vector_size,
-                    "vectorSearchProfile": vector_profile_name
-                }
-            ],
+            # Use the table-level description for vectorization
             "content_fields_name": ["description"],
             "keyword_field_name": "description"
         }
@@ -1061,11 +1036,6 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
             "skillset_name": "tables-skillset",
             "input_field": "description",
             "output_field": "contentVector"
-        },
-        {
-            "skillset_name": "columns-skillset",
-            "input_field": "description",
-            "output_field": "contentVector"
         }
     ]
 
@@ -1167,7 +1137,11 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
             "mappingFunction" : {
                 "name" : "fixedLengthEncode"
             }
-        },      
+        },
+        {
+            "sourceFieldName": "datasource",
+            "targetFieldName": "datasource"
+        },              
         {
             "sourceFieldName": "question",
             "targetFieldName": "question"
@@ -1193,45 +1167,29 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     # Define field mappings for the 'tables-indexer'
     field_mappings_tables = [
         {
-            "sourceFieldName" : "metadata_storage_path",
-            "targetFieldName" : "id",
-            "mappingFunction" : {
-                "name" : "fixedLengthEncode"
+            "sourceFieldName": "table",
+            "targetFieldName": "id",
+            "mappingFunction": {
+                "name": "fixedLengthEncode"
             }
-        },      
+        },
         {
-            "sourceFieldName": "table_name",
+            "sourceFieldName": "table",
             "targetFieldName": "table_name"
         },
         {
             "sourceFieldName": "description",
             "targetFieldName": "description"
+        },
+        {
+            "sourceFieldName": "datasource",
+            "targetFieldName": "datasource"
+        },
+        {
+            "sourceFieldName": "columns",
+            "targetFieldName": "columns"
         }
     ]
-
-    # Define field mappings for the 'columns-indexer'
-    field_mappings_columns = [
-        {
-            "sourceFieldName" : "metadata_storage_path",
-            "targetFieldName" : "id",
-            "mappingFunction" : {
-                "name" : "fixedLengthEncode"
-            }
-        },
-        {
-            "sourceFieldName": "table_name",
-            "targetFieldName": "table_name"
-        },
-        {
-            "sourceFieldName": "column_name",
-            "targetFieldName": "column_name"
-        },
-        {
-            "sourceFieldName": "description",
-            "targetFieldName": "description"
-        }        
-    ]
-
 
     # Define indexing parameters for the 'queries-indexer'
     indexing_parameters = {
@@ -1256,14 +1214,6 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
             "data_source_name": f"{search_index_name_nl2sql_tables}-datasource",
             "skillset_name": "tables-skillset",
             "field_mappings": field_mappings_tables,
-            "indexing_parameters": indexing_parameters
-        },
-        {
-            "indexer_name": "columns-indexer",
-            "index_name": f"{search_index_name_nl2sql_columns}",
-            "data_source_name": f"{search_index_name_nl2sql_columns}-datasource",
-            "skillset_name": "columns-skillset",
-            "field_mappings": field_mappings_columns,
             "indexing_parameters": indexing_parameters
         }
     ]

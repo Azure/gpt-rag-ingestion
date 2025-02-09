@@ -1,5 +1,0 @@
-{
-    "table_name": "SalesLT.SalesOrderHeader",
-    "column_name": "Freight",
-    "description": "Shipping cost."
-}

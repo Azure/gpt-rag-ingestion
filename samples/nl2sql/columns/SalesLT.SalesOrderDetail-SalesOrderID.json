@@ -1,5 +1,0 @@
-{
-    "table_name": "SalesLT.SalesOrderDetail",
-    "column_name": "SalesOrderID",
-    "description": "Primary key. Foreign key to SalesOrderHeader.SalesOrderID."
-}

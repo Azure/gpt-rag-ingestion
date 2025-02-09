@@ -1,0 +1,14 @@
+{
+  "datasource": "wwi-sales-aggregated-data",
+  "question": "What is the overall sales amount in New York during 2025?",
+  "query": "EVALUATE  CALCULATETABLE( SUMMARIZE(aggregate_sale_by_date_city,aggregate_sale_by_date_city[City],\"TotalSales\", SUM(aggregate_sale_by_date_city[SumOfTotalIncludingTax])),aggregate_sale_by_date_city[City] = \"New York\",YEAR(aggregate_sale_by_date_city[Date]) = 2025)",
+  "selected_tables": [
+    "aggregate_sale_by_date_city"
+  ],
+  "selected_columns": [
+    "aggregate_sale_by_date_city[City]",
+    "aggregate_sale_by_date_city[SumOfTotalIncludingTax]",
+    "aggregate_sale_by_date_city[Date]"
+  ],
+  "reasoning": "This DAX query calculates the total sales in the city of New York for 2025 by summarizing the total sales (including tax) and applying filters for the specified city and date. The SUMMARIZE function aggregates the sales data by city and computes the total, while CALCULATETABLE restricts the results to the defined conditions."
+}

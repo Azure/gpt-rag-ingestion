@@ -98,7 +98,10 @@ By activating `MULTIMODALITY`, your ingestion process captures both text and vis
 
 If you are using the **few-shot** or **few-shot scaled** NL2SQL strategies in your orchestration component, you may want to index NL2SQL content for use during the retrieval step. The idea is that this content will aid in SQL query creation with these strategies. More details about these NL2SQL strategies can be found in the [orchestrator repository](https://github.com/azure/gpt-rag-agentic).
 
-The NL2SQL Ingestion Process indexes three content types:
+> [!Note]  
+> This also applies to the agentic strategy for Fabric. For Fabric, the query can be written in either DAX or SQL, depending on the type of data source (Semantic Model or SQL Endpoint, respectively) defined in the orchestration configuration.
+
+The Ingestion Process indexes three content types:
 
 - **query**: Examples of queries for both **few-shot** and **few-shot scaled** strategies.
 - **table**: Descriptions of tables for the **few-shot scaled** scenario.
@@ -113,7 +116,8 @@ Here’s an example of a query file:
 
 ```json
 {
-    "question": "What are the top 5 most expensive products currently available for sale?",
+   "datasource": "adventureworks",
+   "question": "What are the top 5 most expensive products currently available for sale?",
     "query": "SELECT TOP 5 ProductID, Name, ListPrice FROM SalesLT.Product WHERE SellEndDate IS NULL ORDER BY ListPrice DESC",
     "selected_tables": [
         "SalesLT.Product"

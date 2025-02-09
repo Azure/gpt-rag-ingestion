@@ -1,0 +1,7 @@
+{
+    "id": "adventureworks",
+    "description": "AdventureWorksLT is a database featuring a schema with tables for customers, orders, products, and sales.",
+    "type": "sql_database",
+    "database": "adventureworkslt",
+    "server": "sqlservername.database.windows.net"
+}

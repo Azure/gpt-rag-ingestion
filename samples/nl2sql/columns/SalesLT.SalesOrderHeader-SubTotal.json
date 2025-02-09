@@ -1,5 +1,0 @@
-{
-    "table_name": "SalesLT.SalesOrderHeader",
-    "column_name": "SubTotal",
-    "description": "Sales subtotal. Computed as SUM(SalesOrderDetail.LineTotal) for the appropriate SalesOrderID."
-}

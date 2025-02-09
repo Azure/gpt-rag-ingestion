@@ -1,0 +1,43 @@
+{
+    "table": "SalesLT.SalesOrderDetail",
+    "datasource": "adventureworks",
+    "description": "Details of each product line item associated with a sales order.",
+    "columns": [
+        {
+            "name": "SalesOrderID",
+            "description": "Primary key. Foreign key to SalesOrderHeader.SalesOrderID."
+        },
+        {
+            "name": "SalesOrderDetailID",
+            "description": "Primary key. One incremental unique number per product sold."
+        },
+        {
+            "name": "OrderQty",
+            "description": "Quantity ordered per product."
+        },
+        {
+            "name": "ProductID",
+            "description": "Product sold to customer. Foreign key to Product.ProductID."
+        },
+        {
+            "name": "UnitPrice",
+            "description": "Selling price of a single product."
+        },
+        {
+            "name": "UnitPriceDiscount",
+            "description": "Discount amount."
+        },
+        {
+            "name": "LineTotal",
+            "description": "Per product subtotal. Computed as UnitPrice * (1 - UnitPriceDiscount) * OrderQty."
+        },
+        {
+            "name": "rowguid",
+            "description": "ROWGUIDCOL number uniquely identifying the record. Used to support a merge replication sample."
+        },
+        {
+            "name": "ModifiedDate",
+            "description": "Date and time the record was last updated."
+        }
+    ]
+}
