@@ -1,7 +1,7 @@
 {
     "table": "dimension_customer",
     "description": "Customer dimension table containing details of customers, their categories, and billing information.",
-    "datasource": "wwi_sales_star_schema",
+    "datasource": "wwi-sales-star-schema",
     "columns": [
         {
             "name": "CustomerKey",

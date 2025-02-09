@@ -1,7 +1,7 @@
 {
     "table": "dimension_stock_item",
     "description": "Stock item dimension table containing details of products available for sale, including packaging, pricing, and inventory attributes.",
-    "datasource": "wwi_sales_star_schema",
+    "datasource": "wwi-sales-star-schema",
     "columns": [
         {
             "name": "StockItemKey",

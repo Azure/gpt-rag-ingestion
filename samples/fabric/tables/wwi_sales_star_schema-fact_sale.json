@@ -1,7 +1,7 @@
 {
     "table": "fact_sale",
     "description": "Sales fact table containing details of transactions including products, customers, sales locations, and pricing.",
-    "datasource": "wwi_sales_star_schema",
+    "datasource": "wwi-sales-star-schema",
     "columns": [
         {
             "name": "SaleKey",

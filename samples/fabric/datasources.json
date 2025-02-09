@@ -1,0 +1,21 @@
+[
+    {
+        "id": "wwi-sales-star-schema",
+        "description": "This data source is a star schema that organizes sales data. It includes a fact table for sales and dimension tables such as city, customer, and inventory items (products).",
+        "type": "sql_endpoint",
+        "organization": "myorg",
+        "server": "your_sql_endpoint. Ex: xpto.datawarehouse.fabric.microsoft.com",
+        "database": "your_lakehouse_name",
+        "tenant_id": "your_sp_tennant_id",
+        "client_id": "your_sp_client_id"
+    },
+    {
+        "id": "wwi-sales-aggregated-data",    
+        "description": "This data source is a semantic model containing aggregated sales data. It is ideal for insights such as sales by employee or city.",
+        "type": "semantic_model",
+        "organization": "myorg",
+        "dataset": "your_dataset_or_semantic_model_name",
+        "tenant_id": "your_sp_tennant_id",
+        "client_id": "your_sp_client_id"    
+    }
+]

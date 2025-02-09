@@ -1,7 +1,7 @@
 {
     "table": "dimension_employee",
     "description": "Employee dimension table containing employee details and sales role information.",
-    "datasource": "wwi_sales_star_schema",
+    "datasource": "wwi-sales-star-schema",
     "columns": [
         {
             "name": "EmployeeKey",

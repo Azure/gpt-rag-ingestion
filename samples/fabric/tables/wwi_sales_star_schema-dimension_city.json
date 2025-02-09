@@ -1,7 +1,7 @@
 {
     "table": "dimension_city",
     "description": "City dimension table containing details of locations associated with sales and customers.",
-    "datasource": "wwi_sales_star_schema",
+    "datasource": "wwi-sales-star-schema",
     "columns": [
         {
             "name": "CityKey",

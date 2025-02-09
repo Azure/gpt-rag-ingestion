@@ -1,7 +1,7 @@
 {
     "table": "aggregate_sale_by_date_employee ",
     "description": "Aggregated sales data by date and employee, including revenue, tax, and profit summaries.",
-    "datasource": "wwi_sales_aggregated_data",
+    "datasource": "wwi-sales-aggregated-data",
     "columns": [
         {
             "name": "Date",
