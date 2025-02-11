@@ -92,7 +92,7 @@ When `MULTIMODALITY` is set to `true`, the data ingestion pipeline extends its c
    - A dedicated **purging process** periodically checks the `documents-images` container and removes any images **no longer referenced** in the AI Search Index.  
    - This ensures storage is kept in sync with ingested content, avoiding orphaned or stale images that are no longer needed.
 
-By activating `MULTIMODALITY`, your ingestion process captures both text and visuals in a single workflow, providing a richer knowledge base for Retrieval Augmented Generation scenarios. Queries can match not just textual content but also relevant image captions, retrieving valuable visual context stored in `documents-images`.
+By activating `MULTIMODAL`, your ingestion process captures both text and visuals in a single workflow, providing a richer knowledge base for Retrieval Augmented Generation scenarios. Queries can match not just textual content but also relevant image captions, retrieving valuable visual context stored in `documents-images`.
 
 ### NL2SQL Ingestion Process
 
