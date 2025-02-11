@@ -68,7 +68,7 @@ This repository supports image ingestion for a multimodal RAG scenario. For an o
 
 To enable multimodal ingestion, set the `MULTIMODAL` environment variable to `true` before starting to index your data.
 
-When `MULTIMODALITY` is set to `true`, the data ingestion pipeline extends its capabilities to handle both text and images within your source documents, using the `MultimodalChunker`. Below is an overview of how this **multimodal ingestion process** works, including image extraction, captioning, and cleanup.
+When `MULTIMODAL` is set to `true`, the data ingestion pipeline extends its capabilities to handle both text and images within your source documents, using the `MultimodalChunker`. Below is an overview of how this **multimodal ingestion process** works, including image extraction, captioning, and cleanup.
 
 1. **Thresholded Image Extraction**  
    - The system uses **Document Intelligence** to parse each document, detecting text elements as well as embedded images. This approach **extends** the standard `DocAnalysisChunker` by adding **image extraction** steps on top of the usual text-based process.
