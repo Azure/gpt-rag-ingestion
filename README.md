@@ -66,7 +66,7 @@ The chunking process is customizable. You can modify existing chunkers or create
 
 This repository supports image ingestion for a multimodal RAG scenario. For an overview of how multimodality is implemented in GPT-RAG, see [Multimodal RAG Overview](https://github.com/Azure/GPT-RAG/blob/main/docs/MULTIMODAL_RAG.md).
 
-To enable multimodal ingestion, set the `MULTIMODALITY` environment variable to `true` before starting to index your data.
+To enable multimodal ingestion, set the `MULTIMODAL` environment variable to `true` before starting to index your data.
 
 When `MULTIMODALITY` is set to `true`, the data ingestion pipeline extends its capabilities to handle both text and images within your source documents, using the `MultimodalChunker`. Below is an overview of how this **multimodal ingestion process** works, including image extraction, captioning, and cleanup.
 
