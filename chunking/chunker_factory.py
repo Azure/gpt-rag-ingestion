@@ -16,7 +16,7 @@ class ChunkerFactory:
     def __init__(self):
         docint_client = DocumentIntelligenceClient()
         self.docint_40_api = docint_client.docint_40_api 
-        _multimodality = os.getenv("MULTIMODALITY", "false").lower()
+        _multimodality = os.getenv("MULTIMODAL", "false").lower()
         self.multimodality = _multimodality in ["true", "1", "yes"]
 
     def get_chunker(self, extension, data):
