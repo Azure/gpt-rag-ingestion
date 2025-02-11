@@ -31,6 +31,6 @@
     "STORAGE_CONTAINER": "documents",
     "STORAGE_CONTAINER_IMAGES": "documents-images",
     "STORAGE_ACCOUNT_NAME": "your-storage-account-name",
-    "MULTIMODALITY": "true"
+    "MULTIMODAL": "true"
   }
 }
