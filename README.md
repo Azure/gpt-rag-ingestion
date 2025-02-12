@@ -8,7 +8,7 @@ Part of [GPT-RAG](https://github.com/Azure/gpt-rag)
    - [1.1 Document Ingestion Process](#document-ingestion-process)
    - [1.2 Document Chunking Process](#document-chunking-process)
    - [1.3 Multimodal Ingestion](#multimodal-ingestion)
-   - [1.4 NL2SQL Data Ingestion](#nl2sql-ingestion-process)
+   - [1.4 NL2SQL and NL2DAX Data Ingestion](#nl2sql-and-nl2dax-ingestion-process)
    - [1.5 Sharepoint Indexing](#sharepoint-indexing)   
 2. [**How-to: Developer**](#how-to-developer)
    - [2.1 Redeploying the Ingestion Component](#redeploying-the-ingestion-component)
@@ -94,25 +94,59 @@ When `MULTIMODAL` is set to `true`, the data ingestion pipeline extends its capa
 
 By activating `MULTIMODAL`, your ingestion process captures both text and visuals in a single workflow, providing a richer knowledge base for Retrieval Augmented Generation scenarios. Queries can match not just textual content but also relevant image captions, retrieving valuable visual context stored in `documents-images`.
 
-### NL2SQL Ingestion Process
+### NL2SQL and NL2DAX Ingestion Process
 
-If you are using the **few-shot** or **few-shot scaled** NL2SQL strategies in your orchestration component, you may want to index NL2SQL content for use during the retrieval step. The idea is that this content will aid in SQL query creation with these strategies. More details about these NL2SQL strategies can be found in the [orchestrator repository](https://github.com/azure/gpt-rag-agentic).
+If you are using NL2SQL or Chat with Fabric Data strategies in your orchestration component, you need to index some metadata. Additionally, you can index sample query content to assist with retrieval during query generation. This indexed content helps generate SQL and DAX queries more effectively using these strategies. More details about agentic strategies can be found in the [orchestrator repository](https://github.com/azure/gpt-rag-agentic).
 
-> [!Note]  
-> This also applies to the agentic strategy for Fabric. For Fabric, the query can be written in either DAX or SQL, depending on the type of data source (Semantic Model or SQL Endpoint, respectively) defined in the orchestration configuration.
+The ingestion process indexes two types of content:
 
-The Ingestion Process indexes three content types:
+- **query**: Sample queries used for few-shot learning by the orchestrator (optional).
+- **table**: Descriptions of tables and their columns, serving as a data dictionary to help the orchestrator identify relevant tables for user queries.
 
-- **query**: Examples of queries for both **few-shot** and **few-shot scaled** strategies.
-- **table**: Descriptions of tables for the **few-shot scaled** scenario.
-- **column**: Descriptions of columns for the **few-shot scaled** scenario.
+Each item—whether a query or a table—is represented as a JSON file containing specific information. JSON files should be stored in the `queries` and `tables` folders inside the `nl2sql` container in the solution's storage account.
 
-> [!NOTE] 
-> If you are using the **few-shot** strategy, you will only need to index queries.
+The diagram below illustrates the NL2SQL data ingestion pipeline:
 
-Each item—whether a query, table, or column—is represented in a JSON file with information specific to the query, table, or column, respectively.
+![NL2SQL Ingestion Pipeline](media/nl2sql_ingestion_pipeline.png)  
+*NL2SQL Ingestion Pipeline*
 
-Here’s an example of a query file:
+### Tables
+
+Here’s an example of a table metadata file:
+
+```json
+{
+    "table": "dimension_city",
+    "description": "City dimension table containing details of locations associated with sales and customers.",
+    "datasource": "wwi-sales-star-schema",
+    "columns": [
+        {
+            "name": "CityKey",
+            "description": "Primary key for city records."
+        },
+        {
+            "name": "WWICityID",
+            "description": "Identifier for the city in the worldwide database."
+        },
+        {
+            "name": "City",
+            "description": "Name of the city."
+        },
+        {
+            "name": "StateProvince",
+            "description": "State or province where the city is located."
+        },
+        {
+            "name": "Country",
+            "description": "Country where the city is located."
+        }
+    ]
+}
+```
+
+### Queries
+
+Here’s an example of an SQL query file:
 
 ```json
 {
@@ -132,18 +166,89 @@ Here’s an example of a query file:
 }
 ```
 
-In the [**nl2sql**](samples/nl2sql) directory of this repository, you can find additional examples of queries, tables, and columns for the following Adventure Works sample SQL Database tables.
+Here’s an example of a DAX query:
+
+```json
+{
+    "datasource": "wwi-sales-aggregated-data",
+    "question": "Who are the top 5 employees with the highest total sales including tax?",
+    "query": "EVALUATE TOPN(5, SUMMARIZE(aggregate_sale_by_date_employee, aggregate_sale_by_date_employee[Employee], aggregate_sale_by_date_employee[SumOfTotalIncludingTax]), aggregate_sale_by_date_employee[SumOfTotalIncludingTax], DESC)",
+    "selected_tables": [
+      "aggregate_sale_by_date_employee"
+    ],
+    "selected_columns": [
+      "aggregate_sale_by_date_employee[Employee]",
+      "aggregate_sale_by_date_employee[SumOfTotalIncludingTax]"
+    ],
+    "reasoning": "This DAX query identifies the top 5 employees based on the total sales amount including tax. It leverages the aggregate_sale_by_date_employee table, aggregates the sales data by employee, and orders the results to display the highest earners first."
+}
+```
+
+Additional examples of queries and tables can be found in the [**samples**](samples) directory of this repository.
+
+SQL Database examples are based on the [Adventure Works sample SQL Database](https://learn.microsoft.com/en-us/sql/samples/adventureworks-install-configure?view=sql-server-ver16&tabs=ssms#deploy-to-azure-sql-database), which you can install in an Azure SQL Database.
 
 ![Document Ingestion Pipeline](media/nl2sql_adventure_works.png)  
 *Sample Adventure Works Database Tables*
 
-> [!NOTE]  
-> You can deploy this sample database in your [Azure SQL Database](https://learn.microsoft.com/en-us/sql/samples/adventureworks-install-configure?view=sql-server-ver16&tabs=ssms#deploy-to-azure-sql-database).
+Fabric-based examples use the fictional Wide World Importers company Lakehouse and a semantic model generated using this [tutorial](https://learn.microsoft.com/en-us/fabric/data-engineering/tutorial-lakehouse-introduction).
 
-The diagram below illustrates the NL2SQL data ingestion pipeline.
+### Datasources
 
-![NL2SQL Ingestion Pipeline](media/nl2sql_ingestion_pipeline.png)  
-*NL2SQL Ingestion Pipeline*
+Every JSON file, whether describing a query or a table, contains a **datasource** field. This field represents the **datasource ID**, which is an internal identifier used by GPT-RAG to manage multiple data sources.
+
+The datasource information is stored as a JSON document in the `datasources` container within CosmosDB, used by GPT-RAG. This document contains relevant details about the specific datasource, including its type and connection details.
+
+![Document Ingestion Pipeline](media/nl2sql_datasources.png)  
+*Example of Datasources in CosmosDB*
+
+Currently, there are three types of datasources:
+
+1. **Semantic Model**  
+2. **SQL Endpoint**  
+3. **SQL Database**  
+
+The first two are designed for Fabric, where the orchestrator connects to the datasource using a Service Principal/App Registration. For SQL Database connections, Managed Identity is used. Instructions on configuring connections for Fabric and SQL Database can be found in the **administration guide** in the main GPT-RAG repository.
+
+Below are examples of different types of datasource configurations:
+
+#### **Semantic Model Datasource**
+```json
+{
+    "id": "wwi-sales-aggregated-data",    
+    "description": "This data source is a semantic model containing aggregated sales data. It is ideal for insights such as sales by employee or city.",
+    "type": "semantic_model",
+    "organization": "myorg",
+    "dataset": "your_dataset_or_semantic_model_name",
+    "tenant_id": "your_sp_tenant_id",
+    "client_id": "your_sp_client_id"    
+}
+```
+
+#### **SQL Endpoint Datasource**
+```json
+{
+    "id": "wwi-sales-star-schema",
+    "description": "This data source is a star schema that organizes sales data. It includes a fact table for sales and dimension tables such as city, customer, and inventory items (products).",
+    "type": "sql_endpoint",
+    "organization": "myorg",
+    "server": "your_sql_endpoint. Ex: xpto.datawarehouse.fabric.microsoft.com",
+    "database": "your_lakehouse_name",
+    "tenant_id": "your_sp_tenant_id",
+    "client_id": "your_sp_client_id"
+}
+```
+
+#### **SQL Database Datasource**
+```json
+{
+    "id": "adventureworks",
+    "description": "AdventureWorksLT is a database featuring a schema with tables for customers, orders, products, and sales.",
+    "type": "sql_database",
+    "database": "adventureworkslt",
+    "server": "sqlservername.database.windows.net"
+}
+```
 
 **Workflow**
 
