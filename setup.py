@@ -784,6 +784,18 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                             "searchable": True,
                             "retrievable": True,
                             "analyzer": "standard.lucene"
+                        },
+                        {
+                            "name": "type",
+                            "type": "Edm.String",
+                            "searchable": False,
+                            "retrievable": True
+                        },
+                        {
+                            "name": "examples",
+                            "type": "Collection(Edm.String)",
+                            "searchable": False,
+                            "retrievable": True
                         }
                     ]
                 },
