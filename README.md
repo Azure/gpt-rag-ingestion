@@ -8,7 +8,8 @@ Part of [GPT-RAG](https://github.com/Azure/gpt-rag)
    - [1.1 Document Ingestion Process](#document-ingestion-process)
    - [1.2 Document Chunking Process](#document-chunking-process)
    - [1.3 Multimodal Ingestion](#multimodal-ingestion)
-   - [1.4 NL2SQL Data Ingestion](#nl2sql-ingestion-process)
+   - [1.4 NL2SQL and NL2DAX Data Ingestion](#nl2sql-and-nl2dax-ingestion-process)
+   - [1.4 NL2SQL and NL2DAX Data Ingestion](#nl2sql-and-nl2dax-ingestion-process)
    - [1.5 Sharepoint Indexing](#sharepoint-indexing)   
 2. [**How-to: Developer**](#how-to-developer)
    - [2.1 Redeploying the Ingestion Component](#redeploying-the-ingestion-component)
@@ -66,9 +67,11 @@ The chunking process is customizable. You can modify existing chunkers or create
 
 This repository supports image ingestion for a multimodal RAG scenario. For an overview of how multimodality is implemented in GPT-RAG, see [Multimodal RAG Overview](https://github.com/Azure/GPT-RAG/blob/main/docs/MULTIMODAL_RAG.md).
 
-To enable multimodal ingestion, set the `MULTIMODALITY` environment variable to `true` before starting to index your data.
+To enable multimodal ingestion, set the `MULTIMODAL` environment variable to `true` before starting to index your data.
+To enable multimodal ingestion, set the `MULTIMODAL` environment variable to `true` before starting to index your data.
 
-When `MULTIMODALITY` is set to `true`, the data ingestion pipeline extends its capabilities to handle both text and images within your source documents, using the `MultimodalChunker`. Below is an overview of how this **multimodal ingestion process** works, including image extraction, captioning, and cleanup.
+When `MULTIMODAL` is set to `true`, the data ingestion pipeline extends its capabilities to handle both text and images within your source documents, using the `MultimodalChunker`. Below is an overview of how this **multimodal ingestion process** works, including image extraction, captioning, and cleanup.
+When `MULTIMODAL` is set to `true`, the data ingestion pipeline extends its capabilities to handle both text and images within your source documents, using the `MultimodalChunker`. Below is an overview of how this **multimodal ingestion process** works, including image extraction, captioning, and cleanup.
 
 1. **Thresholded Image Extraction**  
    - The system uses **Document Intelligence** to parse each document, detecting text elements as well as embedded images. This approach **extends** the standard `DocAnalysisChunker` by adding **image extraction** steps on top of the usual text-based process.
@@ -92,58 +95,235 @@ When `MULTIMODALITY` is set to `true`, the data ingestion pipeline extends its c
    - A dedicated **purging process** periodically checks the `documents-images` container and removes any images **no longer referenced** in the AI Search Index.  
    - This ensures storage is kept in sync with ingested content, avoiding orphaned or stale images that are no longer needed.
 
-By activating `MULTIMODALITY`, your ingestion process captures both text and visuals in a single workflow, providing a richer knowledge base for Retrieval Augmented Generation scenarios. Queries can match not just textual content but also relevant image captions, retrieving valuable visual context stored in `documents-images`.
+By activating `MULTIMODAL`, your ingestion process captures both text and visuals in a single workflow, providing a richer knowledge base for Retrieval Augmented Generation scenarios. Queries can match not just textual content but also relevant image captions, retrieving valuable visual context stored in `documents-images`.
+By activating `MULTIMODAL`, your ingestion process captures both text and visuals in a single workflow, providing a richer knowledge base for Retrieval Augmented Generation scenarios. Queries can match not just textual content but also relevant image captions, retrieving valuable visual context stored in `documents-images`.
 
-### NL2SQL Ingestion Process
+### NL2SQL and NL2DAX Ingestion Process
+### NL2SQL and NL2DAX Ingestion Process
 
-If you are using the **few-shot** or **few-shot scaled** NL2SQL strategies in your orchestration component, you may want to index NL2SQL content for use during the retrieval step. The idea is that this content will aid in SQL query creation with these strategies. More details about these NL2SQL strategies can be found in the [orchestrator repository](https://github.com/azure/gpt-rag-agentic).
+If you are using NL2SQL or Chat with Fabric Data strategies in your orchestration component, you need to index some metadata. Additionally, you can index sample query content to assist with retrieval during query generation. This indexed content helps generate SQL and DAX queries more effectively using these strategies. More details about agentic strategies can be found in the [orchestrator repository](https://github.com/azure/gpt-rag-agentic).
 
-> [!Note]  
-> This also applies to the agentic strategy for Fabric. For Fabric, the query can be written in either DAX or SQL, depending on the type of data source (Semantic Model or SQL Endpoint, respectively) defined in the orchestration configuration.
 
-The Ingestion Process indexes three content types:
+The ingestion process indexes three types of content:
 
-- **query**: Examples of queries for both **few-shot** and **few-shot scaled** strategies.
-- **table**: Descriptions of tables for the **few-shot scaled** scenario.
-- **column**: Descriptions of columns for the **few-shot scaled** scenario.
+- **query**: Sample queries used for few-shot learning by the orchestrator (optional).
+- **table**: Descriptions of tables and their columns, serving as a data dictionary.
+- **measure**: Definitions of measures, including name, description, data type, and source information, to help the orchestrator select appropriate measures for calculations.
 
-> [!NOTE] 
-> If you are using the **few-shot** strategy, you will only need to index queries.
+Each item—query, table, or measure—is represented as a JSON file with specific attributes. JSON files should be stored in the `queries`, `tables`, and `measures` folders inside the `nl2sql` container in the solution's storage account.
 
-Each item—whether a query, table, or column—is represented in a JSON file with information specific to the query, table, or column, respectively.
+The diagram below illustrates the NL2SQL data ingestion pipeline:
 
-Here’s an example of a query file:
+![NL2SQL Ingestion Pipeline](media/nl2sql_ingestion_pipeline.png)  
+*NL2SQL Ingestion Pipeline*
+
+### Tables
+
+Here’s an example of a table metadata file:
+
+```json
+{
+    "table": "dimension_city",
+    "description": "City dimension table containing details of locations associated with sales and customers.",
+    "datasource": "wwi-sales-star-schema",
+    "columns": [
+        {
+            "name": "CityKey",
+            "description": "Primary key for city records."
+        },
+        {
+            "name": "WWICityID",
+            "description": "Identifier for the city in the worldwide database."
+        },
+        {
+            "name": "City",
+            "description": "Name of the city."
+        },
+        {
+            "name": "StateProvince",
+            "description": "State or province where the city is located."
+        },
+        {
+            "name": "Country",
+            "description": "Country where the city is located."
+        }
+    ]
+}
+```
+
+### Queries
+
+Here’s an example of an SQL query file:
+Here’s an example of an SQL query file:
 
 ```json
 {
    "datasource": "adventureworks",
    "question": "What are the top 5 most expensive products currently available for sale?",
     "query": "SELECT TOP 5 ProductID, Name, ListPrice FROM SalesLT.Product WHERE SellEndDate IS NULL ORDER BY ListPrice DESC",
-    "selected_tables": [
-        "SalesLT.Product"
-    ],
-    "selected_columns": [
-        "SalesLT.Product-ProductID",
-        "SalesLT.Product-Name",
-        "SalesLT.Product-ListPrice",
-        "SalesLT.Product-SellEndDate"
-    ],
     "reasoning": "This query retrieves the top 5 products with the highest selling prices that are currently available for sale. It uses the SalesLT.Product table, selects relevant columns, and filters out products that are no longer available by checking that SellEndDate is NULL."
 }
 ```
 
-In the [**nl2sql**](samples/nl2sql) directory of this repository, you can find additional examples of queries, tables, and columns for the following Adventure Works sample SQL Database tables.
+Here’s an example of a DAX query:
+
+```json
+{
+    "datasource": "wwi-sales-aggregated-data",
+    "question": "Who are the top 5 employees with the highest total sales including tax?",
+    "query": "EVALUATE TOPN(5, SUMMARIZE(aggregate_sale_by_date_employee, aggregate_sale_by_date_employee[Employee], aggregate_sale_by_date_employee[SumOfTotalIncludingTax]), aggregate_sale_by_date_employee[SumOfTotalIncludingTax], DESC)",
+    "reasoning": "This DAX query identifies the top 5 employees based on the total sales amount including tax. It leverages the aggregate_sale_by_date_employee table, aggregates the sales data by employee, and orders the results to display the highest earners first."
+}
+```
+
+#### Measures
+
+When indexing measures, the input JSON should have the following attributes:
+
+- **name:** The name of the measure.
+- **description:** A brief description of the measure.
+- **datasource:** The datasource where the measure resides.
+- **type:** The type of the measure ("external" or "local").
+- **source_table:** The source table associated with the local measure.
+- **data_type:** The data type of the measure.
+- **source_model:** The source model for the measure.
+
+**Example of an External Measure JSON:**
+```json
+{
+  "datasource": "Ecommerce",
+  "name": "Total Revenue (%)",
+  "description": "Calculates the percentage of total revenue for the selected period.",
+  "type": "external",
+  "source_table": "",
+  "data_type": "CURRENCY",
+  "source_model": "Executive Sales Dashboard"
+}
+```
+
+Additional examples of queries and tables can be found in the [**samples**](samples) directory of this repository.
+
+SQL Database examples are based on the [Adventure Works sample SQL Database](https://learn.microsoft.com/en-us/sql/samples/adventureworks-install-configure?view=sql-server-ver16&tabs=ssms#deploy-to-azure-sql-database), which you can install in an Azure SQL Database.
 
 ![Document Ingestion Pipeline](media/nl2sql_adventure_works.png)  
 *Sample Adventure Works Database Tables*
 
-> [!NOTE]  
-> You can deploy this sample database in your [Azure SQL Database](https://learn.microsoft.com/en-us/sql/samples/adventureworks-install-configure?view=sql-server-ver16&tabs=ssms#deploy-to-azure-sql-database).
+Fabric-based examples use the fictional Wide World Importers company Lakehouse and a semantic model generated using this [tutorial](https://learn.microsoft.com/en-us/fabric/data-engineering/tutorial-lakehouse-introduction).
 
-The diagram below illustrates the NL2SQL data ingestion pipeline.
+### Datasources
 
-![NL2SQL Ingestion Pipeline](media/nl2sql_ingestion_pipeline.png)  
-*NL2SQL Ingestion Pipeline*
+Every JSON file, whether describing a query or a table, contains a **datasource** field. This field represents the **datasource ID**, which is an internal identifier used by GPT-RAG to manage multiple data sources.
+
+The datasource information is stored as a JSON document in the `datasources` container within CosmosDB, used by GPT-RAG. This document contains relevant details about the specific datasource, including its type and connection details.
+
+![Document Ingestion Pipeline](media/nl2sql_datasources.png)  
+*Example of Datasources in CosmosDB*
+
+Currently, there are three types of datasources:
+
+1. **Semantic Model**  
+2. **SQL Endpoint**  
+3. **SQL Database**  
+
+The first two are designed for Fabric, where the orchestrator connects to the datasource using a Service Principal/App Registration. For SQL Database connections, Managed Identity is used. Instructions on configuring connections for Fabric and SQL Database can be found in the **administration guide** in the main GPT-RAG repository.
+
+Below are examples of different types of datasource configurations:
+
+#### **Semantic Model Datasource**
+```json
+{
+    "id": "wwi-sales-aggregated-data",    
+    "description": "This data source is a semantic model containing aggregated sales data. It is ideal for insights such as sales by employee or city.",
+    "type": "semantic_model",
+    "organization": "myorg",
+    "dataset": "your_dataset_or_semantic_model_name",
+    "tenant_id": "your_sp_tenant_id",
+    "client_id": "your_sp_client_id"    
+}
+```
+
+#### **SQL Endpoint Datasource**
+```json
+{
+    "id": "wwi-sales-star-schema",
+    "description": "This data source is a star schema that organizes sales data. It includes a fact table for sales and dimension tables such as city, customer, and inventory items (products).",
+    "type": "sql_endpoint",
+    "organization": "myorg",
+    "server": "your_sql_endpoint. Ex: xpto.datawarehouse.fabric.microsoft.com",
+    "database": "your_lakehouse_name",
+    "tenant_id": "your_sp_tenant_id",
+    "client_id": "your_sp_client_id"
+}
+```
+
+#### **SQL Database Datasource**
+```json
+{
+    "id": "adventureworks",
+    "description": "AdventureWorksLT is a database featuring a schema with tables for customers, orders, products, and sales.",
+    "type": "sql_database",
+    "database": "adventureworkslt",
+    "server": "sqlservername.database.windows.net"
+}
+```
+Fabric-based examples use the fictional Wide World Importers company Lakehouse and a semantic model generated using this [tutorial](https://learn.microsoft.com/en-us/fabric/data-engineering/tutorial-lakehouse-introduction).
+
+### Datasources
+
+Every JSON file, whether describing a query or a table, contains a **datasource** field. This field represents the **datasource ID**, which is an internal identifier used by GPT-RAG to manage multiple data sources.
+
+The datasource information is stored as a JSON document in the `datasources` container within CosmosDB, used by GPT-RAG. This document contains relevant details about the specific datasource, including its type and connection details.
+
+![Document Ingestion Pipeline](media/nl2sql_datasources.png)  
+*Example of Datasources in CosmosDB*
+
+Currently, there are three types of datasources:
+
+1. **Semantic Model**  
+2. **SQL Endpoint**  
+3. **SQL Database**  
+
+The first two are designed for Fabric, where the orchestrator connects to the datasource using a Service Principal/App Registration. For SQL Database connections, Managed Identity is used. Instructions on configuring connections for Fabric and SQL Database can be found in the **administration guide** in the main GPT-RAG repository.
+
+Below are examples of different types of datasource configurations:
+
+#### **Semantic Model Datasource**
+```json
+{
+    "id": "wwi-sales-aggregated-data",    
+    "description": "This data source is a semantic model containing aggregated sales data. It is ideal for insights such as sales by employee or city.",
+    "type": "semantic_model",
+    "organization": "myorg",
+    "dataset": "your_dataset_or_semantic_model_name",
+    "tenant_id": "your_sp_tenant_id",
+    "client_id": "your_sp_client_id"    
+}
+```
+
+#### **SQL Endpoint Datasource**
+```json
+{
+    "id": "wwi-sales-star-schema",
+    "description": "This data source is a star schema that organizes sales data. It includes a fact table for sales and dimension tables such as city, customer, and inventory items (products).",
+    "type": "sql_endpoint",
+    "organization": "myorg",
+    "server": "your_sql_endpoint. Ex: xpto.datawarehouse.fabric.microsoft.com",
+    "database": "your_lakehouse_name",
+    "tenant_id": "your_sp_tenant_id",
+    "client_id": "your_sp_client_id"
+}
+```
+
+#### **SQL Database Datasource**
+```json
+{
+    "id": "adventureworks",
+    "description": "AdventureWorksLT is a database featuring a schema with tables for customers, orders, products, and sales.",
+    "type": "sql_database",
+    "database": "adventureworkslt",
+    "server": "sqlservername.database.windows.net"
+}
+```
 
 **Workflow**
 
@@ -275,3 +455,4 @@ Here are the formats supported by each chunker. The file extension determines wh
 ### External Resources
 - [AI Search Enrichment Pipeline](https://learn.microsoft.com/en-us/azure/search/cognitive-search-concept-intro)
 - [Azure OpenAI Embeddings Generator](https://github.com/Azure-Samples/azure-search-power-skills/tree/57214f6e8773029a638a8f56840ab79fd38574a2/Vector/EmbeddingGenerator)
+
