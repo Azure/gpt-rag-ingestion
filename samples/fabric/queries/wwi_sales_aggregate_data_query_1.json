@@ -2,12 +2,5 @@
     "datasource": "wwi-sales-aggregated-data",
     "question": "Who are the top 5 employees with the highest total sales including tax?",
     "query": "EVALUATE TOPN(5, SUMMARIZE(aggregate_sale_by_date_employee, aggregate_sale_by_date_employee[Employee], aggregate_sale_by_date_employee[SumOfTotalIncludingTax]), aggregate_sale_by_date_employee[SumOfTotalIncludingTax], DESC)",
-    "selected_tables": [
-      "aggregate_sale_by_date_employee"
-    ],
-    "selected_columns": [
-      "aggregate_sale_by_date_employee[Employee]",
-      "aggregate_sale_by_date_employee[SumOfTotalIncludingTax]"
-    ],
     "reasoning": "This DAX query identifies the top 5 employees based on the total sales amount including tax. It leverages the aggregate_sale_by_date_employee table, aggregates the sales data by employee, and orders the results to display the highest earners first."
 }
