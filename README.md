@@ -9,6 +9,7 @@ Part of [GPT-RAG](https://github.com/Azure/gpt-rag)
    - [1.2 Document Chunking Process](#document-chunking-process)
    - [1.3 Multimodal Ingestion](#multimodal-ingestion)
    - [1.4 NL2SQL and NL2DAX Data Ingestion](#nl2sql-and-nl2dax-ingestion-process)
+   - [1.4 NL2SQL and NL2DAX Data Ingestion](#nl2sql-and-nl2dax-ingestion-process)
    - [1.5 Sharepoint Indexing](#sharepoint-indexing)   
 2. [**How-to: Developer**](#how-to-developer)
    - [2.1 Redeploying the Ingestion Component](#redeploying-the-ingestion-component)
@@ -67,7 +68,9 @@ The chunking process is customizable. You can modify existing chunkers or create
 This repository supports image ingestion for a multimodal RAG scenario. For an overview of how multimodality is implemented in GPT-RAG, see [Multimodal RAG Overview](https://github.com/Azure/GPT-RAG/blob/main/docs/MULTIMODAL_RAG.md).
 
 To enable multimodal ingestion, set the `MULTIMODAL` environment variable to `true` before starting to index your data.
+To enable multimodal ingestion, set the `MULTIMODAL` environment variable to `true` before starting to index your data.
 
+When `MULTIMODAL` is set to `true`, the data ingestion pipeline extends its capabilities to handle both text and images within your source documents, using the `MultimodalChunker`. Below is an overview of how this **multimodal ingestion process** works, including image extraction, captioning, and cleanup.
 When `MULTIMODAL` is set to `true`, the data ingestion pipeline extends its capabilities to handle both text and images within your source documents, using the `MultimodalChunker`. Below is an overview of how this **multimodal ingestion process** works, including image extraction, captioning, and cleanup.
 
 1. **Thresholded Image Extraction**  
@@ -93,7 +96,9 @@ When `MULTIMODAL` is set to `true`, the data ingestion pipeline extends its capa
    - This ensures storage is kept in sync with ingested content, avoiding orphaned or stale images that are no longer needed.
 
 By activating `MULTIMODAL`, your ingestion process captures both text and visuals in a single workflow, providing a richer knowledge base for Retrieval Augmented Generation scenarios. Queries can match not just textual content but also relevant image captions, retrieving valuable visual context stored in `documents-images`.
+By activating `MULTIMODAL`, your ingestion process captures both text and visuals in a single workflow, providing a richer knowledge base for Retrieval Augmented Generation scenarios. Queries can match not just textual content but also relevant image captions, retrieving valuable visual context stored in `documents-images`.
 
+### NL2SQL and NL2DAX Ingestion Process
 ### NL2SQL and NL2DAX Ingestion Process
 
 If you are using NL2SQL or Chat with Fabric Data strategies in your orchestration component, you need to index some metadata. Additionally, you can index sample query content to assist with retrieval during query generation. This indexed content helps generate SQL and DAX queries more effectively using these strategies. More details about agentic strategies can be found in the [orchestrator repository](https://github.com/azure/gpt-rag-agentic).
@@ -149,6 +154,7 @@ Here’s an example of a table metadata file:
 ### Queries
 
 Here’s an example of an SQL query file:
+Here’s an example of an SQL query file:
 
 ```json
 {
@@ -202,6 +208,64 @@ SQL Database examples are based on the [Adventure Works sample SQL Database](htt
 ![Document Ingestion Pipeline](media/nl2sql_adventure_works.png)  
 *Sample Adventure Works Database Tables*
 
+Fabric-based examples use the fictional Wide World Importers company Lakehouse and a semantic model generated using this [tutorial](https://learn.microsoft.com/en-us/fabric/data-engineering/tutorial-lakehouse-introduction).
+
+### Datasources
+
+Every JSON file, whether describing a query or a table, contains a **datasource** field. This field represents the **datasource ID**, which is an internal identifier used by GPT-RAG to manage multiple data sources.
+
+The datasource information is stored as a JSON document in the `datasources` container within CosmosDB, used by GPT-RAG. This document contains relevant details about the specific datasource, including its type and connection details.
+
+![Document Ingestion Pipeline](media/nl2sql_datasources.png)  
+*Example of Datasources in CosmosDB*
+
+Currently, there are three types of datasources:
+
+1. **Semantic Model**  
+2. **SQL Endpoint**  
+3. **SQL Database**  
+
+The first two are designed for Fabric, where the orchestrator connects to the datasource using a Service Principal/App Registration. For SQL Database connections, Managed Identity is used. Instructions on configuring connections for Fabric and SQL Database can be found in the **administration guide** in the main GPT-RAG repository.
+
+Below are examples of different types of datasource configurations:
+
+#### **Semantic Model Datasource**
+```json
+{
+    "id": "wwi-sales-aggregated-data",    
+    "description": "This data source is a semantic model containing aggregated sales data. It is ideal for insights such as sales by employee or city.",
+    "type": "semantic_model",
+    "organization": "myorg",
+    "dataset": "your_dataset_or_semantic_model_name",
+    "tenant_id": "your_sp_tenant_id",
+    "client_id": "your_sp_client_id"    
+}
+```
+
+#### **SQL Endpoint Datasource**
+```json
+{
+    "id": "wwi-sales-star-schema",
+    "description": "This data source is a star schema that organizes sales data. It includes a fact table for sales and dimension tables such as city, customer, and inventory items (products).",
+    "type": "sql_endpoint",
+    "organization": "myorg",
+    "server": "your_sql_endpoint. Ex: xpto.datawarehouse.fabric.microsoft.com",
+    "database": "your_lakehouse_name",
+    "tenant_id": "your_sp_tenant_id",
+    "client_id": "your_sp_client_id"
+}
+```
+
+#### **SQL Database Datasource**
+```json
+{
+    "id": "adventureworks",
+    "description": "AdventureWorksLT is a database featuring a schema with tables for customers, orders, products, and sales.",
+    "type": "sql_database",
+    "database": "adventureworkslt",
+    "server": "sqlservername.database.windows.net"
+}
+```
 Fabric-based examples use the fictional Wide World Importers company Lakehouse and a semantic model generated using this [tutorial](https://learn.microsoft.com/en-us/fabric/data-engineering/tutorial-lakehouse-introduction).
 
 ### Datasources
@@ -391,3 +455,4 @@ Here are the formats supported by each chunker. The file extension determines wh
 ### External Resources
 - [AI Search Enrichment Pipeline](https://learn.microsoft.com/en-us/azure/search/cognitive-search-concept-intro)
 - [Azure OpenAI Embeddings Generator](https://github.com/Azure-Samples/azure-search-power-skills/tree/57214f6e8773029a638a8f56840ab79fd38574a2/Vector/EmbeddingGenerator)
+
