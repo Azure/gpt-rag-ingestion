@@ -2,14 +2,5 @@
     "datasource": "adventureworks",
     "question": "What are the total sales and tax amounts for each sales order placed in the last year?",
     "query": "SELECT SalesOrderID, SubTotal, TaxAmt FROM SalesLT.SalesOrderHeader WHERE OrderDate >= DATEADD(year, -1, GETDATE())",
-    "selected_tables": [
-        "SalesLT.SalesOrderHeader"
-    ],
-    "selected_columns": [
-        "SalesLT.SalesOrderHeader-SalesOrderID",
-        "SalesLT.SalesOrderHeader-SubTotal",
-        "SalesLT.SalesOrderHeader-TaxAmt",
-        "SalesLT.SalesOrderHeader-OrderDate"
-    ],
     "reasoning": "This query retrieves the SalesOrderID, SubTotal, and TaxAmt for all sales orders placed within the last year. It uses the SalesLT.SalesOrderHeader table and filters orders based on the OrderDate."
 }
