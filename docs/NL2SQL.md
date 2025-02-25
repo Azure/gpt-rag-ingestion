@@ -160,6 +160,41 @@ Example of a local measure JSON:
 }
 ```
 
+> [!Tip]
+> You can find more exampes in the [samples folder](../samples/).
+
+---
+
+### **Ingesting the Data Dictionary**  
+
+Each element of the data dictionary is indexed into an AI Search Index according to its type: measure, table, or query. This process is performed by an AI Search Indexer, which runs on a scheduled basis or can be triggered manually. The indexer reads JSON files from designated folders and uses Azure OpenAI Embeddings to generate vector embeddings, which are then added to the corresponding search indexes. The diagram below illustrates the NL2SQL data ingestion pipeline:
+
+![NL2SQL Ingestion Pipeline](../media/nl2sql_ingestion_pipeline.png)
+<BR>*NL2SQL Ingestion Pipeline*
+
+#### **Workflow Description**
+
+1. File Detection:
+   - The AI Search indexers scan their designated folders:
+     - `queries-indexer` scans the `queries` folder.
+     - `tables-indexer` scans the `tables` folder.
+     - `measures-indexer` scans the `measures` folder.
+
+2. Vector Embedding:
+   - The indexer uses the `#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill` to generate vector embeddings with Azure OpenAI Embeddings.
+     - For queries, the `question` field is vectorized.
+     - For tables, the `description` field is vectorized.
+     - For measures, the `description` field is vectorized.
+
+3. Content Indexing:
+   - The vectorized content is added to the respective Azure AI Search indexes:
+     - Queries are indexed in `nl2sql-queries`.
+     - Tables are indexed in `nl2sql-tables`.
+     - Measures are indexed in `nl2sql-measures`.
+
+> [!important]
+> Ensure that files are placed in their designated folders, as the indexers only scan specific subfolders.
+
 ---
 
 ## Data Sources Configuration
@@ -221,38 +256,5 @@ For data sources that require secrets—such as those accessed via a **Service P
 ![Sample Datasource Secrets](../media/nl2sql-datasource-secrets.png)
 <BR>*Sample Datasource Secrets*
 
-> **NOTE:** Example configuration files are available in the [sample folder](../samples/fabric/datasources.json).
-
-
-## **Data Dictionary Indexing Workflow**
-
-The indexing process reads JSON files and populates the search indexes using Azure OpenAI Embeddings.
-
-The diagram below illustrates the NL2SQL data ingestion pipeline:
-
-
-![NL2SQL Ingestion Pipeline](../media/nl2sql_ingestion_pipeline.png)
-<BR>*NL2SQL Ingestion Pipeline*
-
-#### **Workflow Description**
-
-1. File Detection:
-   - The AI Search indexers scan their designated folders:
-     - `queries-indexer` scans the `queries` folder.
-     - `tables-indexer` scans the `tables` folder.
-     - `measures-indexer` scans the `measures` folder.
-
-2. Vector Embedding:
-   - The indexer uses the `#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill` to generate vector embeddings with Azure OpenAI Embeddings.
-     - For queries, the `question` field is vectorized.
-     - For tables, the `description` field is vectorized.
-     - For measures, the `description` field is vectorized.
-
-3. Content Indexing:
-   - The vectorized content is added to the respective Azure AI Search indexes:
-     - Queries are indexed in `nl2sql-queries`.
-     - Tables are indexed in `nl2sql-tables`.
-     - Measures are indexed in `nl2sql-measures`.
-
 > [!NOTE]
-> Ensure that files are placed in their designated folders, as the indexers only scan specific subfolders.
+> Example configuration files are available in the [sample folder](../samples/fabric/datasources.json).
