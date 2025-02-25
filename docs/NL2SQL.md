@@ -12,9 +12,9 @@
 
 **NL2SQL and Fabric Data Ingestion** involve ingesting data dictionary information into the AI Search Index, enabling the orchestrator to generate SQL and DAX queries more effectively. This process requires indexing specific metadata and optionally indexing sample query content to assist with retrieval during query generation. The data dictionary includes three types of content:
 
-- **query:** Sample queries used for few-shot learning by the orchestrator (optional).  
 - **table:** Descriptions of tables and their columns, serving as a data dictionary.  
-- **measure:** Definitions of measures, including name, description, data type, and source information, helping the orchestrator select appropriate measures for calculations.
+- **query:** Sample queries used for few-shot learning by the orchestrator.  
+- **measure:** Power BI semantic model measures with name, description, data type, and source, guiding the orchestrator's selection.
 
 ---
 
