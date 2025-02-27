@@ -1145,10 +1145,6 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
             "targetFieldName": "datasource"
         },
         {
-            "sourceFieldName": "question",
-            "targetFieldName": "question"
-        },
-        {
             "sourceFieldName": "name",
             "targetFieldName": "name"
         },
