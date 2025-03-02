@@ -14,7 +14,7 @@ class SharepointDeletedFilesPurger:
         self.connector_enabled = os.getenv("SHAREPOINT_CONNECTOR_ENABLED", "false").lower() == "true"
         self.tenant_id = os.getenv("SHAREPOINT_TENANT_ID")
         self.client_id = os.getenv("SHAREPOINT_CLIENT_ID")
-        self.client_secret_name = os.getenv("KEYVAULT_SHAREPOINT_SECRET_NAME", "sharepointClientSecret")
+        self.client_secret_name = os.getenv("SHAREPOINT_CLIENT_SECRET_NAME", "sharepointClientSecret")
         self.index_name = os.getenv("AZURE_SEARCH_SHAREPOINT_INDEX_NAME", "ragindex")
         self.site_domain = os.getenv("SHAREPOINT_SITE_DOMAIN")
         self.site_name = os.getenv("SHAREPOINT_SITE_NAME")

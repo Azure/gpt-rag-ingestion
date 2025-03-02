@@ -17,11 +17,15 @@ class SharepointFilesIndexer:
         self.site_domain = os.getenv("SHAREPOINT_SITE_DOMAIN")
         self.site_name = os.getenv("SHAREPOINT_SITE_NAME")
         self.folder_path = os.getenv("SHAREPOINT_SITE_FOLDER", "/")
-        self.sharepoint_client_secret_name = os.getenv("KEYVAULT_SHAREPOINT_SECRET_NAME", "sharepointClientSecret")
+        self.sharepoint_client_secret_name = os.getenv("SHAREPOINT_CLIENT_SECRET_NAME", "sharepointClientSecret")
         self.index_name = os.getenv("AZURE_SEARCH_SHAREPOINT_INDEX_NAME", "ragindex")
         self.file_formats = os.getenv("SHAREPOINT_FILES_FORMAT")
-        if not self.file_formats:
-            self.file_formats = ChunkerFactory.get_supported_extensions()
+        if self.file_formats:
+            # Convert comma-separated string into a list, trimming whitespace
+            self.file_formats = [fmt.strip() for fmt in self.file_formats.split(",")]
+        else:
+            supported_extensions = ChunkerFactory.get_supported_extensions()
+            self.file_formats = [fmt.strip() for fmt in supported_extensions.split(",")]
         self.keyvault_client: Optional[KeyVaultClient] = None
         self.client_secret: Optional[str] = None
         self.sharepoint_data_reader: Optional[SharePointDataReader] = None

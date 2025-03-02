@@ -179,18 +179,22 @@ Here are the formats supported by each chunker. The file extension determines wh
 | docx      | 4.0                 |
 | pptx      | 4.0                 |
 
-#### LangChain Chunker
-| Extension | Format                        |
-|-----------|-------------------------------|
-| md        | Markdown document             |
-| txt       | Plain text file               |
-| html      | HTML document                 |
-| shtml     | Server-side HTML document     |
-| htm       | HTML document                 |
-| py        | Python script                 |
-| json      | JSON data file                |
-| csv       | Comma-separated values file   |
-| xml       | XML data file                 |
+#### LangChain Chunker  
+| Extension | Format                        | LangChain Splitter |
+|-----------|-------------------------------|--------------------|
+| md        | Markdown document             | `MarkdownTextSplitter` |
+| txt       | Plain text file               | `RecursiveCharacterTextSplitter` |
+| html      | HTML document                 | `RecursiveCharacterTextSplitter` |
+| shtml     | Server-side HTML document     | `RecursiveCharacterTextSplitter` |
+| htm       | HTML document                 | `RecursiveCharacterTextSplitter` |
+| py        | Python script                 | `PythonCodeTextSplitter` |
+| csv       | Comma-separated values file   | `RecursiveCharacterTextSplitter` |
+| xml       | XML data file                 | `RecursiveCharacterTextSplitter` |
+
+#### JSON Chunker
+| Extension | Format              |
+|-----------|---------------------|
+| json      | JSON data file      |
 
 #### Transcription Chunker
 | Extension | Format              |

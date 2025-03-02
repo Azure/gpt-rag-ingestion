@@ -124,7 +124,7 @@ class BaseChunker:
         self.sas_token = data.get('documentSasToken', "")
         self.file_url = f"{self.url}{self.sas_token}"
         self.filename = data['fileName']
-        self.extension = get_file_extension(self.url)
+        self.extension = get_file_extension(self.filename)
         document_content = data.get('documentContent') 
         self.document_content = document_content if document_content else ""
         self.token_estimator = GptTokenEstimator()
