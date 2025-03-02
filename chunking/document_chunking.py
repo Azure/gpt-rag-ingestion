@@ -1,9 +1,8 @@
 import logging
 import time
-import json
 import jsonschema
 
-from utils import get_file_extension, get_filename
+from utils import get_filename_from_data
 from .chunker_factory import ChunkerFactory
 
 class DocumentChunker:
@@ -53,11 +52,9 @@ class DocumentChunker:
         errors = []
         warnings = []
 
-        url = data['documentUrl']
-        filename = get_filename(url)
-        extension = get_file_extension(url)
+        filename = get_filename_from_data(data)
         try:
-            chunker = ChunkerFactory().get_chunker(extension, data)
+            chunker = ChunkerFactory().get_chunker(data)
             chunks = chunker.get_chunks()
         except Exception as e:
             errors.append(self._error_message(exception=e, filename=filename))
@@ -102,7 +99,7 @@ class DocumentChunker:
         try:
             start_time = time.time()
 
-            filename = data['documentUrl'].split('/')[-1]
+            filename = get_filename_from_data(data)
 
             logging.info(f"[document_chunking][{filename}] chunking document.")
 

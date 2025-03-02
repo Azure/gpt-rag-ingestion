@@ -4,13 +4,15 @@ This section explains how to configure SharePoint as a data source for the `ragi
 
 ## Prerequisites
 
-- **Azure Entra ID Administrative Permissions**: Permission to register an application in Azure Entra ID.
+- **Azure Entra ID Administrative Permissions**: Permission to register an application in Azure Entra ID.  
 
-*Use an Entra role: **Application Administrator**, **Cloud Application Administrator**, or **Global Administrator**.*
+  *Use an Entra role: **Application Administrator**, **Cloud Application Administrator**, or **Global Administrator**.*  
 
-- **Access to SharePoint Online**: Ensure you have access to the SharePoint site(s) and folders you wish to index.
+- **Access to SharePoint Online**: Ensure you have access to the SharePoint site(s) and folders you wish to index.  
 
-- **Ability to Use Microsoft Graph API**: Assigning specific site permissions using `Sites.Selected` requires making API calls via Microsoft Graph. This step cannot be completed solely through the Azure Portal.
+- **Ability to Use Microsoft Graph API**: Assigning specific site permissions using `Sites.Selected` requires making API calls via Microsoft Graph. This step cannot be completed solely through the Azure Portal.  
+
+- **Search Index Data Contributor Role**: The Data Ingestion Function must have the **Search Index Data Contributor** role assigned to index data in AI Search.
 
 ## Procedure
 
