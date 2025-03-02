@@ -6,6 +6,7 @@ from .chunkers.multimodal_chunker import MultimodalChunker
 from .chunkers.langchain_chunker import LangChainChunker
 from .chunkers.spreadsheet_chunker import SpreadsheetChunker
 from .chunkers.transcription_chunker import TranscriptionChunker
+from .chunkers.json_chunker import JSONChunker
 from .chunkers.nl2sql_chunker import NL2SQLChunker
 
 from tools import DocumentIntelligenceClient
@@ -37,6 +38,8 @@ class ChunkerFactory:
         extension = get_file_extension(filename)
         if extension == 'vtt':
             return TranscriptionChunker(data)
+        elif extension == 'json':
+            return JSONChunker(data)  
         elif extension in ('xlsx', 'xls'):
             return SpreadsheetChunker(data)
         elif extension in ('pdf', 'png', 'jpeg', 'jpg', 'bmp', 'tiff'):

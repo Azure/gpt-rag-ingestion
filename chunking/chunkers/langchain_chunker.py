@@ -54,7 +54,6 @@ class LangChainChunker(BaseChunker):
             "shtml": "html",
             "htm": "html",
             "py": "python",
-            "json": "json",
             "csv": "csv",
             "xml": "xml"
         }
@@ -111,7 +110,7 @@ class LangChainChunker(BaseChunker):
         4. Truncates chunks that exceed the maximum token size, ensuring they fit within the limit.
         """
         file_format = self.supported_formats[self.extension]
-    
+
         if file_format == "markdown":
             splitter = MarkdownTextSplitter.from_tiktoken_encoder(
                 chunk_size=self.max_chunk_size, 
@@ -121,11 +120,6 @@ class LangChainChunker(BaseChunker):
             splitter = PythonCodeTextSplitter.from_tiktoken_encoder(
                 chunk_size=self.max_chunk_size, 
                 chunk_overlap=self.token_overlap
-            )
-        elif file_format == "json":
-            splitter = RecursiveJsonSplitter(
-                # as the json splitter doesn't have a token estimator we multiply the max_chunk_size by 4 (average number of characters per token)
-                max_chunk_size=self.max_chunk_size * 4
             )
         else:
             sentence_endings = [".", "!", "?"]
