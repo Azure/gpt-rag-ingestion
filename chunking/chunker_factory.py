@@ -6,9 +6,11 @@ from .chunkers.multimodal_chunker import MultimodalChunker
 from .chunkers.langchain_chunker import LangChainChunker
 from .chunkers.spreadsheet_chunker import SpreadsheetChunker
 from .chunkers.transcription_chunker import TranscriptionChunker
+from .chunkers.json_chunker import JSONChunker
 from .chunkers.nl2sql_chunker import NL2SQLChunker
 
 from tools import DocumentIntelligenceClient
+from utils import get_filename_from_data, get_file_extension
 
 class ChunkerFactory:
     """Factory class to create appropriate chunker based on file extension."""
@@ -19,7 +21,7 @@ class ChunkerFactory:
         _multimodality = os.getenv("MULTIMODAL", "false").lower()
         self.multimodality = _multimodality in ["true", "1", "yes"]
 
-    def get_chunker(self, extension, data):
+    def get_chunker(self, data):
         """
         Get the appropriate chunker based on the file extension.
 
@@ -30,12 +32,14 @@ class ChunkerFactory:
         Returns:
             BaseChunker: An instance of a chunker class.
         """
-        filename = data['documentUrl'].split('/')[-1]
+        filename = get_filename_from_data(data)
         logging.info(f"[chunker_factory][{filename}] Creating chunker")
 
-        extension = extension.lower()
+        extension = get_file_extension(filename)
         if extension == 'vtt':
             return TranscriptionChunker(data)
+        elif extension == 'json':
+            return JSONChunker(data)  
         elif extension in ('xlsx', 'xls'):
             return SpreadsheetChunker(data)
         elif extension in ('pdf', 'png', 'jpeg', 'jpg', 'bmp', 'tiff'):

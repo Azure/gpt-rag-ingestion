@@ -624,7 +624,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                     "facetable": False
                 },
                 {
-                    "name": "table_name",
+                    "name": "table",
                     "type": "Edm.String",
                     "searchable": True,
                     "retrievable": True
@@ -683,7 +683,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
                 }
             ],
             "content_fields_name": ["description"],
-            "keyword_field_name": "table_name"
+            "keyword_field_name": "table"
         },
         {
             "index_name": search_index_name_nl2sql_measures,
@@ -1108,7 +1108,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
     ]
     field_mappings_tables = [
         {
-            "sourceFieldName": "table",
+            "sourceFieldName": "metadata_storage_path",
             "targetFieldName": "id",
             "mappingFunction": {
                 "name": "fixedLengthEncode"
@@ -1116,7 +1116,7 @@ def execute_setup(subscription_id, resource_group, function_app_name, search_pri
         },
         {
             "sourceFieldName": "table",
-            "targetFieldName": "table_name"
+            "targetFieldName": "table"
         },
         {
             "sourceFieldName": "description",
