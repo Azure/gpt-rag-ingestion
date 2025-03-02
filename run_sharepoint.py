@@ -15,7 +15,7 @@ Prerequisites:
    - General:
      - SHAREPOINT_CONNECTOR_ENABLED: 'true' to enable the connector (default: 'false').
      - SHAREPOINT_TENANT_ID, SHAREPOINT_CLIENT_ID: For SharePoint authentication.
-     - KEYVAULT_SHAREPOINT_SECRET_NAME: Azure Key Vault secret name (default: 'sharepointClientSecret').
+     - SHAREPOINT_CLIENT_SECRET_NAME: Azure Key Vault secret name (default: 'sharepointClientSecret').
      - AZURE_SEARCH_SHAREPOINT_INDEX_NAME: Name of the Azure AI Search index (default: 'ragindex').
    - SharePoint Config:
      - SHAREPOINT_SITE_DOMAIN, SHAREPOINT_SITE_NAME: SharePoint site details.
@@ -36,9 +36,8 @@ import os
 import asyncio
 from dotenv import load_dotenv
 from connectors import SharepointFilesIndexer, SharepointDeletedFilesPurger
-from typing import Any, Dict, List, Optional
 
-load_dotenv()
+load_dotenv(override=True)
 
 # -------------------------------
 # Logging configuration
