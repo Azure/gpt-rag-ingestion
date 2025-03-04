@@ -253,5 +253,5 @@ def create_skillset(search_index_name: str,
 
 if __name__ == "__main__":
     search_index_name = "financial-index-test"
-    function_endpoint = "https://document-chunking-function-app.azurewebsites.net"
+    function_endpoint = "https://document-chunking-az-func.azurewebsites.net"
     create_skillset(search_index_name, function_endpoint)
