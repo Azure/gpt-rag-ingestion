@@ -19,7 +19,7 @@ logging.basicConfig(
 # Constants
 ########################################################
 
-document_chunking_func_key = os.getenv("DOCUMENT_CHUNKING_FUNC_KEY")
+document_chunking_func_key = os.getenv("DOCUMENT_CHUNKING_FUNCTION_KEY")
 search_api_version = "2024-11-01-preview"
 azure_search_admin_key = os.getenv("AZURE_SEARCH_ADMIN_KEY")
 search_service_name = os.getenv("AZURE_SEARCH_SERVICE_NAME")
@@ -80,6 +80,8 @@ def create_indexer_body(
 if __name__ == "__main__":
     indexer_name = "financial-indexer-test"
     search_index_name = "financial-index-test"
-    datasource_name = "financial-datasource-test"
-    create_indexer_body(indexer_name, search_index_name, datasource_name)
+    datasource_name = "financial-index-datasource"
+    create_indexer_body(indexer_name=indexer_name,
+                        search_index_name=search_index_name,
+                        datasource_name=datasource_name)
     
