@@ -138,6 +138,11 @@ class SharePointDataReader:
             '/test/test1/test2/' to access nested folders.
         :return: The formatted URL.
         """
+        # If folder_path is None, empty, or just "/" then return the root folder URL.
+        if not folder_path or folder_path.strip() == "/":
+            return f"https://graph.microsoft.com/v1.0/sites/{site_id}/drives/{drive_id}/root/"
+        
+        # Otherwise, remove any trailing slashes and format the URL for a subfolder.
         folder_path_formatted = folder_path.rstrip("/")
         return f"https://graph.microsoft.com/v1.0/sites/{site_id}/drives/{drive_id}/root:{folder_path_formatted}:/"
 
