@@ -19,8 +19,8 @@ logging.basicConfig(
 # Constants
 ########################################################
 
-document_chunking_func_key = os.getenv("DOCUMENT_CHUNKING_FUNC_KEY")
-cognitive_service_key = os.getenv("COGNITIVE_SERVICE_KEY")
+document_chunking_func_key = os.getenv("DOCUMENT_CHUNKING_FUNCTION_KEY")
+cognitive_service_key = os.getenv("COGNITIVE_SERVICES_KEY")
 storage_connection_string = os.getenv("STORAGE_CONNECTION_STRING")
 search_api_version = "2024-11-01-preview"
 azure_search_admin_key = os.getenv("AZURE_SEARCH_ADMIN_KEY")
