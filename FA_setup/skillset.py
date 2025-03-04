@@ -20,12 +20,50 @@ logging.basicConfig(
 ########################################################
 
 document_chunking_func_key = os.getenv("DOCUMENT_CHUNKING_FUNCTION_KEY")
-cognitive_service_key = os.getenv("COGNITIVE_SERVICE_KEY")
+cognitive_service_key = os.getenv("COGNITIVE_SERVICES_KEY")
 storage_connection_string = os.getenv("STORAGE_CONNECTION_STRING")
 search_api_version = "2024-11-01-preview"
 azure_search_admin_key = os.getenv("AZURE_SEARCH_ADMIN_KEY")
 search_service_name = os.getenv("AZURE_SEARCH_SERVICE_NAME")
 azure_openai_api_key = os.getenv("AZURE_OPENAI_API_KEY")
+
+########################################################
+# Delete skillset
+########################################################
+
+def delete_skillset(skillset_name: str,
+                   service_name: str = search_service_name,
+                   api_version: str = search_api_version,
+                   admin_key: str = azure_search_admin_key):
+    """
+    Deletes an existing skillset.
+
+    Args:
+        skillset_name (str): Name of the skillset to delete
+    """
+    endpoint = f"https://{service_name}.search.windows.net/skillsets/{skillset_name}?api-version={api_version}"
+    headers = {"Content-Type": "application/json", "api-key": admin_key}
+
+    try:
+        logging.info(f"Attempting to delete skillset '{skillset_name}'...")
+        response = requests.delete(endpoint, headers=headers)
+
+        if response.status_code == 204:
+            logging.info(f"Skillset '{skillset_name}' deleted successfully!")
+        elif response.status_code == 404:
+            logging.info(f"Skillset '{skillset_name}' does not exist.")
+        else:
+            logging.warning(f"Unexpected status code while deleting skillset: {response.status_code}")
+            logging.warning(f"Response: {response.text}")
+
+    except requests.exceptions.ConnectionError:
+        logging.error("Connection error while deleting skillset. Please verify your network connection.")
+        raise
+    except Exception as e:
+        logging.error(f"Error deleting skillset: {str(e)}")
+        raise
+
+    return response
 
 ########################################################
 # Create skillset
@@ -53,11 +91,23 @@ def create_skillset(search_index_name: str,
         raise ValueError(
             "Function key not found. Please set the DOCUMENT_CHUNKING_FUNCTION_KEY environment variable."
         )
+    
+    if not cognitive_services_key:
+        logging.error(
+            "Cognitive services key not found. Please set the COGNITIVE_SERVICES_KEY environment variable."
+        )
+        raise ValueError(
+            "Cognitive services key not found. Please set the COGNITIVE_SERVICES_KEY environment variable."
+        )
     skillset_name = f"{search_index_name}-skillset-chunking"
 
     logging.info(f"Starting skillset operation for '{skillset_name}'")
     logging.info(f"Using search service: {service_name}")
     logging.info(f"Using API version: {api_version}")
+
+    # Delete existing skillset if it exists
+    logging.info(f"Checking if skillset '{skillset_name}' exists...")
+    delete_skillset(skillset_name, service_name, api_version, admin_key)
 
     # Endpoint URL
     endpoint = f"https://{service_name}.search.windows.net/skillsets/{skillset_name}?api-version={api_version}"
@@ -65,34 +115,6 @@ def create_skillset(search_index_name: str,
 
     # Headers
     headers = {"Content-Type": "application/json", "api-key": admin_key}
-
-    # First check if skillset exists
-    try:
-        logging.info(f"Checking if skillset '{skillset_name}' already exists...")
-        check_response = requests.get(endpoint, headers=headers)
-
-        if check_response.status_code == 200:
-            logging.info(f"Skillset '{skillset_name}' already exists.")
-            logging.info(f"Existing skillset details: {check_response.json()}")
-            return check_response
-        elif check_response.status_code == 404:
-            logging.info(
-                f"Skillset '{skillset_name}' not found. Proceeding with creation."
-            )
-        else:
-            logging.warning(
-                f"Unexpected status code while checking skillset: {check_response.status_code}"
-            )
-            logging.warning(f"Response: {check_response.text}")
-
-    except requests.exceptions.ConnectionError:
-        logging.error(
-            f"Connection error while checking skillset. Please verify your network connection."
-        )
-        raise
-    except Exception as e:
-        logging.error(f"Error checking skillset existence: {str(e)}")
-        raise
 
     # If skillset doesn't exist, create it
     logging.info(f"Starting skillset creation process...")
