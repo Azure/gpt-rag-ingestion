@@ -28,6 +28,7 @@ search_service_name = os.getenv("AZURE_SEARCH_SERVICE_NAME")
 # Create index
 ########################################################
 
+
 def create_indexer_body(
     indexer_name: str,
     search_index_name: str,
@@ -47,14 +48,14 @@ def create_indexer_body(
         "schedule": {"interval": f"{search_index_interval}"},
         "fieldMappings": [
             {
-            "sourceFieldName": "metadata_storage_name",
-            "targetFieldName": "title",
-            "mappingFunction": None
+                "sourceFieldName": "metadata_storage_name",
+                "targetFieldName": "title",
+                "mappingFunction": None,
             }
         ],
         "outputFieldMappings": [],
         "cache": None,
-        "encryptionKey": None
+        "encryptionKey": None,
     }
     # First, try to delete the existing indexer if it exists
     try:
@@ -77,11 +78,13 @@ def create_indexer_body(
     except Exception as e:
         print(f"Error creating indexer: {e}")
 
+
 if __name__ == "__main__":
     indexer_name = "financial-indexer-test"
     search_index_name = "financial-index-test"
     datasource_name = "financial-index-datasource"
-    create_indexer_body(indexer_name=indexer_name,
-                        search_index_name=search_index_name,
-                        datasource_name=datasource_name)
-    
+    create_indexer_body(
+        indexer_name=indexer_name,
+        search_index_name=search_index_name,
+        datasource_name=datasource_name,
+    )
