@@ -224,7 +224,7 @@ class SharepointFilesIndexer:
             number_files = len(files) if files else 0
             logging.info(f"[sharepoint_files_indexer] Retrieved {number_files} files from SharePoint.")
         except Exception as e:
-            logging.error(f"[sharepoint_files_indexer] Failed to retrieve files: {e}")
+            logging.error(f"[sharepoint_files_indexer] Failed to retrieve files. Check your sharepoint configuration environment variables. Error: {e}")
             return
 
         if not files:
