@@ -2,7 +2,7 @@ import logging
 import os
 import re
 from urllib.parse import unquote, urlparse
-
+from uuid import uuid4
 from tools import AzureOpenAIClient, GptTokenEstimator
 from utils.file_utils import get_file_extension
 
@@ -152,13 +152,13 @@ class BaseChunker:
         self,
         chunk_id,
         content,
-        summary="",
+        # summary="",
         embedding_text="",
         title="",
         page=0,
         offset=0,
-        related_images=None,
-        related_files=None
+        # related_images=None,
+        # related_files=None
     ):
         """
         Initialize a chunk dictionary with truncated content if necessary.
@@ -175,17 +175,12 @@ class BaseChunker:
             title (str, optional): The title of the chunk. Defaults to an empty string.
             page (int, optional): The page number where the chunk is located. Defaults to 0.
             offset (int, optional): The offset position of the chunk in the content. Defaults to 0.
-            related_images (list, optional): A list of related images. Defaults to an empty list.
-            related_files (list, optional): A list of related files. Defaults to an empty list.
+
 
         Returns:
             dict: A dictionary representing the chunk with all the attributes, including the embedding vector.
         """
-        # Initialize related_images and related_files if they are None
-        if related_images is None:
-            related_images = []
-        if related_files is None:
-            related_files = []
+
 
         # Define the maximum allowed byte size for the content field
         MAX_CONTENT_BYTES = 32766
@@ -217,19 +212,19 @@ class BaseChunker:
             content_vector = []
 
         return {
+            "id": str(uuid4()),
             "chunk_id": chunk_id,
             "url": self.url,
+            "metadata_storage_path": self.url,
+            "metadata_storage_name": self.filename,
             "filepath": self.filename,
             "content": truncated_content,
-            "summary": summary,
             "category": "",
             "length": len(truncated_content),  # Length in characters
-            "contentVector": content_vector,
+            "vector": content_vector,
             "title": self._extract_title_from_filename(self.filename) if not title else title,
             "page": page,
-            "offset": offset,
-            "relatedImages": related_images,
-            "relatedFiles": related_files          
+            "offset": offset,     
         }
 
 

@@ -13,6 +13,7 @@ from .token_estimator import TokenEstimator
 from urllib.parse import urlparse
 from utils.file_utils import get_file_extension
 from utils.file_utils import get_filename
+from uuid import uuid4
 
 ##########################################################################################
 # CONFIGURATION
@@ -222,16 +223,19 @@ def analyze_document_rest(filepath, model):
 def get_chunk(content, url, page, chunk_id, text_embedder):
 
     chunk =  {
+            "id": str(uuid4()),
             "chunk_id": chunk_id,
             "offset": 0,
             "length": 0,
             "page": page,                    
             "title": "default",
             "category": "default",
+            "metadata_storage_path": url,
+            "filepath": url,
             "url": url,
-            "filepath": get_filename(url),            
+            "metadata_storage_name": get_filename(url),
             "content": content,
-            "contentVector": text_embedder.embed_content(content)
+            "vector": text_embedder.embed_content(content)
     }
     logging.info(f"Chunk: {chunk}.")
     return chunk

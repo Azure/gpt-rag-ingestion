@@ -98,3 +98,10 @@ class BlobStorageClient:
             raise Exception(error_message)
 
         return data
+    
+    def get_metadata(self):
+        blob_client = self.blob_service_client.get_blob_client(container=self.container_name, blob=self.blob_name)
+
+        # Retrieve existing metadata, if desired
+        blob_metadata = blob_client.get_blob_properties().metadata
+        return blob_metadata
