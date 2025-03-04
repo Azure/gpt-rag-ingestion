@@ -48,6 +48,7 @@ class DocumentIntelligenceClient:
         self.file_extensions = [
             "pdf",
             "bmp",
+            "jpg",
             "jpeg",
             "png",
             "tiff"
@@ -100,6 +101,7 @@ class DocumentIntelligenceClient:
         extensions = {
             "pdf": "application/pdf", 
             "bmp": "image/bmp",
+            "jpg": "image/jpeg",            
             "jpeg": "image/jpeg",
             "png": "image/png",
             "tiff": "image/tiff",
