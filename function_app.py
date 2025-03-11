@@ -81,7 +81,7 @@ def document_chunking(req: func.HttpRequest) -> func.HttpResponse:
             # Enrich the input data with the document bytes and file name
             blob_client = BlobStorageClient(input_data["documentUrl"])
             document_bytes = blob_client.download_blob()
-            input_data['documentBytes'] = document_bytes          
+            input_data['documentBytes'] = document_bytes
             input_data['fileName'] = filename
 
             # Chunk the document
