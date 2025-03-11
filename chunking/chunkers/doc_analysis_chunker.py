@@ -8,6 +8,9 @@ from .base_chunker import BaseChunker
 from ..exceptions import UnsupportedFormatError, DocAnalysisError
 from tools import DocumentIntelligenceClient
 
+from azure.core.credentials import AzureKeyCredential
+from prepdocslib.pdfparser import DocumentAnalysisParser
+
 
 class DocAnalysisChunker(BaseChunker):
     """
@@ -92,7 +95,16 @@ class DocAnalysisChunker(BaseChunker):
 
         logging.info(f"[doc_analysis_chunker][{self.filename}] Running get_chunks.")
 
-        document, analysis_errors = self._analyze_document_with_retry()
+        doc_int_parser = DocumentAnalysisParser(
+            endpoint=os.getenv("AZURE_FORMREC_SERVICE"),
+            credential=AzureKeyCredential(os.getenv("COGNITIVE_SERVICES_KEY")),
+            use_content_understanding=True,
+            content_understanding_endpoint=os.getenv("AZURE_FORMREC_SERVICE"),
+        )
+        
+        # CHANGES TO APPLY
+        # document, analysis_errors = self._analyze_document_with_retry()
+        
         if analysis_errors:
             formatted_errors = ', '.join(map(str, analysis_errors))
             raise DocAnalysisError(f"Error in doc_analysis_chunker analyzing {self.filename}: {formatted_errors}")
