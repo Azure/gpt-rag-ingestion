@@ -64,14 +64,28 @@ def get_function_key(subscription_id, resource_group, function_app_name, credent
             "name": "mykey"
         }
     }
-    response = requests.put(requestUrl, headers=requestHeaders, json=data)
-    response_json = json.loads(response.content.decode('utf-8'))
-    try:
-        function_key = response_json['properties']['value']
-    except Exception as e:
-        function_key = None
-        logging.error(f"Error when getting function key. Details: {str(e)}.")        
-    return function_key
+    max_attempts = 4
+    for attempt in range(1, max_attempts + 1):
+        logging.info(f"Attempt {attempt}/{max_attempts} to retrieve function key...")
+        try:
+            response = requests.put(requestUrl, headers=requestHeaders, json=data)
+            response_json = response.json()
+        except Exception as e:
+            logging.error(f"Attempt {attempt}: Failed to get a valid JSON response. Error: {str(e)}")
+            response_json = {}
+        
+        if "properties" in response_json and "value" in response_json["properties"]:
+            function_key = response_json["properties"]["value"]
+            logging.info("Function key retrieved successfully.")
+            return function_key
+        else:
+            logging.error(f"Attempt {attempt}: Function key not found in response. Response: {response_json}")
+            if attempt < max_attempts:
+                logging.info("Retrying in 30 seconds...")
+                time.sleep(30)
+                
+    logging.error("Failed to retrieve function key after maximum attempts.")
+    return None
 
 def approve_private_link_connections(access_token, subscription_id, resource_group, service_name, service_type, api_version):
     """
