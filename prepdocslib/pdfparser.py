@@ -1,5 +1,6 @@
 import html
 import io
+import os
 import logging
 from enum import Enum
 from typing import IO, AsyncGenerator, Union
@@ -18,7 +19,9 @@ from azure.core.exceptions import HttpResponseError
 from PIL import Image
 from pypdf import PdfReader
 
-from .mediadescriber import ContentUnderstandingDescriber
+#from .mediadescriber import ContentUnderstandingDescriber
+
+from tools.mediadescriber import ContentUnderstandingDescriber
 from .page import Page
 from .parser import Parser
 
@@ -63,8 +66,9 @@ class DocumentAnalysisParser(Parser):
         self.use_content_understanding = use_content_understanding
         self.content_understanding_endpoint = content_understanding_endpoint
 
-    async def parse(self, content: IO) -> AsyncGenerator[Page, None]:
-        logger.info("Extracting text from '%s' using Azure Document Intelligence", content.name)
+    async def parse(self, bytes: bytes, name: str) -> AsyncGenerator[Page, None]:
+        logger.info("Extracting text from '%s' using Azure Document Intelligence", name)
+        content = io.BytesIO(bytes)
 
         async with DocumentIntelligenceClient(
             endpoint=self.endpoint, credential=self.credential
@@ -73,13 +77,10 @@ class DocumentAnalysisParser(Parser):
             if self.use_content_understanding:
                 if self.content_understanding_endpoint is None:
                     raise ValueError("Content Understanding is enabled but no endpoint was provided")
-                if isinstance(self.credential, AzureKeyCredential):
-                    raise ValueError(
-                        "AzureKeyCredential is not supported for Content Understanding, use keyless auth instead"
-                    )
-                cu_describer = ContentUnderstandingDescriber(self.content_understanding_endpoint, self.credential)
+                cu_describer = ContentUnderstandingDescriber(os.getenv("AZ_COMPUTER_VISION_ENDPOINT"), os.getenv("AZ_COMPUTER_VISION_KEY"))
                 content_bytes = content.read()
                 try:
+                    logging.info(f"[DocumentAnalysisParser] trying to analyze document:")
                     poller = await document_intelligence_client.begin_analyze_document(
                         model_id="prebuilt-layout",
                         analyze_request=AnalyzeDocumentRequest(bytes_source=content_bytes),
@@ -87,9 +88,12 @@ class DocumentAnalysisParser(Parser):
                         features=["ocrHighResolution"],
                         output_content_format="markdown",
                     )
+                    logging.info(f"[DocumentAnalysisParser] poller:")
                     doc_for_pymupdf = pymupdf.open(stream=io.BytesIO(content_bytes))
+                    logging.info(f"[DocumentAnalysisParser] doc_for_pymupdf:")
                     file_analyzed = True
                 except HttpResponseError as e:
+                    logging.info(f"[DocumentAnalysisParser] HttpResponseError: {e}")
                     content.seek(0)
                     if e.error and e.error.code == "InvalidArgument":
                         logger.error(
@@ -100,13 +104,14 @@ class DocumentAnalysisParser(Parser):
                             "Unexpected error analyzing document for media description: %s. Proceeding with standard analysis.",
                             e,
                         )
+                except Exception as e:
+                    logging.error(f"Error analyzing document: {e}")
 
             if file_analyzed is False:
                 poller = await document_intelligence_client.begin_analyze_document(
                     model_id=self.model_id, analyze_request=content, content_type="application/octet-stream"
                 )
             analyze_result: AnalyzeResult = await poller.result()
-
             offset = 0
             for page in analyze_result.pages:
                 tables_on_page = [
@@ -198,7 +203,7 @@ class DocumentAnalysisParser(Parser):
         )
         page_number = first_region["pageNumber"]  # 1-indexed
         cropped_img = DocumentAnalysisParser.crop_image_from_pdf_page(doc, page_number - 1, bounding_box)
-        figure_description = await cu_describer.describe_image(cropped_img)
+        figure_description = cu_describer.describe_image(cropped_img)
         return f"<figure><figcaption>{figure_title}<br>{figure_description}</figcaption></figure>"
 
     @staticmethod

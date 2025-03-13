@@ -54,7 +54,7 @@ app = func.FunctionApp()
 
 # Document Chunking Function (HTTP Triggered by AI Search)
 @app.route(route="document-chunking", auth_level=func.AuthLevel.FUNCTION)
-def document_chunking(req: func.HttpRequest) -> func.HttpResponse:
+async def document_chunking(req: func.HttpRequest) -> func.HttpResponse:
     try:
         body = req.get_json()
         jsonschema.validate(body, schema=get_request_schema())
@@ -85,7 +85,7 @@ def document_chunking(req: func.HttpRequest) -> func.HttpResponse:
             input_data['fileName'] = filename
 
             # Chunk the document
-            chunks, errors, warnings = DocumentChunker().chunk_documents(input_data)
+            chunks, errors, warnings = await DocumentChunker().chunk_documents(input_data)
          
             # Debug logging
             for idx, chunk in enumerate(chunks):

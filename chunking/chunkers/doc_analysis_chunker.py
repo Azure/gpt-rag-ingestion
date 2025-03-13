@@ -74,7 +74,7 @@ class DocAnalysisChunker(BaseChunker):
         logging.debug(f"[doc_analysis_chunker] File extension detected: {self.extension}")
         logging.debug(f"[doc_analysis_chunker] Supported formats: {self.supported_formats}")
 
-    def get_chunks(self):
+    async def get_chunks(self):
         """
         Analyzes the document and generates content chunks based on the analysis.
 
@@ -94,21 +94,29 @@ class DocAnalysisChunker(BaseChunker):
             raise UnsupportedFormatError(f"[doc_analysis_chunker] {self.extension} format is not supported")
 
         logging.info(f"[doc_analysis_chunker][{self.filename}] Running get_chunks.")
-
-        doc_int_parser = DocumentAnalysisParser(
-            endpoint=os.getenv("AZURE_FORMREC_SERVICE"),
-            credential=AzureKeyCredential(os.getenv("COGNITIVE_SERVICES_KEY")),
-            use_content_understanding=True,
-            content_understanding_endpoint=os.getenv("AZURE_FORMREC_SERVICE"),
-        )
         
-        # CHANGES TO APPLY
-        # document, analysis_errors = self._analyze_document_with_retry()
-        
-        if analysis_errors:
-            formatted_errors = ', '.join(map(str, analysis_errors))
-            raise DocAnalysisError(f"Error in doc_analysis_chunker analyzing {self.filename}: {formatted_errors}")
+        pages = None
 
+        try:
+            doc_int_parser = DocumentAnalysisParser(
+                endpoint="https://eastus.api.cognitive.microsoft.com/",
+                credential=AzureKeyCredential("9965078185cb429fbf1a6d485e444144"),#os.getenv("COGNITIVE_SERVICES_KEY")),
+                use_content_understanding=True,
+                content_understanding_endpoint=os.getenv("AZ_COMPUTER_VISION_ENDPOINT"),
+            )
+            pages = [page async for page in doc_int_parser.parse(bytes=self.document_bytes, name=self.filename)]
+        except Exception as e:
+            logging.error(f"[doc_analysis_chunker][{self.filename}] Error parsing document: {str(e)}")
+            raise
+        
+        document_content = ""
+        for page in pages:
+            document_content += page.text
+        
+        document = {
+            "content": document_content
+        }
+        
         chunks = self._process_document_chunks(document)
         
         return chunks
