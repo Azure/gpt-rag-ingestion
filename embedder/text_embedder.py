@@ -1,4 +1,6 @@
-import openai
+from openai import AzureOpenAI
+import os
+
 import os
 import re
 import logging
@@ -17,38 +19,38 @@ def get_secret(secretName):
     retrieved_secret = client.get_secret(secretName)
     return retrieved_secret.value
 
+client = AzureOpenAI(api_key=get_secret('azureOpenAIKey'),
+azure_endpoint=f"https://{os.getenv('AZURE_OPENAI_SERVICE_NAME')}.openai.azure.com/",
+api_version=os.getenv("AZURE_OPENAI_API_VERSION"))
+
 class TextEmbedder():
-    openai.api_type = "azure"    
-    openai.api_key = get_secret('azureOpenAIKey')
-    openai.api_base = f"https://{os.getenv('AZURE_OPENAI_SERVICE_NAME')}.openai.azure.com/"
-    openai.api_version = os.getenv("AZURE_OPENAI_API_VERSION")
     AZURE_OPENAI_EMBEDDING_DEPLOYMENT = os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT")
-    
+
     def estimate_tokens(self, text: str) -> int:
         gpt2_tokenizer = tiktoken.get_encoding("gpt2")
         return len(gpt2_tokenizer.encode(text))
 
     def clean_text(self, text, token_limit=8191):
-        # Clean up text (e.g. line breaks, )    
-        text = re.sub(r'\s+', ' ', text).strip()
-        text = re.sub(r'[\n\r]+', ' ', text).strip()
-        # Truncate text if necessary (for, ada-002 max is 8191 tokens)    
-        if self.estimate_tokens(text) > token_limit:
-            logging.warning("Token limit reached exceeded maximum length, truncating...")
-            while self.estimate_tokens(text) > token_limit:
-                text = text[:-1]
-        return text
+            # Clean up text (e.g. line breaks)
+            text = re.sub(r'\s+', ' ', text).strip()
+            text = re.sub(r'[\n\r]+', ' ', text).strip()
 
-    @retry(reraise=True, wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(6))
-    def embed_content(self, text, clean_text=True, use_single_precision=True):
-        embedding_precision = 9 if use_single_precision else 18
-        if clean_text:
-            text = self.clean_text(text)
-        response = openai.Embedding.create(input=text, engine=self.AZURE_OPENAI_EMBEDDING_DEPLOYMENT)
+            # Truncate text if necessary (for ada-002 max is 8191 tokens)
+            if self.estimate_tokens(text) > token_limit:
+                logging.warning("Token limit reached exceeded maximum length, truncating...")
+                step_size = 1  # Initial step size
+                iteration = 0  # Iteration counter
 
-        embedding = [round(x, embedding_precision) for x in response['data'][0]['embedding']] # type: ignore
-        return embedding
-    
+                while self.estimate_tokens(text) > token_limit:
+                    text = text[:-step_size]
+                    iteration += 1
+
+                    # Increase step size exponentially every 5 iterations
+                    if iteration % 5 == 0:
+                        step_size = min(step_size * 2, 100)
+
+            return text
+
     def extract_retry_seconds(self, error_message):
         match = re.search(r'retry after (\d+)', error_message)
         if match:
@@ -62,12 +64,31 @@ class TextEmbedder():
         if clean_text:
             text = self.clean_text(text)        
         try:
-            response = openai.Embedding.create(input=text, engine=self.AZURE_OPENAI_EMBEDDING_DEPLOYMENT)
-            embedding = [round(x, embedding_precision) for x in response['data'][0]['embedding']] # type: ignore
+            response = client.embeddings.create(input=text, model=self.AZURE_OPENAI_EMBEDDING_DEPLOYMENT)
+            embedding = [round(x, embedding_precision) for x in response.data[0].embedding] # type: ignore
             return embedding            
-        except openai.error.RateLimitError as e:
+        except Exception as e:
             error_message = str(e)
-            seconds = self.extract_retry_seconds(error_message) * 2
-            logging.warning(f"Embeddings model deployment rate limit exceeded, retrying in {seconds} seconds...")
-            time.sleep(seconds)
-            raise e # to make tenacity retry
+
+            # handle rate limit errors 
+            if "rate limit" in error_message.lower():
+                seconds = self.extract_retry_seconds(error_message)*2
+                logging.warning(f"Rate limit exceed, retrying in {seconds} seconds...")
+                time.sleep(seconds)
+                raise e # retry with tenacity 
+            
+            # handle invalid model errors 
+            elif "invalid model" in error_message or "model not found" in error_message:
+                logging.error(f"Invalid model error: {self.AZURE_OPENAI_EMBEDDING_DEPLOYMENT}")
+                raise ValueError(f"Invalid model error: {self.AZURE_OPENAI_EMBEDDING_DEPLOYMENT}")
+            
+            # handle authentication errors 
+            elif "authentication" in error_message or "unauthorized" in error_message:
+                logging.error("Authentication failed. Please check your API key and endpoint.")
+                raise ValueError("Authentication failed. Please check your API and endpoint.")
+            
+            # handle other errors 
+            else:
+                logging.error(f"An unexpected error occurred: {error_message}")
+                raise ValueError(f"An unexpected error occurred: {error_message}")
+
