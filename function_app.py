@@ -96,13 +96,13 @@ async def images_purge_timer(timer: func.TimerRequest):
     
     logging.info("[multimodality_images_purger] Timer trigger started.")
 
-    # Purge only runs when MULTIMODALITY == 'true'
-    multi_var = (os.getenv("MULTIMODALITY") or "").lower()
+    # Purge only runs when MULTIMODAL == 'true'
+    multi_var = (os.getenv("MULTIMODAL") or "").lower()
     should_run_multimodality = multi_var in ["true", "1", "yes"]
 
-    # Only run if MULTIMODALITY == true
+    # Only run if MULTIMODAL == true
     if not should_run_multimodality:
-        logging.info("[multimodality_images_purger] MULTIMODALITY != true. Skipping purge.")
+        logging.info("[multimodality_images_purger] MULTIMODAL != true. Skipping purge.")
         return
 
     try:
