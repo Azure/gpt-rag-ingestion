@@ -48,7 +48,7 @@ class DocumentChunker:
 
         return error_message
 
-    def chunk_document(self, data):
+    async def chunk_document(self, data):
         """Chunk the document into smaller parts."""
         chunks = []
         errors = []
@@ -59,7 +59,7 @@ class DocumentChunker:
         extension = get_file_extension(url)
         try:
             chunker = ChunkerFactory().get_chunker(extension, data)
-            chunks = chunker.get_chunks()
+            chunks = await chunker.get_chunks()
         except Exception as e:
             errors.append(self._error_message(exception=e, filename=filename))
 
@@ -69,7 +69,7 @@ class DocumentChunker:
         formatted = [{"message": msg} for msg in messages]
         return formatted
 
-    def chunk_documents(self, data):
+    async def chunk_documents(self, data):
         """
         Processes and chunks the document provided in the input data, returning the chunks along with any errors or warnings encountered.
 
@@ -110,7 +110,7 @@ class DocumentChunker:
 
             # Log progress before chunking
             logging.info(f"[document_chunking][{filename}] Initializing chunker...")
-            chunks, errors, warnings = self.chunk_document(data)
+            chunks, errors, warnings = await self.chunk_document(data)
             
             # Log memory usage after chunking
             current_memory = process.memory_info().rss / 1024 / 1024
