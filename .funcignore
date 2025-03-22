@@ -6,3 +6,11 @@ __queuestorage__
 local.settings.json
 test
 .venv
+samples
+__pycache__
+.python_packages
+local
+media
+samples
+tests
+scripts
