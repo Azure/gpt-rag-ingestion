@@ -286,7 +286,7 @@ class MultimodalChunker(DocAnalysisChunker):
                     figure_descriptions.append(f"[{blob_name}]: {figure_caption}")
 
                     # Replace <figureX.Y> with a simpler marker or remove it
-                    chunk_content = chunk_content.replace(f"<figure{figure_id}>", f"<figure>{blob_name}</figure>")
+                    chunk_content = chunk_content.replace(f"<figure{figure_id}>", f"<figure>{self.image_container}/{blob_name}</figure>")
 
                 except Exception as e:
                     logging.error(
