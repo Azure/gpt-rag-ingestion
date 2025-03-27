@@ -44,7 +44,7 @@ class LangChainChunker(BaseChunker):
             data (str): The document content to be chunked.
         """
         super().__init__(data)
-        self.max_chunk_size = int(os.getenv("NUM_TOKENS", "2048"))
+        self.max_chunk_size = int(os.getenv("NUM_TOKENS", "750"))
         self.minimum_chunk_size = int(os.getenv("MIN_CHUNK_SIZE", "100"))
         self.token_overlap = int(os.getenv("TOKEN_OVERLAP", "100"))
         self.supported_formats = {
