@@ -4,7 +4,7 @@ import re
 
 from charset_normalizer import detect
 from tools import AzureOpenAIClient, GptTokenEstimator
-from utils.file_utils import get_file_extension
+from utils.file_utils import get_file_extension, get_filepath_from_data
 
 class BaseChunker:
     """
@@ -36,6 +36,7 @@ class BaseChunker:
     - `sas_token` (str): The SAS token for accessing the document. May be empty if not required.
     - `file_url` (str): The full URL constructed by concatenating `url` and `sas_token`.
     - `filename` (str): The name of the file extracted from the URL.
+    - `filepath` (str): The path of the file extracted from the URL.    
     - `extension` (str): The file extension extracted from the URL.
     - `document_content` (str): The raw content of the document.
     - `document_bytes` (bytes or None): The binary content of the document if provided; otherwise, `None`.
@@ -108,6 +109,8 @@ class BaseChunker:
             The full URL constructed by concatenating `url` and `sas_token`.
         filename : str
             The name of the file extracted from the URL.
+        filepath : str
+            The path of the file extracted from the URL.            
         extension : str
             The file extension extracted from the URL.
         document_content : str
@@ -124,6 +127,7 @@ class BaseChunker:
         self.sas_token = data.get('documentSasToken', "")
         self.file_url = f"{self.url}{self.sas_token}"
         self.filename = data['fileName']
+        self.filepath = get_filepath_from_data(data)
         self.extension = get_file_extension(self.filename)
         document_content = data.get('documentContent') 
         self.document_content = document_content if document_content else ""
@@ -208,7 +212,7 @@ class BaseChunker:
         return {
             "chunk_id": chunk_id,
             "url": self.url,
-            "filepath": self.filename,
+            "filepath": self.filepath,
             "content": truncated_content,
             "imageCaptions": "",
             "summary": summary,
