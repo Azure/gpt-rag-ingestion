@@ -31,3 +31,28 @@ def get_filename_from_data(data: dict) -> str:
     else:
         filename = data['documentUrl'].split('/')[-1]
     return filename
+
+def get_filepath_from_data(data: dict) -> str:
+    """
+    Extracts the file path from the document URL in the provided data dictionary.
+    
+    The function assumes that the URL is structured as:
+    https://<account>.blob.core.windows.net/<container>/<optional folders>/filename
+    
+    It removes the container part and returns the rest as the relative file path.
+    
+    Examples:
+    - URL: "https://.../container01/surface-pro-4-user-guide-EN.pdf"
+      Result: "surface-pro-4-user-guide-EN.pdf"
+    - URL: "https://.../container02/somefolder/surface-pro-4-user-guide-PT.pdf"
+      Result: "somefolder/surface-pro-4-user-guide-PT.pdf"
+    """
+    url = data['documentUrl']
+    # Split the URL by '/'
+    parts = url.split('/')
+    
+    # The container is at index 3 after splitting (indices: 0:"https:", 1:"", 2: host, 3: container)
+    # The remaining parts form the relative file path.
+    filepath = '/'.join(parts[4:])
+    
+    return filepath
