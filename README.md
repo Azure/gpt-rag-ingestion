@@ -11,7 +11,7 @@ Part of [GPT-RAG](https://github.com/Azure/gpt-rag)
    - [1.4 NL2SQL and Fabric Data Ingestion](docs/NL2SQL.md)
    - [1.5 Sharepoint Indexing](#sharepoint-indexing)   
 2. [**How-to: Developer**](#how-to-developer)
-   - [2.1 Deploying the Ingestion Component](#deploying-the-ingestion-component)
+   - [2.1 Deploying the Ingestion Component](#cloud-deployment)
    - [2.2 Running Locally](#running-locally)
    - [2.3 Configuring Sharepoint Connector](#configuring-sharepoint-connector)      
 3. [**How-to: User**](#how-to-user)
@@ -131,22 +131,51 @@ If you'd like to learn how to set up the SharePoint connector, check out [ShareP
 
 ## How-to: Developer
 
-### Deploying the Ingestion Component
-- Provision the infrastructure and deploy the solution using the [GPT-RAG](https://aka.ms/gpt-rag) template.
+### Cloud Deployment
 
-- **Redeployment Steps**:
-  - Prerequisites: 
-    - **Azure Developer CLI**
-    - **PowerShell** (Windows only)
-    - **Git**
-    - **Python 3.11**
-  - Redeployment commands:
-    ```bash
-    azd auth login  
-    azd env refresh  
-    azd deploy  
-    ```
-    > **Note:** Use the same environment name, subscription, and region as the initial deployment when running `azd env refresh`.
+There are two main options for deploying the ingestion component to the cloud:
+
+#### **Option 1: Deploy using the Azure Developer CLI (Recommended)**
+If you have previously provisioned the GPT-RAG infrastructure using `azd provision`, this is the recommended approach as it ensures deployment consistency.
+
+```bash
+azd auth login
+azd env refresh
+azd deploy
+```
+
+This method automatically detects your environment settings, applies necessary configurations, and deploys the ingestion component with minimal manual steps.
+
+Ensure you have:
+- [Python 3.11](https://www.python.org/downloads/release/python-3118/)
+- [Azure Developer CLI](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/install-azd) installed.
+- [Git](https://git-scm.com/downloads)
+- [PowerShell](https://learn.microsoft.com/powershell/scripting/install/installing-powershell) (Windows only)
+
+> **Note:** Use the same environment name, subscription, and region as the initial deployment when running `azd env refresh`.
+
+#### **Option 2: Deploy using Azure Functions Core Tools**
+If you have not used `azd provision` or want to deploy in a standalone way, you can publish the ingestion component directly using Azure Functions Core Tools.
+
+```bash
+az login
+func azure functionapp publish FUNCTION_APP_NAME --python
+```
+
+Replace `FUNCTION_APP_NAME` with the actual name of your Function App.
+
+After deployment, verify that the function is available:
+
+```bash
+func azure functionapp list-functions FUNCTION_APP_NAME
+```
+
+Ensure you have:
+- [Azure Functions Core Tools](https://learn.microsoft.com/en-us/azure/azure-functions/functions-run-local?tabs=windows%2Cisolated-process%2Cnode-v4%2Cpython-v2%2Chttp-trigger%2Ccontainer-apps&pivots=programming-language-python#install-the-azure-functions-core-tools)
+- [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)
+
+> [!NOTE]
+> The `setup.py` script, responsible for creating the AI Search components (indexes, skillsets, data sources, etc.), is automatically executed when deploying with `azd` via the `postDeploy` hook. Since this hook is not available when using Azure Functions Core Tools, you may need to run the `setup.py` script manually if the AI Search components have not been created yet.
 
 ### Running Locally
 - Instructions for testing the data ingestion component locally using in VS Code. See [Local Deployment Guide](docs/LOCAL_DEPLOYMENT.md).
