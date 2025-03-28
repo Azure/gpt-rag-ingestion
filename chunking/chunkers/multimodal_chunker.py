@@ -268,7 +268,8 @@ class MultimodalChunker(DocAnalysisChunker):
 
 
                     # 3) Upload to blob
-                    blob_name = f"{self.filename}-figure-{figure_id}.png"
+                    blob_name_prefix = self.filepath.replace('/', '-')
+                    blob_name = f"{blob_name_prefix}-figure-{figure_id}.png"
                     url = self._upload_figure_blob(image_binary, blob_name)
 
                     # 4) Generate caption
@@ -283,7 +284,7 @@ class MultimodalChunker(DocAnalysisChunker):
 
                     # Store references
                     figure_urls.append(url)
-                    figure_descriptions.append(f"[{blob_name}]: {figure_caption}")
+                    figure_descriptions.append(f"[{self.image_container}/{blob_name}]: {figure_caption}")
 
                     # Replace <figureX.Y> with a simpler marker or remove it
                     chunk_content = chunk_content.replace(f"<figure{figure_id}>", f"<figure>{self.image_container}/{blob_name}</figure>")
