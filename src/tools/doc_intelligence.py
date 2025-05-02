@@ -9,6 +9,7 @@ from urllib.parse import urlparse, unquote
 from azure.identity import ManagedIdentityCredential, AzureCliCredential, ChainedTokenCredential
 from azure.storage.blob import BlobServiceClient
 from azure.core.exceptions import ClientAuthenticationError, ResourceNotFoundError
+from configuration import Configuration
 
 class DocumentIntelligenceClient:
     """
@@ -24,12 +25,12 @@ class DocumentIntelligenceClient:
             Analyzes a document using the specified model.
     """
 
-    def __init__(self):
+    def __init__(self, config : Configuration):
         """
         Initializes the DocumentIntelligence client.
         """
         # ai service resource name
-        self.service_name = os.getenv('AZURE_FORMREC_SERVICE', None)
+        self.service_name = config.get_value('AZURE_FORMREC_SERVICE', None)
         if self.service_name is None:
             logging.error("[docintelligence] The environment variable 'AZURE_FORMREC_SERVICE' is not set.")
             raise EnvironmentError("The environment variable 'AZURE_FORMREC_SERVICE' is not set.")
@@ -37,11 +38,11 @@ class DocumentIntelligenceClient:
         # API configuration
         self.DOCINT_40_API = '2023-10-31-preview'
         self.DEFAULT_API_VERSION = '2024-11-30'
-        self.api_version = os.getenv('FORM_REC_API_VERSION', os.getenv('DOCINT_API_VERSION', self.DEFAULT_API_VERSION))
+        self.api_version = config.get_value('FORM_REC_API_VERSION', config.get_value('DOCINT_API_VERSION', self.DEFAULT_API_VERSION))
         self.docint_40_api = self.api_version >= self.DOCINT_40_API
 
         # Network isolation
-        network_isolation = os.getenv('NETWORK_ISOLATION', 'false')
+        network_isolation = config.get_value('NETWORK_ISOLATION', 'false')
         self.network_isolation = network_isolation.lower() == 'true'
 
         # Supported extensions
@@ -66,10 +67,7 @@ class DocumentIntelligenceClient:
 
         # Initialize the ChainedTokenCredential with ManagedIdentityCredential and AzureCliCredential
         try:
-            self.credential = ChainedTokenCredential(
-                ManagedIdentityCredential(),
-                AzureCliCredential()
-            )
+            self.credential = config.credential
             logging.debug("[docintelligence] Initialized ChainedTokenCredential with ManagedIdentityCredential and AzureCliCredential.")
         except Exception as e:
             logging.error(f"[docintelligence] Failed to initialize ChainedTokenCredential: {e}")

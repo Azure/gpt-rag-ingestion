@@ -6,8 +6,10 @@ import logging
 import os
 import time
 
+from configuration import Configuration
+
 class BlobClient:
-    def __init__(self, blob_url, credential=None):
+    def __init__(self, blob_url, config : Configuration=None):
         """
         Initialize BlobClient with a specific blob URL.
         
@@ -15,7 +17,7 @@ class BlobClient:
         :param credential: Credential for authentication (optional)
         """
         # 1. Generate the credential in case it is not provided 
-        self.credential = self._get_credential(credential)
+        self.credential = config.credential
         self.file_url = blob_url
         self.blob_service_client = None
 
@@ -215,10 +217,12 @@ class BlobContainerClient:
 
 # Example usage
 if __name__ == "__main__":
+    config = Configuration()
     # Replace these variables with your actual values
     STORAGE_ACCOUNT_URL = "https://mystorage.blob.core.windows.net"
     CONTAINER_NAME = "mycontainer"
-    CREDENTIAL = os.getenv("AZURE_STORAGE_KEY")  # Or use another method for credentials
+
+    CREDENTIAL = config.get_value("AZURE_STORAGE_KEY")  # Or use another method for credentials
 
     try:
         # Initialize BlobContainerClient

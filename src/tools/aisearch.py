@@ -5,7 +5,7 @@ from azure.search.documents.models import SearchMode
 from azure.core.exceptions import AzureError
 from azure.identity.aio import ManagedIdentityCredential, AzureCliCredential, ChainedTokenCredential
 from typing import Any, Dict, List, Optional
-
+from configuration import Configuration
 
 class AISearchClient:
     """
@@ -13,8 +13,8 @@ class AISearchClient:
     using Managed Identity or Azure CLI credentials for authentication.
     """
 
-    def __init__(self):
-        self.search_service_name = os.getenv("AZURE_SEARCH_SERVICE")
+    def __init__(self, config : Configuration = None):
+        self.search_service_name = config.get_value("AZURE_SEARCH_SERVICE")
         if not self.search_service_name:
             logging.error("[aisearch] AZURE_SEARCH_SERVICE environment variable not set.")
             raise ValueError("AZURE_SEARCH_SERVICE environment variable not set.")
@@ -23,10 +23,7 @@ class AISearchClient:
 
         # Initialize the ChainedTokenCredential
         try:
-            self.credential = ChainedTokenCredential(
-                ManagedIdentityCredential(),
-                AzureCliCredential()
-            )
+            self.credential = config.credential
             logging.debug("[aisearch] Initialized ChainedTokenCredential with ManagedIdentity and AzureCliCredential.")
         except Exception as e:
             logging.error(f"[aisearch] Failed to initialize credentials: {e}")

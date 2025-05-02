@@ -7,6 +7,7 @@ import time
 from openai import AzureOpenAI, RateLimitError
 from azure.identity import ManagedIdentityCredential, AzureCliCredential, ChainedTokenCredential, get_bearer_token_provider
 from azure.core.exceptions import ClientAuthenticationError
+from configuration import Configuration
 
 class AzureOpenAIClient:
     """
@@ -15,7 +16,7 @@ class AzureOpenAIClient:
     Delays between retries start at 0.5 seconds, doubling up to 8 seconds.
     If a rate limit error occurs after retries, the client will retry once more after the retry-after-ms header duration (if the header is present).
     """
-    def __init__(self, document_filename=""):
+    def __init__(self, document_filename="", config : Configuration = None):
         """
         Initializes the AzureOpenAI client.
 
@@ -27,11 +28,11 @@ class AzureOpenAIClient:
         self.max_gpt_model_input_tokens = 128000  # this is gpt4o max input, if using gpt35turbo use 16385
 
         self.document_filename = f"[{document_filename}]" if document_filename else ""
-        self.openai_service_name = os.getenv('AZURE_OPENAI_SERVICE_NAME')
+        self.openai_service_name = config.get_value('AZURE_OPENAI_SERVICE_NAME')
         self.openai_api_base = f"https://{self.openai_service_name}.openai.azure.com"
-        self.openai_api_version = os.getenv('AZURE_OPENAI_API_VERSION')
-        self.openai_embeddings_deployment = os.getenv('AZURE_OPENAI_EMBEDDING_DEPLOYMENT')
-        self.openai_gpt_deployment = os.getenv('AZURE_OPENAI_CHATGPT_DEPLOYMENT')
+        self.openai_api_version = config.get_value('AZURE_OPENAI_API_VERSION')
+        self.openai_embeddings_deployment = config.get_value('AZURE_OPENAI_EMBEDDING_DEPLOYMENT')
+        self.openai_gpt_deployment = config.get_value('AZURE_OPENAI_CHATGPT_DEPLOYMENT')
         
         # Log a warning if any environment variable is empty
         env_vars = {
@@ -47,10 +48,7 @@ class AzureOpenAIClient:
 
         # Initialize the ChainedTokenCredential with ManagedIdentityCredential and AzureCliCredential
         try:
-            self.credential = ChainedTokenCredential(
-                ManagedIdentityCredential(),
-                AzureCliCredential()
-            )
+            self.credential = config.credential
             logging.debug(f"[aoai]{self.document_filename} Initialized ChainedTokenCredential with ManagedIdentityCredential and AzureCliCredential.")
         except Exception as e:
             logging.error(f"[aoai]{self.document_filename} Failed to initialize ChainedTokenCredential: {e}")

@@ -5,7 +5,7 @@ metadata:
   template: azure-gpt-rag-ingest
 services:
   dataIngest:
-    project: .
+    project: ./src
     language: python
     host: function
     hooks:
