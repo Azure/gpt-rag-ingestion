@@ -31,7 +31,7 @@ app = func.FunctionApp()
 
 @app.timer_trigger(schedule="0 */30 * * * *", arg_name="timer", run_on_startup=True, use_monitor=True) 
 @app.function_name(name="sharepoint_index_files")
-async def sharepoint_index_files(timer: func.TimerRequest) -> None:
+async def main(timer: func.TimerRequest) -> None:
     logging.debug("[sharepoint_index_files] Started sharepoint files indexing function.")
     try:
         indexer = SharepointFilesIndexer()

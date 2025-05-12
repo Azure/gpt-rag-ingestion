@@ -23,7 +23,7 @@ config = Configuration()
 log_level = config.get_value('LOG_LEVEL', 'INFO').upper()
 log_level = getattr(logging, log_level, logging.INFO)
 logging.basicConfig(
-    level=logging.INFO, 
+    level=log_level, 
     format='%(asctime)s [%(levelname)s] %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )

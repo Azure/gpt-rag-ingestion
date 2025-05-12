@@ -35,6 +35,7 @@ class Configuration:
             self.config = load(endpoint=app_config_uri, credential=self.credential,key_vault_options=AzureAppConfigurationKeyVaultOptions(credential=self.credential))
         except Exception as e:
             try:
+                logging.log("error", f"Unable to connect to Azure App Configuration. Please check APP_CONFIGURATION_URI setting. {e}")
                 connection_string = os.environ["AZURE_APPCONFIG_CONNECTION_STRING"]
                 # Connect to Azure App Configuration using a connection string.
                 self.config = load(connection_string=connection_string, key_vault_options=AzureAppConfigurationKeyVaultOptions(credential=self.credential))

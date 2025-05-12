@@ -31,7 +31,7 @@ app = func.FunctionApp()
 
 @app.timer_trigger(schedule="0 */30 * * * *", arg_name="timer", run_on_startup=True, use_monitor=False) 
 @app.function_name(name="sharepoint_purge_deleted_files")
-async def sharepoint_purge_deleted_files(timer: func.TimerRequest) -> None:
+async def main(timer: func.TimerRequest) -> None:
     logging.debug("[sharepoint_purge_deleted_files] Started sharepoint purge deleted files function.")
     try:
         purger = SharepointDeletedFilesPurger()

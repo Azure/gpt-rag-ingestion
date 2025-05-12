@@ -31,7 +31,7 @@ app = func.FunctionApp()
 
 @app.function_name(name="multimodality_images_purger")
 @app.timer_trigger(schedule="0 0 0 * * *", arg_name="timer", run_on_startup=True, use_monitor=True) 
-async def images_purge_timer(timer: func.TimerRequest):
+async def main(timer: func.TimerRequest):
     if timer.past_due:
         logging.info("[multimodality_images_purger] Timer is past due.")
     
