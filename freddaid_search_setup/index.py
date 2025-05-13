@@ -343,7 +343,17 @@ def create_index_body(
                 "name": f"{index_name}-scoring-profile",
                 "functionAggregation": "sum",
                 "text": {"weights": {"content": 45, "keyPhrases": 45, "title": 5}},
-                "functions": [],
+                "functions": [
+                    {
+                        "fieldName": "date_last_modified",
+                        "interpolation": "linear",
+                        "type": "freshness",
+                        "boost": 5,
+                        "freshness": {
+                            "boostingDuration": "P30D",
+                        },
+                    },
+                ],
             }
         ],
         "corsOptions": {"allowedOrigins": ["*"], "maxAgeInSeconds": 60},
