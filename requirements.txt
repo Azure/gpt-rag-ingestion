@@ -3,7 +3,7 @@ azure-functions==1.21.3
 
 #azurefunctions-extensions-http-fastapi
 # Obtaining azurefunctions-extensions-http-fastapi 1.0.0b3 from github to get pydantic 2.10.1 support
-#git+https://github.com/Azure/azure-functions-python-extensions.git@dev#egg=azurefunctions-extensions-http-fastapi&subdirectory=azurefunctions-extensions-http-fastapi
+git+https://github.com/givenscj/azure-functions-python-extensions.git#egg=azurefunctions-extensions-http-fastapi&subdirectory=azurefunctions-extensions-http-fastapi
 git+https://github.com/givenscj/azure-functions-python-extensions.git#egg=azurefunctions-extensions-bindings-blob&subdirectory=azurefunctions-extensions-bindings-blob
 
 # Azure SDK dependencies
