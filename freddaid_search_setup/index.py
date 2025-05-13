@@ -325,6 +325,18 @@ def create_index_body(
                 "analyzer": "standard.lucene",
                 "synonymMaps": [],
             },
+                {
+                "name": "date_last_modified",
+                "type": "Edm.DateTimeOffset",
+                "searchable": False,
+                "filterable": True,
+                "retrievable": True,
+                "stored": True,
+                "sortable": True,
+                "facetable": True,
+                "key": False,
+                "synonymMaps": [],
+            },
         ],
         "scoringProfiles": [
             {

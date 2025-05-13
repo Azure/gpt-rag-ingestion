@@ -248,6 +248,11 @@ def create_skillset(
                             "source": "/document/chunks/*/content/keyPhrases",
                             "inputs": [],
                         },
+                                  {
+                            "name": "date_last_modified",
+                            "source": "/document/metadata_storage_last_modified",
+                            "inputs": [],
+                        },
                     ],
                 }
             ],
