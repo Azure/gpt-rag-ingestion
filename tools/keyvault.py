@@ -10,12 +10,10 @@ class KeyVaultClient:
     """
 
     def __init__(self):
-        self.key_vault_name = os.getenv("AZURE_KEY_VAULT_NAME")
-        if not self.key_vault_name:
-            logging.error("[keyvault] AZURE_KEY_VAULT_NAME environment variable not set.")
-            raise ValueError("AZURE_KEY_VAULT_NAME environment variable not set.")
-        
-        self.kv_uri = f"https://{self.key_vault_name}.vault.azure.net"
+        self.kv_uri = os.getenv("KEY_VAULT_URI")
+        if not self.kv_uri:
+            logging.error("[keyvault] KEY_VAULT_URI environment variable not set.")
+            raise ValueError("KEY_VAULT_URI environment variable not set.")
         
         # Initialize the ChainedTokenCredential with ManagedIdentityCredential and AzureCliCredential
         try:
@@ -40,8 +38,8 @@ class KeyVaultClient:
         Returns:
         str: The value of the secret, or None if not found or an error occurs.
         """
-        if not self.key_vault_name:
-            logging.error("[keyvault] Key Vault name is not configured.")
+        if not self.kv_uri:
+            logging.error("[keyvault] Key Vault URI is not configured.")
             return None
 
         try:

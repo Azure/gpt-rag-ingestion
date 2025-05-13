@@ -16,7 +16,7 @@ Prerequisites:
      - SHAREPOINT_CONNECTOR_ENABLED: 'true' to enable the connector (default: 'false').
      - SHAREPOINT_TENANT_ID, SHAREPOINT_CLIENT_ID: For SharePoint authentication.
      - SHAREPOINT_CLIENT_SECRET_NAME: Azure Key Vault secret name (default: 'sharepointClientSecret').
-     - AZURE_SEARCH_SHAREPOINT_INDEX_NAME: Name of the Azure AI Search index (default: 'ragindex').
+     - SEARCH_SHAREPOINT_INDEX_NAME: Name of the Azure AI Search index (default: 'ragindex').
    - SharePoint Config:
      - SHAREPOINT_SITE_DOMAIN, SHAREPOINT_SITE_NAME: SharePoint site details.
      - SHAREPOINT_SITE_FOLDER: Folder path (default: '/').
@@ -73,13 +73,17 @@ for logger_name in suppress_loggers:
 # -------------------------------
 
 def main():
-    # Configure logging
+    # -------------------------------
+    # Logging configuration
+    # -------------------------------
+    log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
+    log_level = getattr(logging, log_level, logging.INFO)
     logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
+        level=logging.INFO, 
+        format='%(asctime)s [%(levelname)s] %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
     )
-
+    
     # Index sharepoint files
     try:
         indexer = SharepointFilesIndexer()

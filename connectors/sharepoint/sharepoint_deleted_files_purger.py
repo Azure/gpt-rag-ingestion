@@ -15,7 +15,7 @@ class SharepointDeletedFilesPurger:
         self.tenant_id = os.getenv("SHAREPOINT_TENANT_ID")
         self.client_id = os.getenv("SHAREPOINT_CLIENT_ID")
         self.client_secret_name = os.getenv("SHAREPOINT_CLIENT_SECRET_NAME", "sharepointClientSecret")
-        self.index_name = os.getenv("AZURE_SEARCH_SHAREPOINT_INDEX_NAME", "ragindex")
+        self.index_name = os.getenv("SEARCH_SHAREPOINT_INDEX_NAME", "ragindex")
         self.site_domain = os.getenv("SHAREPOINT_SITE_DOMAIN")
         self.site_name = os.getenv("SHAREPOINT_SITE_NAME")
         
@@ -45,7 +45,7 @@ class SharepointDeletedFilesPurger:
             "SHAREPOINT_CLIENT_ID": self.client_id,
             "SHAREPOINT_SITE_DOMAIN": self.site_domain,
             "SHAREPOINT_SITE_NAME": self.site_name,
-            "AZURE_SEARCH_SHAREPOINT_INDEX_NAME": self.index_name
+            "SEARCH_SHAREPOINT_INDEX_NAME": self.index_name
         }
 
         missing_env_vars = [var for var, value in required_vars.items() if not value]

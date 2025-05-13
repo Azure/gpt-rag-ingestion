@@ -1,0 +1,27 @@
+{
+  "name": "FastAPI Dev Container",
+  "build": {
+    "dockerfile": "../Dockerfile"
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/azure-cli:1.2.7": {}
+  },
+  "appPort": [80],
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "git.path": "/usr/bin/git",
+        "terminal.integrated.defaultProfile.linux": "bash"
+      },
+      "extensions": [
+        "ms-python.python",
+        "ms-python.debugpy"
+      ],
+      "containerEnv": {
+        "APP_CONFIG_ENDPOINT": "${localEnv:APP_CONFIG_ENDPOINT}"
+      },
+      "postCreateCommand": "pip install debugpy"
+    }
+  }
+}

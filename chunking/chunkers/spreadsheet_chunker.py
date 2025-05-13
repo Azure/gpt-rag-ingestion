@@ -42,14 +42,14 @@ class SpreadsheetChunker(BaseChunker):
         
         Args:
             data (str): The spreadsheet content to be chunked.
-            max_chunk_size (int, optional): Maximum allowed size of each chunk in tokens. Defaults to an environment variable 'SPREADSHEET_NUM_TOKENS' or 0 if not set.
+            max_chunk_size (int, optional): Maximum allowed size of each chunk in tokens. Defaults to an environment variable 'SPREADSHEET_CHUNKING_NUM_TOKENS' or 0 if not set.
             chunking_by_row (bool, optional): Whether to chunk by row instead of by sheet. Defaults to an environment variable 'CHUNKING_BY_ROW' or False.
             include_header_in_chunks (bool, optional): Whether to include the header row in each chunk if chunking by row. Defaults to 'INCLUDE_HEADER_IN_CHUNKS' environment variable or False.
         """
         super().__init__(data)
         
         if max_chunk_size is None:
-            self.max_chunk_size = int(os.getenv("SPREADSHEET_NUM_TOKENS", 0))
+            self.max_chunk_size = int(os.getenv("SPREADSHEET_CHUNKING_NUM_TOKENS", 0))
         else:
             self.max_chunk_size = int(max_chunk_size)
         

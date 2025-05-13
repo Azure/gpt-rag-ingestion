@@ -6,8 +6,9 @@ temp/
 local.settings.json
 .vscode/
 .vscode
-
-
+.python_packages/
+.venv/
+.venv_temp/
 .azure
 .azure/
 

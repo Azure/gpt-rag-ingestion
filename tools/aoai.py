@@ -1,251 +1,173 @@
-# AzureOpenAIClient.py
+# tools/aoai.py
 
 import logging
 import os
-import tiktoken
 import time
-from openai import AzureOpenAI, RateLimitError
-from azure.identity import ManagedIdentityCredential, AzureCliCredential, ChainedTokenCredential, get_bearer_token_provider
+import tiktoken
+from openai import RateLimitError
+from azure.identity import (
+    ManagedIdentityCredential,
+    AzureCliCredential,
+    ChainedTokenCredential
+)
 from azure.core.exceptions import ClientAuthenticationError
+from azure.ai.projects import AIProjectClient
+
 
 class AzureOpenAIClient:
     """
-    AzureOpenAIClient uses the OpenAI SDK's built-in retry mechanism with exponential backoff.
-    The number of retries is controlled by the MAX_RETRIES environment variable.
-    Delays between retries start at 0.5 seconds, doubling up to 8 seconds.
-    If a rate limit error occurs after retries, the client will retry once more after the retry-after-ms header duration (if the header is present).
+    Routes all OpenAI calls through your API Management proxy,
+    by first retrieving the APIM endpoint & key from your AI Foundry project.
     """
-    def __init__(self, document_filename=""):
-        """
-        Initializes the AzureOpenAI client.
-
-        Parameters:
-        document_filename (str, optional): Additional attribute for improved log traceability.
-        """        
-        self.max_retries = 10  # Maximum number of retries for rate limit errors
-        self.max_embeddings_model_input_tokens = 8192
-        self.max_gpt_model_input_tokens = 128000  # this is gpt4o max input, if using gpt35turbo use 16385
-
+    def __init__(self, document_filename: str = ""):
+        # Optional tag for log traceability
         self.document_filename = f"[{document_filename}]" if document_filename else ""
-        self.openai_service_name = os.getenv('AZURE_OPENAI_SERVICE_NAME')
-        self.openai_api_base = f"https://{self.openai_service_name}.openai.azure.com"
-        self.openai_api_version = os.getenv('AZURE_OPENAI_API_VERSION')
-        self.openai_embeddings_deployment = os.getenv('AZURE_OPENAI_EMBEDDING_DEPLOYMENT')
-        self.openai_gpt_deployment = os.getenv('AZURE_OPENAI_CHATGPT_DEPLOYMENT')
-        
-        # Log a warning if any environment variable is empty
-        env_vars = {
-            'AZURE_OPENAI_SERVICE_NAME': self.openai_service_name,
-            'AZURE_OPENAI_API_VERSION': self.openai_api_version,
-            'AZURE_OPENAI_EMBEDDING_DEPLOYMENT': self.openai_embeddings_deployment,
-            'AZURE_OPENAI_CHATGPT_DEPLOYMENT': self.openai_gpt_deployment
-        }
-        
-        for var_name, var_value in env_vars.items():
-            if not var_value:
-                logging.warning(f'[aoai]{self.document_filename} Environment variable {var_name} is not set.')
 
-        # Initialize the ChainedTokenCredential with ManagedIdentityCredential and AzureCliCredential
+        # Maximum retries for rate-limit errors before using `retry-after`
+        self.max_retries = int(os.getenv("MAX_RETRIES", 10))
+
+        # Token limits
+        self.max_embeddings_model_input_tokens = 8192
+        self.max_gpt_model_input_tokens = 128_000
+
+        # --- 1) load configuration from environment ---
+        project_conn_str = os.getenv("AI_FOUNDRY_PROJECT_CONNECTION_STRING")
+        if not project_conn_str:
+            raise EnvironmentError(
+                "Environment variable AI_FOUNDRY_PROJECT_CONNECTION_STRING is not set"
+            )
+
+        # Name of the APIM-backed OpenAI connection in AI Foundry
+        self.connection_name = os.getenv("OPENAI_CONNECTION_NAME", "openai-apim-conn")
+
+        # Deployment names for embeddings & chat models
+        self.openai_api_version           = os.getenv("OPENAI_API_VERSION")
+        self.openai_embeddings_deployment = os.getenv("OPENAI_EMBEDDING_DEPLOYMENT")
+        self.openai_chat_deployment       = os.getenv("OPENAI_CHAT_DEPLOYMENT")
+
+        for var, val in {
+            "OPENAI_API_VERSION": self.openai_api_version,
+            "OPENAI_EMBEDDING_DEPLOYMENT": self.openai_embeddings_deployment,
+            "OPENAI_CHAT_DEPLOYMENT": self.openai_chat_deployment
+        }.items():
+            if not val:
+                logging.warning(f"[aoai]{self.document_filename} {var} is not set")
+
+        # --- 2) build a credential chain ---
         try:
             self.credential = ChainedTokenCredential(
                 ManagedIdentityCredential(),
                 AzureCliCredential()
             )
-            logging.debug(f"[aoai]{self.document_filename} Initialized ChainedTokenCredential with ManagedIdentityCredential and AzureCliCredential.")
+            logging.debug(f"[aoai]{self.document_filename} Credential chain initialized")
         except Exception as e:
-            logging.error(f"[aoai]{self.document_filename} Failed to initialize ChainedTokenCredential: {e}")
+            logging.error(f"[aoai]{self.document_filename} Credential init failed: {e}")
             raise
 
-        # Initialize the bearer token provider
+        # --- 3) instantiate AIProjectClient & retrieve APIM-backed OpenAI client ---
         try:
-            self.token_provider = get_bearer_token_provider(
-                self.credential, 
-                "https://cognitiveservices.azure.com/.default"
+            project = AIProjectClient.from_connection_string(
+                conn_str=project_conn_str,
+                credential=self.credential
             )
-            logging.debug(f"[aoai]{self.document_filename} Initialized bearer token provider.")
-        except Exception as e:
-            logging.error(f"[aoai]{self.document_filename} Failed to initialize bearer token provider: {e}")
-            raise
+            logging.debug(f"[aoai]{self.document_filename} Connected to AI Foundry project")
 
-        # Initialize the AzureOpenAI client
-        try:
-            self.client = AzureOpenAI(
+            self.client = project.inference.get_azure_openai_client(
                 api_version=self.openai_api_version,
-                azure_endpoint=self.openai_api_base,
-                azure_ad_token_provider=self.token_provider,
-                max_retries=self.max_retries
+                connection_name=self.connection_name
             )
-            logging.debug(f"[aoai]{self.document_filename} Initialized AzureOpenAI client.")
-        except ClientAuthenticationError as e:
-            logging.error(f"[aoai]{self.document_filename} Authentication failed during AzureOpenAI client initialization: {e}")
-            raise
+            logging.debug(
+                f"[aoai]{self.document_filename} Acquired OpenAI client "
+                f"via APIM connection '{self.connection_name}'"
+            )
         except Exception as e:
-            logging.error(f"[aoai]{self.document_filename} Failed to initialize AzureOpenAI client: {e}")
+            logging.error(f"[aoai]{self.document_filename} Failed to get OpenAI client: {e}")
             raise
 
-    def get_completion(self, prompt, image_base64=None, max_tokens=800, retry_after=True):
-        """
-        Generates a completion for the given prompt using the Azure OpenAI service.
-
-        Args:
-            prompt (str): The input prompt for the model.
-            image_base64 (str, optional): Base64 encoded image to be included with the prompt. Defaults to None.
-            max_tokens (int, optional): The maximum number of tokens to generate. Defaults to 800.
-            retry_after (bool, optional): Flag to determine if the method should retry after rate limiting. Defaults to True.
-
-        Returns:
-            str: The generated completion.
-        """
-        one_liner_prompt = prompt.replace('\n', ' ')
-        logging.debug(f"[aoai]{self.document_filename} Getting completion for prompt: {one_liner_prompt[:100]}")
-
-        # Truncate prompt if needed
+    def get_completion(self, prompt: str, image_base64: str = None,
+                       max_tokens: int = 800, retry_after: bool = True) -> str:
+        # Truncate and build messages...
         prompt = self._truncate_input(prompt, self.max_gpt_model_input_tokens)
+        messages = [{"role": "system", "content": "You are a helpful assistant."}]
+        if image_base64:
+            messages.append({
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}}
+                ]
+            })
+        else:
+            messages.append({"role": "user", "content": prompt})
 
         try:
-
-            input_messages = [
-                {"role": "system", "content": "You are a helpful assistant."},
-            ]
-
-            if not image_base64:
-                input_messages.append({"role": "user", "content": prompt})
-            else:
-                input_messages.append({"role": "user", "content": [
-                        {
-                            "type": "text",
-                            "text": prompt
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url":f"data:image/jpeg;base64,{image_base64}"
-                            }
-                        } 
-                ]})
-
-            response = self.client.chat.completions.create(
-                messages=input_messages,
-                model=self.openai_gpt_deployment,
-                temperature=0.7,
-                top_p=0.95,
+            resp = self.client.chat.completions.create(
+                model=self.openai_chat_deployment,
+                messages=messages,
                 max_tokens=max_tokens
             )
-
-            completion = response.choices[0].message.content
-            logging.debug(f"[aoai]{self.document_filename} Completion received successfully.")
-            return completion
+            return resp.choices[0].message.content
 
         except RateLimitError as e:
             if not retry_after:
-                logging.error(f"[aoai]{self.document_filename} get_completion: Rate limit error occurred after retries: {e}")
+                logging.error(f"[aoai]{self.document_filename} Rate limit exceeded: {e}")
                 raise
 
-            retry_after_ms = e.response.headers.get('retry-after-ms')
-            if retry_after_ms:
-                retry_after_ms = int(retry_after_ms)
-                logging.info(f"[aoai]{self.document_filename} get_completion: Reached rate limit, retrying after {retry_after_ms} ms")
-                time.sleep(retry_after_ms / 1000)
-                return self.get_completion(prompt, max_tokens=max_tokens, retry_after=False)
-            else:
-                logging.error(f"[aoai]{self.document_filename} get_completion: Rate limit error occurred, no 'retry-after-ms' provided: {e}")
-                raise
+            wait_ms = e.response.headers.get("retry-after-ms")
+            if wait_ms:
+                logging.info(f"[aoai]{self.document_filename} Retrying after {wait_ms}ms")
+                time.sleep(int(wait_ms) / 1000)
+                return self.get_completion(prompt, image_base64, max_tokens, retry_after=False)
+            raise
 
         except ClientAuthenticationError as e:
-            logging.error(f"[aoai]{self.document_filename} get_completion: Authentication failed: {e}")
+            logging.error(f"[aoai]{self.document_filename} Authentication failed: {e}")
             raise
 
-        except Exception as e:
-            logging.error(f"[aoai]{self.document_filename} get_completion: An unexpected error occurred: {e}")
-            raise
-
-    def get_embeddings(self, text, retry_after=True):
-        """
-        Generates embeddings for the given text using the Azure OpenAI service.
-
-        Args:
-            text (str): The input text to generate embeddings for.
-            retry_after (bool, optional): Flag to determine if the method should retry after rate limiting. Defaults to True.
-
-        Returns:
-            list: The generated embeddings.
-        """
-        one_liner_text = text.replace('\n', ' ')
-        logging.debug(f"[aoai]{self.document_filename} Getting embeddings for text: {one_liner_text[:100]}")        
-        
-        # Truncate in case it is larger than the maximum input tokens
+    def get_embeddings(self, text: str, retry_after: bool = True) -> list:
         text = self._truncate_input(text, self.max_embeddings_model_input_tokens)
-
         try:
-            response = self.client.embeddings.create(
-                input=text,
-                model=self.openai_embeddings_deployment
+            resp = self.client.embeddings.create(
+                model=self.openai_embeddings_deployment,
+                input=text
             )
-            embeddings = response.data[0].embedding
-            logging.debug(f"[aoai]{self.document_filename} Embeddings received successfully.")
-            return embeddings
-        
+            return resp.data[0].embedding
+
         except RateLimitError as e:
             if not retry_after:
-                logging.error(f"[aoai]{self.document_filename} get_embeddings: Rate limit error occurred after retries: {e}")
+                logging.error(f"[aoai]{self.document_filename} Embedding rate limit: {e}")
                 raise
 
-            retry_after_ms = e.response.headers.get('retry-after-ms')
-            if retry_after_ms:
-                retry_after_ms = int(retry_after_ms)
-                logging.info(f"[aoai]{self.document_filename} get_embeddings: Reached rate limit, retrying after {retry_after_ms} ms")
-                time.sleep(retry_after_ms / 1000)
+            wait_ms = e.response.headers.get("retry-after-ms")
+            if wait_ms:
+                logging.info(f"[aoai]{self.document_filename} Retrying embeddings after {wait_ms}ms")
+                time.sleep(int(wait_ms) / 1000)
                 return self.get_embeddings(text, retry_after=False)
-            else:
-                logging.error(f"[aoai]{self.document_filename} get_embeddings: Rate limit error occurred, no 'retry-after-ms' provided: {e}")
-                raise
+            raise
 
         except ClientAuthenticationError as e:
-            logging.error(f"[aoai]{self.document_filename} get_embeddings: Authentication failed: {e}")
+            logging.error(f"[aoai]{self.document_filename} Authentication failed: {e}")
             raise
 
-        except Exception as e:
-            logging.error(f"[aoai]{self.document_filename} get_embeddings: An unexpected error occurred: {e}")
-            raise
+    def _truncate_input(self, text: str, max_tokens: int) -> str:
+        estimator = GptTokenEstimator()
+        count = estimator.estimate_tokens(text)
+        if count <= max_tokens:
+            return text
 
-    def _truncate_input(self, text, max_tokens):
-        """
-        Truncates the input text to ensure it does not exceed the maximum number of tokens.
+        logging.info(f"[aoai]{self.document_filename} Truncating from {count} to {max_tokens} tokens")
+        step = 1
+        while estimator.estimate_tokens(text) > max_tokens:
+            text = text[:-step]
+            step = min(step * 2, 100)
+        return text
 
-        Args:
-            text (str): The input text to truncate.
-            max_tokens (int): The maximum number of tokens allowed.
-
-        Returns:
-            str: The truncated text.
-        """
-        input_tokens = GptTokenEstimator().estimate_tokens(text)
-        if input_tokens > max_tokens:
-            logging.info(f"[aoai]{self.document_filename} Input size {input_tokens} exceeded maximum token limit {max_tokens}, truncating...")
-            step_size = 1  # Initial step size
-            iteration = 0  # Iteration counter
-
-            while GptTokenEstimator().estimate_tokens(text) > max_tokens:
-                text = text[:-step_size]
-                iteration += 1
-
-                # Increase step size exponentially every 5 iterations
-                if iteration % 5 == 0:
-                    step_size = min(step_size * 2, 100)
-
-        return text    
 
 class GptTokenEstimator:
+    """
+    Estimates token count using the GPT-2 tokenizer.
+    """
     GPT2_TOKENIZER = tiktoken.get_encoding("gpt2")
 
     def estimate_tokens(self, text: str) -> int:
-        """
-        Estimates the number of tokens in the given text using the GPT-2 tokenizer.
-
-        Args:
-            text (str): The input text.
-
-        Returns:
-            int: The estimated number of tokens.
-        """
         return len(self.GPT2_TOKENIZER.encode(text))

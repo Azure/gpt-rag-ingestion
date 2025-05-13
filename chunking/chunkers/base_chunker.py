@@ -139,7 +139,7 @@ class BaseChunker:
         else:
             self.document_bytes = None
             logging.warning(f"[base_chunker][{self.filename}] Document bytes not provided.")
-        self.embeddings_vector_size = int(os.getenv("AZURE_EMBEDDINGS_VECTOR_SIZE", "3072"))
+        self.embeddings_vector_size = int(os.getenv("EMBEDDINGS_VECTOR_DIMENSIONS", "3072"))
         
     def get_chunks(self):
         """Abstract method to be implemented by subclasses."""

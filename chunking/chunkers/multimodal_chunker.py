@@ -26,7 +26,7 @@ class MultimodalChunker(DocAnalysisChunker):
             token_overlap (int, optional): Number of overlapping tokens between chunks. Defaults to None.
         """
         super().__init__(data, max_chunk_size, minimum_chunk_size, token_overlap)
-        self.image_container = os.getenv("STORAGE_CONTAINER_IMAGES", "documents-images")
+        self.image_container = os.getenv("STORAGE_ACCOUNT_CONTAINER_IMAGES", "documents-images")
         self.storage_account_name = os.getenv("STORAGE_ACCOUNT_NAME", "set-storage-account-name-env-var")
         self.minimum_figure_area_percentage = float(os.getenv("MINIMUM_FIGURE_AREA_PERCENTAGE", "4.0"))
 

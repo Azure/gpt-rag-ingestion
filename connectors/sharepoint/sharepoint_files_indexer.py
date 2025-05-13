@@ -18,7 +18,7 @@ class SharepointFilesIndexer:
         self.site_name = os.getenv("SHAREPOINT_SITE_NAME")
         self.folder_path = os.getenv("SHAREPOINT_SITE_FOLDER", "/")
         self.sharepoint_client_secret_name = os.getenv("SHAREPOINT_CLIENT_SECRET_NAME", "sharepointClientSecret")
-        self.index_name = os.getenv("AZURE_SEARCH_SHAREPOINT_INDEX_NAME", "ragindex")
+        self.index_name = os.getenv("SEARCH_SHAREPOINT_INDEX_NAME", "ragindex")
         self.file_formats = os.getenv("SHAREPOINT_FILES_FORMAT")
         if self.file_formats:
             # Convert comma-separated string into a list, trimming whitespace

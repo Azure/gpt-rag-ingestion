@@ -14,10 +14,10 @@ class AISearchClient:
     """
 
     def __init__(self):
-        self.search_service_name = os.getenv("AZURE_SEARCH_SERVICE")
+        self.search_service_name = os.getenv("SEARCH_SERVICE_NAME")
         if not self.search_service_name:
-            logging.error("[aisearch] AZURE_SEARCH_SERVICE environment variable not set.")
-            raise ValueError("AZURE_SEARCH_SERVICE environment variable not set.")
+            logging.error("[aisearch] SEARCH_SERVICE_NAME environment variable not set.")
+            raise ValueError("SEARCH_SERVICE_NAME environment variable not set.")
 
         self.endpoint = f"https://{self.search_service_name}.search.windows.net"
 
