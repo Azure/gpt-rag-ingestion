@@ -57,7 +57,7 @@ app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
 
 # Document Chunking Function (HTTP Triggered by AI Search)
 @app.route(route="document-chunking", methods=[func.HttpMethod.POST], auth_level=func.AuthLevel.FUNCTION)
-async def document_chunking(req: Request) -> JSONResponse:
+async def main(req: Request) -> JSONResponse:
     try:
         body = req.get_json()
         jsonschema.validate(body, schema=get_request_schema())
