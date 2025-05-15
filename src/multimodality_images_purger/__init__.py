@@ -8,7 +8,6 @@ import dotenv
 
 import jsonschema
 import azure.functions as func
-from azurefunctions.extensions.http.fastapi import Request, StreamingResponse, JSONResponse
 
 from chunking import DocumentChunker
 from connectors import ImagesDeletedFilesPurger
