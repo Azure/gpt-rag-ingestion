@@ -7,7 +7,6 @@ from json import JSONEncoder
 
 import jsonschema
 import azure.functions as func
-from azurefunctions.extensions.http.fastapi import Request, StreamingResponse, JSONResponse
 
 from chunking import DocumentChunker
 from tools import BlobClient
@@ -57,7 +56,7 @@ app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
 
 # Document Chunking Function (HTTP Triggered by AI Search)
 @app.route(route="document-chunking", methods=[func.HttpMethod.POST], auth_level=func.AuthLevel.FUNCTION)
-async def main(req: Request) -> JSONResponse:
+async def main(req: func.HttpRequest) -> func.HttpResponse:
     try:
         body = req.get_json()
         jsonschema.validate(body, schema=get_request_schema())
