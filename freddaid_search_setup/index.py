@@ -350,7 +350,7 @@ def create_index_body(
                         "type": "freshness",
                         "boost": 8,
                         "freshness": {
-                            "boostingDuration": "P6M",
+                            "boostingDuration": "P183D",
                         },
                     },
                 ],
