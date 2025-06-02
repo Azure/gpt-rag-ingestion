@@ -348,9 +348,9 @@ def create_index_body(
                         "fieldName": "date_last_modified",
                         "interpolation": "linear",
                         "type": "freshness",
-                        "boost": 5,
+                        "boost": 8,
                         "freshness": {
-                            "boostingDuration": "P30D",
+                            "boostingDuration": "P183D",
                         },
                     },
                 ],
