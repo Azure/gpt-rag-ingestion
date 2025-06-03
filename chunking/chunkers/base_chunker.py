@@ -148,7 +148,7 @@ class BaseChunker:
         # Retrieve date_uploaded from blob metadata if available, otherwise use current time
         self.date_uploaded = self._get_date_uploaded_from_metadata()
 
-    def get_chunks(self):
+    async def get_chunks(self):
         """Abstract method to be implemented by subclasses."""
         pass
 
