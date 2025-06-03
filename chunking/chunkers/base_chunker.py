@@ -2,6 +2,7 @@ import logging
 import os
 import re
 from urllib.parse import unquote, urlparse
+from datetime import datetime, timezone
 from uuid import uuid4
 from tools import AzureOpenAIClient, GptTokenEstimator
 from utils.file_utils import get_file_extension
@@ -143,6 +144,9 @@ class BaseChunker:
         self.document_content = document_content if document_content else ""
         self.token_estimator = GptTokenEstimator()
         self.aoai_client = AzureOpenAIClient(document_filename=self.filename)
+        
+        # Retrieve date_uploaded from blob metadata if available, otherwise use current time
+        self.date_uploaded = self._get_date_uploaded_from_metadata()
 
     def get_chunks(self):
         """Abstract method to be implemented by subclasses."""
@@ -217,6 +221,7 @@ class BaseChunker:
             "url": self.url,
             "metadata_storage_path": self.url,
             "metadata_storage_name": self.filename,
+            "date_uploaded": self.date_uploaded,  # Use the date from metadata
             "filepath": self.filename,
             "content": truncated_content,
             "category": "",
@@ -227,8 +232,38 @@ class BaseChunker:
             "offset": offset,     
         }
 
+    def _get_date_uploaded_from_metadata(self):
+        """
+        Retrieves the date_uploaded from blob metadata, or returns current timestamp if not available.
+        
+        Returns:
+            str: ISO formatted date string
+        """
+        try:
+            from tools.blob import BlobStorageClient
+            from datetime import datetime, timezone
+            
+            # Create blob client to get metadata
+            blob_client = BlobStorageClient(self.file_url)
+            metadata = blob_client.get_metadata()
+            
+            # Get date_uploaded from metadata
+            date_uploaded = metadata.get('date_uploaded')
+            
+            if date_uploaded:
+                logging.debug(f"[base_chunker][{self.filename}] Using date_uploaded from metadata: {date_uploaded}")
+                return date_uploaded
+            else:
+                logging.debug(f"[base_chunker][{self.filename}] No date_uploaded in metadata, using current time")
+                # Fallback to current time if not in metadata
+                return datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+                
+        except Exception as e:
+            logging.warning(f"[base_chunker][{self.filename}] Error retrieving date_uploaded from metadata: {e}. Using current time.")
+            # Fallback to current time if there's an error
+            from datetime import datetime, timezone
+            return datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
 
-    
     def _extract_title_from_filename(self, filename):
         """
         Extracts a title from a filename by removing the extension and 
