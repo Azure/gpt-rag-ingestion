@@ -57,6 +57,11 @@ def create_indexer_body(
                 "targetFieldName": "organization_id",
                 "mappingFunction": None,
             },
+            {
+                "sourceFieldName": "date_uploaded",
+                "targetFieldName": "date_uploaded",
+                "mappingFunction": None,
+            },
         ],
         "outputFieldMappings": [],
         "parameters": {
