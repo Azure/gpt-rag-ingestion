@@ -214,6 +214,11 @@ def create_skillset(
                             "inputs": [],
                         },
                         {
+                            "name": "date_uploaded",
+                            "source": "/document/chunks/*/date_uploaded", # it's different from org_id because it will use default value if not found so it has to be retrieved from the chunking process, not metadata alone
+                            "inputs": [],
+                        },
+                        {
                             "name": "title",
                             "source": "/document/chunks/*/title",
                             "inputs": [],
