@@ -4,6 +4,7 @@ import os
 import re
 import requests
 import time
+from datetime import datetime, timezone
 from azure.identity import DefaultAzureCredential
 from azure.storage.blob import BlobServiceClient
 from azure.keyvault.secrets import SecretClient
@@ -14,6 +15,7 @@ from urllib.parse import urlparse
 from utils.file_utils import get_file_extension
 from utils.file_utils import get_filename
 from uuid import uuid4
+from tools.blob import BlobStorageClient
 
 ##########################################################################################
 # CONFIGURATION
@@ -222,6 +224,24 @@ def analyze_document_rest(filepath, model):
 
 def get_chunk(content, url, page, chunk_id, text_embedder):
 
+    # Try to get date_uploaded from blob metadata
+    try:
+        blob_client = BlobStorageClient(url)
+        metadata = blob_client.get_metadata()
+        date_uploaded = metadata.get('date_uploaded')
+        
+        if not date_uploaded:
+            # Fallback to current time if not in metadata
+            date_uploaded = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+            logging.debug(f"No date_uploaded in metadata for {get_filename(url)}, using current time")
+        else:
+            logging.debug(f"Using date_uploaded from metadata for {get_filename(url)}: {date_uploaded}")
+            
+    except Exception as e:
+        # Fallback to current time if there's an error
+        date_uploaded = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+        logging.warning(f"Error retrieving date_uploaded from metadata for {get_filename(url)}: {e}. Using current time.")
+
     chunk =  {
             "id": str(uuid4()),
             "chunk_id": chunk_id,
@@ -235,6 +255,7 @@ def get_chunk(content, url, page, chunk_id, text_embedder):
             "url": url,
             "metadata_storage_name": get_filename(url),
             "content": content,
+            "date_uploaded": date_uploaded,
             "vector": text_embedder.embed_content(content)
     }
     logging.info(f"Chunk: {chunk}.")
