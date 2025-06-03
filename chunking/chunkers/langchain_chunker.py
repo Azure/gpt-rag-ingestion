@@ -59,7 +59,7 @@ class LangChainChunker(BaseChunker):
             "xml": "xml"
         }
 
-    def get_chunks(self):
+    async def get_chunks(self):
         """
         Splits the document content into chunks based on the specified format and criteria.
         
