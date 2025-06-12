@@ -330,7 +330,7 @@ def create_index_body(
             {
                 "name": f"{index_name}-scoring-profile",
                 "functionAggregation": "sum",
-                "text": {"weights": {"content": 45, "keyPhrases": 45, "title": 5}},
+                "text": {"weights": {"content": 4, "keyPhrases": 5, "title": 7}},
                 "functions": [],
             }
         ],
