@@ -1,5 +1,3 @@
-Part of [GPT‑RAG](https://aka.ms/gpt-rag)
-
 <!-- 
 page_type: sample
 languages:
