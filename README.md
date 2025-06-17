@@ -28,7 +28,7 @@ _This section will be updated soon to include a detailed explanation of the data
 Before deploying the web application, you must provision the infrastructure as described in the [GPT-RAG](https://github.com/azure/gpt-rag/tree/feature/vnext-architecture) repo. This includes creating all necessary Azure resources required to support the application runtime.
 
 
-## How to deploy the web app
+## How to deploy the data in
 
 ```shell
 azd env refresh
