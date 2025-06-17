@@ -7,7 +7,6 @@ import jsonschema
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from azure.identity import AzureCliCredential, ChainedTokenCredential, ManagedIdentityCredential
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from contextlib import asynccontextmanager
@@ -35,6 +34,7 @@ logging.basicConfig(
     format='%(asctime)s [%(levelname)s] %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
+
 # -------------------------------
 # Load App Configuration into ENV
 # -------------------------------
