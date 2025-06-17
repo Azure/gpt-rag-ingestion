@@ -4,12 +4,19 @@ infra:
   path: infra
   module: main
 hooks:
-  preprovision:
+  postdeploy:
     posix:
-      run: hooks/preProvision.sh
+      run: scripts/postDeploy.sh
       interactive: true
     windows:
-      run: hooks/preProvision.ps1
+      run: scripts/postDeploy.ps1
+      interactive: true  
+  preprovision:
+    posix:
+      run: scripts/preProvision.sh
+      interactive: true
+    windows:
+      run: scripts/preProvision.ps1
       interactive: true      
 services:
   dataingest:
