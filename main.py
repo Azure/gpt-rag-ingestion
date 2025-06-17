@@ -7,7 +7,6 @@ import jsonschema
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from azure.appconfiguration import AzureAppConfigurationClient
 from azure.identity import AzureCliCredential, ChainedTokenCredential, ManagedIdentityCredential
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
@@ -19,7 +18,11 @@ from connectors import (
     SharepointDeletedFilesPurger,
     SharepointFilesIndexer,
 )
-from tools import AzureOpenAIClient, BlobClient
+from tools import (
+    AppConfigClient,
+    AzureOpenAIClient,
+    BlobClient
+)
 from utils.file_utils import get_filename
 
 # -------------------------------
@@ -35,13 +38,8 @@ logging.basicConfig(
 # -------------------------------
 # Load App Configuration into ENV
 # -------------------------------
-credential = ChainedTokenCredential(ManagedIdentityCredential(), AzureCliCredential())
-endpoint = os.getenv("APP_CONFIG_ENDPOINT")
-if not endpoint:
-    raise EnvironmentError("APP_CONFIG_ENDPOINT must be set")
-client = AzureAppConfigurationClient(base_url=endpoint, credential=credential)
-for kv in client.list_configuration_settings(label_filter="dataingest"):
-    os.environ[kv.key] = kv.value
+app_config_client = AppConfigClient()
+app_config_client.apply_environment_settings()
 
 # -------------------------------
 # FastAPI app + Scheduler

@@ -1,4 +1,5 @@
 # tools/__init__.py
+from .appconfig import AppConfigClient
 from .aoai import AzureOpenAIClient
 from .aoai import GptTokenEstimator
 from .blob import BlobClient

@@ -1,15 +1,17 @@
 name: azure-gpt-rag
+metadata:
+  template: azure-gpt-rag-ingestion
 infra:
   provider: bicep
   path: infra
   module: main
 hooks:
-  postdeploy:
+  predeploy:
     posix:
-      run: scripts/postDeploy.sh
+      run: scripts/deploy.sh
       interactive: true
     windows:
-      run: scripts/postDeploy.ps1
+      run: scripts/deploy.ps1
       interactive: true  
   preprovision:
     posix:
@@ -17,8 +19,4 @@ hooks:
       interactive: true
     windows:
       run: scripts/preProvision.ps1
-      interactive: true      
-services:
-  dataingest:
-    host: containerapp
-    image: ${AZURE_CONTAINER_REGISTRY_NAME}.azurecr.io/azure-gpt-rag/dataingest-build:${TAG}
+      interactive: true
