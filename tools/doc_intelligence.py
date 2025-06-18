@@ -16,11 +16,11 @@ class DocumentIntelligenceClient:
 
     def __init__(self):
         # AI service resource endpoint
-        self.service_endpoint = os.getenv('DOC_INTELLIGENCE_ENDPOINT')
-        logging.debug(f"[docintelligence] DOC_INTELLIGENCE_ENDPOINT = {self.service_endpoint!r}")
+        self.service_endpoint = os.getenv('AI_FOUNDRY_ACCOUNT_ENDPOINT')
+        logging.debug(f"[docintelligence] AI_FOUNDRY_ACCOUNT_ENDPOINT = {self.service_endpoint!r}")
         if not self.service_endpoint:
-            logging.error("[docintelligence] 'DOC_INTELLIGENCE_ENDPOINT' not set.")
-            raise EnvironmentError("The environment variable 'DOC_INTELLIGENCE_ENDPOINT' is not set.")
+            logging.error("[docintelligence] 'AI_FOUNDRY_ACCOUNT_ENDPOINT' not set.")
+            raise EnvironmentError("The environment variable 'AI_FOUNDRY_ACCOUNT_ENDPOINT' is not set.")
         self.service_endpoint = self.service_endpoint.rstrip('/')
 
         # API configuration

@@ -12,6 +12,9 @@
         "--port", "80",
         "--reload"
       ],
+      "env": {
+        "APP_CONFIG_ENDPOINT": "https://appcs-wvxk4btei6myq.azconfig.io"
+      },      
       "jinja": true,
       "justMyCode": true
     }

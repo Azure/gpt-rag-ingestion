@@ -17,7 +17,7 @@ class ImagesDeletedFilesPurger:
         Initialize with environment variables and any other configuration.
         """
         self.index_name = os.getenv("SEARCH_INDEX_NAME", "ragindex")
-        self.container_name = os.getenv("STORAGE_ACCOUNT_CONTAINER_IMAGES", "documents-images")
+        self.container_name = os.getenv("DOCUMENTS_IMAGES_STORAGE_CONTAINER", "documents-images")
         self.storage_account_name = os.getenv("STORAGE_ACCOUNT_NAME")
         self.blob_base_url = f"https://{self.storage_account_name}.blob.core.windows.net"
 

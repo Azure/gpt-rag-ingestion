@@ -25,21 +25,26 @@ from tools import (
 from utils.file_utils import get_filename
 
 # -------------------------------
-# Logging configuration
-# -------------------------------
-log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
-log_level = getattr(logging, log_level, logging.INFO)
-logging.basicConfig(
-    level=logging.INFO, 
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-
-# -------------------------------
 # Load App Configuration into ENV
 # -------------------------------
 app_config_client = AppConfigClient()
 app_config_client.apply_environment_settings()
+
+# ----------------------------------------
+# Logging configuration
+# ----------------------------------------
+log_level = os.getenv("LOG_LEVEL", "INFO")
+logging.basicConfig(  
+    level=getattr(logging, log_level, logging.INFO),
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+http_logger = logging.getLogger("azure.core.pipeline.policies.http_logging_policy")
+http_logger.setLevel(logging.DEBUG) 
+class DebugModeFilter(logging.Filter):
+    def filter(self, record):
+        return logging.getLogger().getEffectiveLevel() == logging.DEBUG
+http_logger.addFilter(DebugModeFilter())
 
 # -------------------------------
 # FastAPI app + Scheduler
