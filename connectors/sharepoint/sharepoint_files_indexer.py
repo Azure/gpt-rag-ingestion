@@ -17,6 +17,14 @@ class SharepointFilesIndexer:
         self.site_domain = os.getenv("SHAREPOINT_SITE_DOMAIN")
         self.site_name = os.getenv("SHAREPOINT_SITE_NAME")
         self.folder_path = os.getenv("SHAREPOINT_SITE_FOLDER", "/")
+        self.drive_id = os.getenv("SHAREPOINT_DRIVE_ID", None)
+        
+        _sub_folders_names = os.getenv("SHAREPOINT_SUBFOLDERS_NAMES", None)   
+        if _sub_folders_names:
+            # Convert comma-separated string into a list, trimming whitespace
+            _sub_folders_names = [name.strip() for name in _sub_folders_names.split(",")]   
+
+        self.sub_folders_names = _sub_folders_names       
         self.sharepoint_client_secret_name = os.getenv("SHAREPOINT_CLIENT_SECRET_NAME", "sharepointClientSecret")
         self.index_name = os.getenv("AZURE_SEARCH_SHAREPOINT_INDEX_NAME", "ragindex")
         self.file_formats = os.getenv("SHAREPOINT_FILES_FORMAT")
@@ -199,7 +207,7 @@ class SharepointFilesIndexer:
                 except Exception as e:
                     logging.error(f"[sharepoint_files_indexer] Failed to index chunk for '{file_name}': {e}")
 
-            logging.info(f"[sharepoint_files_indexer] Indexed {file_name} chunks.")
+            logging.info(f"[sharepoint_files_indexer] Indexed {file_name} with {len(chunks)} chunks.")
 
     async def run(self) -> None:
         """Main method to run the SharePoint files indexing process."""
@@ -219,6 +227,8 @@ class SharepointFilesIndexer:
                 site_domain=self.site_domain,
                 site_name=self.site_name,
                 folder_path=self.folder_path,
+                drive_id=self.drive_id, 
+                sub_folders_names=self.sub_folders_names,               
                 file_formats=self.file_formats,
             )
             number_files = len(files) if files else 0
@@ -237,6 +247,8 @@ class SharepointFilesIndexer:
         # Create tasks to process all files in parallel
         tasks = [self.process_file(file, semaphore) for file in files]
         await asyncio.gather(*tasks)
+
+        logging.info(f"[sharepoint_files_indexer] Finished processing {number_files} files from SharePoint.")
 
         # Close the AISearchClient
         try:

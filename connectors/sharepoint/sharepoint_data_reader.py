@@ -50,6 +50,8 @@ class SharePointDataReader:
         site_domain: str,
         site_name: str,
         folder_path: Optional[str] = None,
+        drive_id: Optional[str] = None,
+        sub_folders_names: Optional[List[str]] = None,        
         file_names: Optional[Union[str, List[str]]] = None,
         minutes_ago: Optional[int] = None,
         file_formats: Optional[List[str]] = None,
@@ -68,12 +70,17 @@ class SharePointDataReader:
         if self._are_required_variables_missing():
             return None
 
-        site_id, drive_id = self._get_site_and_drive_ids(site_domain, site_name)
-        if not site_id or not drive_id:
-            return None
+        if drive_id is not None:
+            site_id = self._get_site_id(site_domain, site_name)
+            if not site_id:
+                return None
+        else:
+            site_id, drive_id = self._get_site_and_drive_ids(site_domain, site_name)
+            if not site_id or not drive_id:
+                return None
 
         files = self._get_files(
-            site_id, drive_id, folder_path, minutes_ago, file_formats
+            site_id, drive_id, folder_path, minutes_ago, file_formats, sub_folders_names
         )
         if not files:
             logging.info("[sharepoint_files_reader] No files found in the site's drive")
@@ -183,7 +190,6 @@ class SharePointDataReader:
             f"https://graph.microsoft.com/v1.0/sites/{site_domain}:/sites/{site_name}:/"
         )
         access_token = access_token or self.access_token
-
         try:
             logging.debug("[sharepoint_files_reader] Getting the Site ID...")
             result = self._make_ms_graph_request(endpoint, access_token)
@@ -217,74 +223,60 @@ class SharePointDataReader:
         site_id: str,
         drive_id: str,
         folder_path: Optional[str] = None,
+        sub_folders_names: Optional[List[str]] = None,        
         access_token: Optional[str] = None,
         minutes_ago: Optional[int] = None,
         file_formats: Optional[List[str]] = None,
     ) -> List[Dict]:
         """
-        Get a list of files in a site's drive, optionally filtered by creation or last modification time and file formats.
-
-        :param site_id: The site ID in Microsoft Graph.
-        :param drive_id: The drive ID in Microsoft Graph.
-        :param folder_path: Path to the folder within the drive, can include subfolders.
-                The format should follow '/folder/subfolder1/subfolder2/'.For example,
-                '/test/test1/test2/' to access nested folders.
-        :param access_token: The access token for Microsoft Graph API authentication. If not provided, it will be fetched from self.
-        :param minutes_ago: Optional integer to filter files created or updated within the specified number of minutes from now.
-        :param file_formats: List of desired file formats.
-        :return: A list of file details.
-        :raises Exception: If there's an error in fetching file details.
+        Recursively list all files under the given folder_path.
         """
-        if access_token is None:
-            access_token = self.access_token
+        access_token = access_token or self.access_token
+        time_limit = (
+            datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
+            if minutes_ago is not None
+            else None
+        )
 
-        # Construct the URL based on whether a folder path is provided
-        if folder_path:
-            url = self._format_url(site_id, drive_id, folder_path) + "children"
-        else:
-            url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drives/{drive_id}/root/children"
+        collected_files: List[Dict] = []
 
-        try:
-            logging.info("[sharepoint_files_reader] Making request to Microsoft Graph API")
-            json_response = self._make_ms_graph_request(url, access_token)
-            files = json_response["value"]
-            logging.debug("[sharepoint_files_reader] Received response from Microsoft Graph API")
-
-            time_limit = (
-                datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
-                if minutes_ago is not None
-                else None
+        def traverse(path: str):
+            # Build children URL
+            url = (
+                self._format_url(site_id, drive_id, path) + "children"
+                if path
+                else f"{self.graph_uri}/v1.0/sites/{site_id}/drives/{drive_id}/root/children"
             )
-
-            filtered_files = [
-                file
-                for file in files
-                if (
-                    (
-                        time_limit is None
-                        or datetime.fromisoformat(
-                            file["fileSystemInfo"]["createdDateTime"].rstrip("Z")
+            logging.info(f"URL for making graph request is {url}")
+            resp = self._make_ms_graph_request(url, access_token)
+            for item in resp.get("value", []):
+                if "folder" in item:
+                    # Recurse into subfolder
+                    subfolder = path.rstrip("/") + "/" + item["name"] if path else item["name"]
+                    if subfolder in sub_folders_names or not sub_folders_names:
+                        traverse(subfolder)
+                elif "file" in item:
+                    # Time filter
+                    if time_limit:
+                        last_mod = datetime.fromisoformat(
+                            item["fileSystemInfo"]["lastModifiedDateTime"].rstrip("Z")
                         ).replace(tzinfo=timezone.utc)
-                        >= time_limit
-                        or datetime.fromisoformat(
-                            file["fileSystemInfo"]["lastModifiedDateTime"].rstrip("Z")
-                        ).replace(tzinfo=timezone.utc)
-                        >= time_limit
-                    )
-                    and (
-                        not file_formats
-                        or any(file["name"].lower().endswith(f".{fmt.lower()}") for fmt in file_formats)
-                    )
-                )
-            ]
+                        if last_mod < time_limit:
+                            continue
+                    # Format filter
+                    if file_formats and not any(item["name"].lower().endswith(f".{f.lower()}") for f in file_formats):
+                        continue
+                    collected_files.append(item)
 
-            return filtered_files
-        except Exception as err:
-            logging.error(f"[sharepoint_files_reader] Error in get_files_in_site: {err}")
-            raise
+        # Kick off recursion
+        traverse(folder_path)#.strip("/") if folder_path else "")
+
+        return collected_files
+
+
 
     def _get_file_permissions(
-        self, site_id: str, item_id: str, access_token: Optional[str] = None
+        self, site_id: str, drive_id:str, item_id: str, access_token: Optional[str] = None
     ) -> List[Dict]:
         """
         Get the permissions of a file in a site.
@@ -298,7 +290,7 @@ class SharePointDataReader:
         if access_token is None:
             access_token = self.access_token
 
-        url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/items/{item_id}/permissions"
+        url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drives/{drive_id}/items/{item_id}/permissions"
 
         try:
             json_response = self._make_ms_graph_request(url, access_token)
@@ -354,6 +346,7 @@ class SharePointDataReader:
         drive_id: str,
         folder_path: Optional[str],
         file_name: str,
+        file_item: Dict[str, Any],
         access_token: Optional[str] = None,
     ) -> Optional[bytes]:
         """
@@ -368,10 +361,17 @@ class SharePointDataReader:
         """
         if access_token is None:
             access_token = self.access_token
-
         folder_path_formatted = folder_path.rstrip("/") if folder_path else ""
-        endpoint = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drives/{drive_id}/root:{folder_path_formatted}/{file_name}:/content"
+        if 'parentReference' in file_item.keys():
+            sub_path = file_item['parentReference']['path'].split(f"root:{folder_path_formatted}")[-1]
+            if sub_path!='':
+                endpoint = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drives/{drive_id}/root:{folder_path_formatted}{sub_path}/{file_name}:/content"
+            else:
+                endpoint = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drives/{drive_id}/root:{folder_path_formatted}/{file_name}:/content"
+        else:
+            endpoint = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drives/{drive_id}/root:{folder_path_formatted}/{file_name}:/content"
 
+        logging.info(f"ENDPOINT URL: {endpoint}")
         try:
             response = requests.get(
                 endpoint, headers={"Authorization": "Bearer " + access_token}
@@ -387,7 +387,7 @@ class SharePointDataReader:
             return None
 
     def _retrieve_file_content(
-        self, site_id: str, drive_id: str, folder_path: Optional[str], file_name: str
+        self, site_id: str, drive_id: str, folder_path: Optional[str], file_name: str,file_item: Dict[str, Any]
     ) -> Optional[bytes]:
         """
         Retrieve the content of a specific file from SharePoint.
@@ -399,7 +399,7 @@ class SharePointDataReader:
         :return: Content of the file as bytes, or None if retrieval fails.
         """
         return self._get_file_content_bytes(
-            site_id, drive_id, folder_path, file_name
+            site_id, drive_id, folder_path, file_name,file_item
         )
 
     @staticmethod
@@ -487,13 +487,31 @@ class SharePointDataReader:
         if not site_id:
             logging.error("[sharepoint_files_reader] Failed to retrieve site_id")
             return None, None
-
+        
         drive_id = self._get_drive_id(site_id)
         if not drive_id:
             logging.error("[sharepoint_files_reader] Failed to retrieve drive ID")
             return None, None
 
+        if not drive_id:
+            logging.error("[sharepoint_files_reader] Failed to retrieve drive ID")
+            return None, None
+
         return site_id, drive_id
+
+    def _get_drive_id(
+        self, site_id: str
+    ) -> str:
+        """
+        Retrieves the drive ID for a given site.
+        :param site_id: The id of the site.
+        :return: Drive ID or None if either ID could not be retrieved.
+        """
+        drive_id = self._get_drive_id(site_id)
+        if not drive_id:
+            logging.error("[sharepoint_files_reader] Failed to retrieve drive ID")
+            return None
+        return drive_id
 
     def _get_files(
         self,
@@ -502,6 +520,7 @@ class SharePointDataReader:
         folder_path: Optional[str],
         minutes_ago: Optional[int],
         file_formats: Optional[List[str]],
+        sub_folders_names: Optional[List[str]] = None
     ) -> List[Dict]:
         """
         Retrieves the files in a site drive.
@@ -517,6 +536,7 @@ class SharePointDataReader:
             site_id=site_id,
             drive_id=drive_id,
             folder_path=folder_path,
+            sub_folders_names=sub_folders_names,  # No subfolder names provided, so we will get all files
             minutes_ago=minutes_ago,
             file_formats=file_formats,
         )
@@ -556,13 +576,14 @@ class SharePointDataReader:
 
         for file in files:
             file_name = file.get("name")
+            file_item = file
             if file_name and self._is_file_format_valid(file_name, file_formats):
                 metadata = self._extract_file_metadata(file)
                 content = self._retrieve_file_content(
-                    site_id, drive_id, folder_path, file_name
+                    site_id, drive_id, folder_path, file_name,file_item
                 )
                 users_by_role = self._get_read_access_entities(
-                    self._get_file_permissions(site_id, file["id"])
+                    self._get_file_permissions(site_id, drive_id, file["id"])
                 )
                 file_content = {
                     "content": content,
