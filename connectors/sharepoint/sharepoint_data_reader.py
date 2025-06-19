@@ -12,7 +12,6 @@ import requests
 from dotenv import load_dotenv
 import logging
 
-
 class SharePointDataReader:
     """This class facilitates the extraction of data from SharePoint using Microsoft Graph API.
     It supports authentication and data retrieval from SharePoint sites, lists, and libraries.
@@ -223,6 +222,72 @@ class SharePointDataReader:
         site_id: str,
         drive_id: str,
         folder_path: Optional[str] = None,
+        sub_folders_names: Optional[List[str]] = None,
+        access_token: Optional[str] = None,
+        minutes_ago: Optional[int] = None,
+        file_formats: Optional[List[str]] = None,
+    ) -> List[Dict]:
+        """
+        Recursively list all files under the given folder_path.
+        """
+        access_token = access_token or self.access_token
+        time_limit = (
+            datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
+            if minutes_ago is not None
+            else None
+        )
+
+        collected_files: List[Dict] = []
+
+        def traverse(rel_path: str):
+            """
+            rel_path: a path WITHOUT leading or trailing slash, e.g. "" for root,
+                    "FolderA" for a direct child, or "FolderA/Sub1" for nested.
+            """
+            if rel_path:
+                # build a “/:/” URL segment
+                url = (
+                    f"{self.graph_uri}/v1.0/sites/{site_id}/drives/{drive_id}"
+                    f"/root:/{rel_path}:/children"
+                )
+            else:
+                # root children
+                url = f"{self.graph_uri}/v1.0/sites/{site_id}/drives/{drive_id}/root/children"
+
+            logging.info(f"[sharepoint] GET {url}")
+            resp = self._make_ms_graph_request(url, access_token)
+
+            for item in resp.get("value", []):
+                if "folder" in item:
+                    # item["name"] contains no slashes
+                    child_rel = f"{rel_path}/{item['name']}" if rel_path else item["name"]
+                    # if filtering sub_folders_names, apply it here
+                    if not sub_folders_names or item["name"] in sub_folders_names:
+                        traverse(child_rel)
+                elif "file" in item:
+                    # Time filter
+                    if time_limit:
+                        last_mod = datetime.fromisoformat(
+                            item["fileSystemInfo"]["lastModifiedDateTime"].rstrip("Z")
+                        ).replace(tzinfo=timezone.utc)
+                        if last_mod < time_limit:
+                            continue
+                    # Format filter
+                    if file_formats and not any(item["name"].lower().endswith(f".{f.lower()}") for f in file_formats):
+                        continue
+                    collected_files.append(item)
+
+        # kick off with no leading slash
+        root = (folder_path or "").strip("/")
+        traverse(root)
+        return collected_files
+
+
+    def _get_files_in_site(
+        self,
+        site_id: str,
+        drive_id: str,
+        folder_path: Optional[str] = None,
         sub_folders_names: Optional[List[str]] = None,        
         access_token: Optional[str] = None,
         minutes_ago: Optional[int] = None,
@@ -273,6 +338,70 @@ class SharePointDataReader:
 
         return collected_files
 
+    def _get_files_in_site(
+        self,
+        site_id: str,
+        drive_id: str,
+        folder_path: Optional[str] = None,
+        sub_folders_names: Optional[List[str]] = None,
+        access_token: Optional[str] = None,
+        minutes_ago: Optional[int] = None,
+        file_formats: Optional[List[str]] = None,
+    ) -> List[Dict]:
+        """
+        Recursively list all files under the given folder_path.
+        """
+        access_token = access_token or self.access_token
+        time_limit = (
+            datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
+            if minutes_ago is not None
+            else None
+        )
+
+        collected_files: List[Dict] = []
+
+        def traverse(rel_path: str):
+            """
+            rel_path: a path WITHOUT leading or trailing slash, e.g. "" for root,
+                    "FolderA" for a direct child, or "FolderA/Sub1" for nested.
+            """
+            if rel_path:
+                # build a “/:/” URL segment
+                url = (
+                    f"{self.graph_uri}/v1.0/sites/{site_id}/drives/{drive_id}"
+                    f"/root:/{rel_path}:/children"
+                )
+            else:
+                # root children
+                url = f"{self.graph_uri}/v1.0/sites/{site_id}/drives/{drive_id}/root/children"
+
+            logging.info(f"[sharepoint] GET {url}")
+            resp = self._make_ms_graph_request(url, access_token)
+
+            for item in resp.get("value", []):
+                if "folder" in item:
+                    # item["name"] contains no slashes
+                    child_rel = f"{rel_path}/{item['name']}" if rel_path else item["name"]
+                    # if filtering sub_folders_names, apply it here
+                    if not sub_folders_names or item["name"] in sub_folders_names:
+                        traverse(child_rel)
+                elif "file" in item:
+                    # Time filter
+                    if time_limit:
+                        last_mod = datetime.fromisoformat(
+                            item["fileSystemInfo"]["lastModifiedDateTime"].rstrip("Z")
+                        ).replace(tzinfo=timezone.utc)
+                        if last_mod < time_limit:
+                            continue
+                    # Format filter
+                    if file_formats and not any(item["name"].lower().endswith(f".{f.lower()}") for f in file_formats):
+                        continue
+                    collected_files.append(item)
+
+        # kick off with no leading slash
+        root = (folder_path or "").strip("/")
+        traverse(root)
+        return collected_files
 
 
     def _get_file_permissions(
