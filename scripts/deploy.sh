@@ -132,18 +132,18 @@ else
             echo -e "${GREEN}Using Git short HEAD as tag: ${tag}${NC}"
         else
             echo -e "${YELLOW}Could not get Git short HEAD. Generating random tag.${NC}"
-            # Generate random 8-digit number between 10000000 and 99999999
+            # Generate random 8-digit number between 100000 and 999999
             rand=$(od -An -N4 -tu4 /dev/urandom | tr -d ' ')
-            rand=$(( rand % 90000000 + 10000000 ))
-            tag="R${rand}"
+            rand=$(( rand % 900000 + 100000 ))
+            tag="GPT${rand}"
             echo -e "${GREEN}Generated random tag: ${tag}${NC}"
         fi
     else
         echo -e "${YELLOW}Git command failed. Generating random tag.${NC}"
-        # Generate random 8-digit number between 10000000 and 99999999
+        # Generate random 8-digit number between 100000 and 999999
         rand=$(od -An -N4 -tu4 /dev/urandom | tr -d ' ')
-        rand=$(( rand % 90000000 + 10000000 ))
-        tag="R${rand}"
+        rand=$(( rand % 900000 + 100000 ))
+        tag="GPT${rand}"
         echo -e "${GREEN}Generated random tag: ${tag}${NC}"
     fi
 fi

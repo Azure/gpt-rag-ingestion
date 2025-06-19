@@ -183,15 +183,15 @@ if ($env:tag) {
             Write-Verbose ("Using Git short HEAD as tag: {0}" -f $tag)
         } else {
             Write-Yellow "Could not get Git short HEAD. Generating random tag."
-            $randomNumber = Get-Random -Minimum 10000000 -Maximum 99999999
-            $tag = "R$randomNumber"
+            $randomNumber = Get-Random -Minimum 100000 -Maximum 999999
+            $tag = "GPT$randomNumber"
             Write-Verbose ("Generated random tag: {0}" -f $tag)
         }
     } catch {
         $errMsg = $_.Exception.Message
         Write-Yellow ("Error running Git: {0}. Generating random tag." -f $errMsg)
-        $randomNumber = Get-Random -Minimum 10000000 -Maximum 99999999
-        $tag = "R$randomNumber"
+        $randomNumber = Get-Random -Minimum 100000 -Maximum 999999
+        $tag = "GPT$randomNumber"
         Write-Verbose ("Generated random tag: {0}" -f $tag)
     }
 }
