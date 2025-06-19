@@ -120,9 +120,33 @@ echo -e "${GREEN}✅ Logged into ACR.${NC}"
 echo
 
 echo -e "${BLUE}🛢️ Defining tag…${NC}"
-tag="${tag:-$(git rev-parse --short HEAD)}"
-echo -e "${GREEN}✅ tag set to: ${tag}${NC}"
-echo
+if [[ -n "${tag:-}" ]]; then
+    # Use existing environment variable
+    tag="${tag}"
+    echo -e "${GREEN}Using tag from environment: ${tag}${NC}"
+else
+    # Try Git short HEAD
+    if gitShort=$(git rev-parse --short HEAD 2>/dev/null); then
+        if [[ -n "$gitShort" ]]; then
+            tag="$gitShort"
+            echo -e "${GREEN}Using Git short HEAD as tag: ${tag}${NC}"
+        else
+            echo -e "${YELLOW}Could not get Git short HEAD. Generating random tag.${NC}"
+            # Generate random 8-digit number between 10000000 and 99999999
+            rand=$(od -An -N4 -tu4 /dev/urandom | tr -d ' ')
+            rand=$(( rand % 90000000 + 10000000 ))
+            tag="R${rand}"
+            echo -e "${GREEN}Generated random tag: ${tag}${NC}"
+        fi
+    else
+        echo -e "${YELLOW}Git command failed. Generating random tag.${NC}"
+        # Generate random 8-digit number between 10000000 and 99999999
+        rand=$(od -An -N4 -tu4 /dev/urandom | tr -d ' ')
+        rand=$(( rand % 90000000 + 10000000 ))
+        tag="R${rand}"
+        echo -e "${GREEN}Generated random tag: ${tag}${NC}"
+    fi
+fi
 
 echo -e "${GREEN}🛠️  Building Docker image…${NC}"
 docker build \
