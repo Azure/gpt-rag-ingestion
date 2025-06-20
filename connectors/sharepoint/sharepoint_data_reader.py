@@ -380,7 +380,7 @@ class SharePointDataReader:
             resp = self._make_ms_graph_request(url, access_token)
 
             logging.info(f"DEBUG: url: {url}")
-            logging.info(f"DEBUG: resp['value']: {resp.get("value", [])}")
+            logging.info(f"DEBUG: resp['value']: {resp.get('value' , [])}")
 
             for item in resp.get("value", []):
                 if "folder" in item:
