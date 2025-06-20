@@ -45,6 +45,7 @@ class SharepointFilesIndexer:
         try:
             self.keyvault_client = KeyVaultClient()
             self.client_secret = await self.keyvault_client.get_secret(self.sharepoint_client_secret_name)
+            logging.info("DEBUG: SECRET " , self.client_secret)            
             logging.debug("[sharepoint_files_indexer] Retrieved sharepointClientSecret secret from Key Vault.")
         except Exception as e:
             logging.error(f"[sharepoint_files_indexer] Failed to retrieve secret from Key Vault: {e}")

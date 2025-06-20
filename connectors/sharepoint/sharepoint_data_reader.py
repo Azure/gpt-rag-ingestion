@@ -71,6 +71,7 @@ class SharePointDataReader:
 
         if drive_id is not None:
             site_id = self._get_site_id(site_domain, site_name)
+            logging.info(f"DEBUG: (retrieve_sharepoint_files_content) Retrieved site_id: {site_id}")
             if not site_id:
                 return None
         else:
@@ -377,6 +378,9 @@ class SharePointDataReader:
 
             logging.info(f"[sharepoint] GET {url}")
             resp = self._make_ms_graph_request(url, access_token)
+
+            logging.info(f"DEBUG: url: {url}")
+            logging.info(f"DEBUG: resp['value']: {resp.get("value", [])}")
 
             for item in resp.get("value", []):
                 if "folder" in item:
