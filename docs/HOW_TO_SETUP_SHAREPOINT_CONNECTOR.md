@@ -4,279 +4,259 @@ This section explains how to configure SharePoint as a data source for the `ragi
 
 ## Prerequisites
 
-- **Azure Entra ID Administrative Permissions**: Permission to register an application in Azure Entra ID.  
+* **Azure AD app registration permissions**: You need a role like Application Administrator, Cloud Application Administrator or Global Administrator to register an app in Azure AD. For built-in roles details, see [roles overview](https://learn.microsoft.com/en-us/azure/active-directory/roles/permissions-reference); for registration steps, see [Quickstart: register an app](https://learn.microsoft.com/en-us/azure/active-directory/develop/quickstart-register-app).
+* **SharePoint access**: Ensure your account can reach the SharePoint site(s) you’ll index. If curious about permission levels, see [SharePoint permissions overview](https://learn.microsoft.com/en-us/sharepoint/permissions-overview); otherwise, simply confirm you can browse the target site.
+* **Microsoft Graph API calls for selected permissions**: Granting `Sites.Selected` requires using Graph endpoints rather than only the portal UI. For background, you may refer to [Overview of selected permissions](https://learn.microsoft.com/en-us/graph/permissions-selected-overview) and, if interested, the general [Microsoft Graph overview](https://learn.microsoft.com/en-us/graph/overview). If you need to understand authentication flows, see [Microsoft identity platform: service-to-service](https://learn.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-client-creds-grant-flow).
+* **Search Index Data Contributor role**: Assign your Function App identity the Search Index Data Contributor role so it can push documents into Azure Cognitive Search. If desired, see [RBAC roles for Azure Cognitive Search](https://learn.microsoft.com/en-us/azure/search/search-security-rbac) and the broader [Azure RBAC guide](https://learn.microsoft.com/en-us/azure/role-based-access-control/overview).
 
-  *Use an Entra role: **Application Administrator**, **Cloud Application Administrator**, or **Global Administrator**.*  
+> [!Note]
+> This page will walk you through how to configure SharePoint as a data source for indexing. You don’t need to follow the links above unless you want more details.
 
-- **Access to SharePoint Online**: Ensure you have access to the SharePoint site(s) and folders you wish to index.  
-
-- **Ability to Use Microsoft Graph API**: Assigning specific site permissions using `Sites.Selected` requires making API calls via Microsoft Graph. This step cannot be completed solely through the Azure Portal.  
-
-- **Search Index Data Contributor Role**: The Data Ingestion Function must have the **Search Index Data Contributor** role assigned to index data in AI Search.
 
 ## Procedure
 
-1. **Register an Application in Azure Entra ID**
+### 1. Register an Application in Azure Entra ID
 
-   - **Sign in to the Azure Portal**: Go to [Azure Portal](https://portal.azure.com/).
+* **Sign in to the Azure Portal**: Go to [Azure Portal](https://portal.azure.com/) to register a new app. 
+<!-- ([Azure AD Quickstart](https://learn.microsoft.com/en-us/azure/active-directory/develop/quickstart-register-app)). -->
 
-   - **Register a New Application**:
+* **Register a New Application**: Navigate to **Azure Active Directory** > **App registrations** > **New registration**.
 
-     - Navigate to **Azure Active Directory** > **App registrations** > **New registration**.
-     - **Name**: Enter a name for your application (e.g., `SharePointDataIngestionApp`).
-     - **Supported Account Types**: Choose **Accounts in this organizational directory only**.
-     - **Redirect URI**: Leave this field empty.
-     - Click **Register**.
+  * **Name**: Enter a descriptive name (e.g., `SharePointDataIngestionApp`).
+  * **Supported account types**: Choose “Accounts in this organizational directory only” unless cross-tenant is needed.
+   <!-- ([App registration details](https://learn.microsoft.com/en-us/azure/active-directory/develop/quickstart-register-app)). -->
+  * **Redirect URI**: Leave empty for a background service.
+  * Click **Register**.
+* **Record Application IDs**: Save the **Application (client) ID** and **Directory (tenant) ID** for later use in authentication.
+ <!-- ([Retrieve client and tenant IDs](https://learn.microsoft.com/en-us/azure/active-directory/develop/quickstart-register-app#register-an-application)). -->
 
-    ![Register Application](../media/sharepoint-register-app.png)
+  ![Register Application](../media/sharepoint-register-app.png)
+  *Registering the application in Azure AD*
 
-   - **Record Application IDs**:
+  ![Record App ID](../media/sharepoint-record-app-id.png)
+  *Recording the Application (client) ID and Tenant ID*
 
-     - *Save the **Application ID** and **Tenant ID** for later use.*
+### 2. Configure API Permissions
 
-    ![Register Application](../media/sharepoint-record-app-id.png)
+* **Navigate to API Permissions**: In your registered app, go to **API permissions** > **Add a permission**.
+* **Add Microsoft Graph Permissions**:
 
-2. **Configure API Permissions**
+  * Select **Microsoft Graph** > **Application permissions**.
+  * Search and add **`Sites.Selected`** ([Sites.Selected permission reference](https://learn.microsoft.com/en-us/graph/permissions-reference#sites-selected)).
+* **Grant Admin Consent**: Click **Grant admin consent for \[Your Tenant Name]** and confirm. This ensures the permission is effective for app-only calls ([Grant admin consent reference](https://learn.microsoft.com/en-us/azure/active-directory/manage-apps/grant-admin-consent)).
 
-   - **Navigate to API Permissions**:
+  ![Grant Admin Consent](../media/sharepoint-site-selected-app.png)
+  *Granting admin consent for `Sites.Selected` permission*
 
-     - In your registered application, go to **API permissions** > **Add a permission**.
+### 3. Assign Access to Specific SharePoint Site Collections
 
-   - **Add Microsoft Graph Permissions**:
+The `Sites.Selected` permission by itself does not grant access to any sites; you must explicitly grant access to each site collection via Graph API or PowerShell ([Sites.Selected overview](https://learn.microsoft.com/en-us/graph/permissions-selected-overview)).
 
-     - Select **Microsoft Graph** > **Application permissions**.
-     - Search for and add the following permission:
+#### 3.1 Gather Site Information
 
-       - **`Sites.Selected`**
+* **Site URL**: Note the SharePoint site URL you wish to index, e.g., `https://yourdomain.sharepoint.com/sites/YourSiteName`.
+* **Site ID**: Retrieve via Microsoft Graph:
 
-     - Click **Add permissions**.
+  * Use Graph Explorer or a REST client authenticated with an account that has access.
+  * **GET Site by path**:
 
-   - **Grant Admin Consent**:
+    ```http
+    GET https://graph.microsoft.com/v1.0/sites/{hostname}:/{server-relative-path}
+    ```
 
-     - Click **Grant admin consent for [Your Tenant Name]**.
-     - Confirm the action when prompted.
+    Replace `{hostname}` with `yourdomain.sharepoint.com` and `{server-relative-path}` with `/sites/YourSiteName` ([Get site by path reference](https://learn.microsoft.com/en-us/graph/api/site-get?view=graph-rest-1.0)).
+  * **Example**:
 
-     ![Grant Admin Consent](../media/sharepoint-site-selected-app.png)
-     *Granting admin consent for `Sites.Selected` permission*
+    ```http
+    GET https://graph.microsoft.com/v1.0/sites/yourdomain.sharepoint.com:/sites/YourSiteName
+    ```
 
-3. **Assign Access to Specific Site Collections**
-
-   The `Sites.Selected` permission requires you to explicitly grant the application access to specific site collections. This step must be performed using the Microsoft Graph API.
-
-   > [!NOTE]
-   > Currently, assigning site permissions using `Sites.Selected` cannot be done through the Azure Portal. You need to use Microsoft Graph API or PowerShell.
-
-   - **Gather Site Information**:
-
-     - **Site URL**: Navigate to the SharePoint site you wish to index and note its URL (e.g., `https://yourdomain.sharepoint.com/sites/YourSiteName`).
-     - **Site ID**: You can retrieve the Site ID using Microsoft Graph API.
-
-    ![Getting site URL](../media/sharepoint-site-url.png)
-    *Getting site URL*
-
-   - **Retrieve Site ID**:
-
-     - **Use Microsoft Graph Explorer**:
-
-       - Go to [Microsoft Graph Explorer](https://developer.microsoft.com/graph/graph-explorer).
-       - Sign in with an account that has access to the site.
-       - Make a `GET` request to:
-
-         ```http
-         GET https://graph.microsoft.com/v1.0/sites/{hostname}:/{server-relative-path}
-         ```
-
-         Replace `{hostname}` with your SharePoint domain (e.g., `yourdomain.sharepoint.com`) and `{server-relative-path}` with the site path (e.g., `/sites/YourSiteName`).
-
-       - **Example**:
-
-         ```http
-         GET https://graph.microsoft.com/v1.0/sites/yourdomain.sharepoint.com:/sites/YourSiteName
-         ```
-
-       - The response will include the `id` of the site.
+    The JSON response includes `"id": "<site-id>"`.
 
     ![Getting site ID](../media/sharepoint-site-id.png)
-    *Getting site ID*    
+    *Retrieving Site ID using Graph Explorer*
 
-   - **Grant the Application Access to the Site**:
+#### 3.2 Retrieve Drive ID of the Document Library
 
-     - **Make a `POST` Request to Grant Permissions**:
+Once you have the Site ID, fetch the Drive ID representing the document library to index. In Graph, a “drive” corresponds to a document library in SharePoint ([Drive resource documentation](https://learn.microsoft.com/en-us/graph/api/drive-get?view=graph-rest-1.0)).
 
-       - In Microsoft Graph Explorer, make a `POST` request to:
+* **GET Default Document Library**:
 
-         ```http
-         POST https://graph.microsoft.com/v1.0/sites/{site-id}/permissions
-         ```
+  ```http
+  GET https://graph.microsoft.com/v1.0/sites/{site-id}/drive
+  ```
 
-         Replace `{site-id}` with the ID obtained in the previous step.
+  This returns the default “Documents” library with its `"id"` (Drive ID) in the JSON ([Get default drive reference](https://learn.microsoft.com/en-us/graph/api/drive-get?view=graph-rest-1.0)).
+* **List All Document Libraries**:
 
-       - **Request Body**:
+  ```http
+  GET https://graph.microsoft.com/v1.0/sites/{site-id}/drives
+  ```
 
-         ```json
-         {
-           "roles": ["read"],
-           "grantedToIdentities": [
-             {
-               "application": {
-                 "id": "your_application_id",
-                 "displayName": "Your Application Name"
-               }
-             }
-           ]
-         }
-         ```
+  This returns an array of drives (libraries) under the site; each entry has `"id"` and `"name"` so you can pick the correct library ([List drives under site reference](https://learn.microsoft.com/en-us/graph/api/drive-list?view=graph-rest-1.0)).
+* **Example**:
 
+  ```http
+  GET https://graph.microsoft.com/v1.0/sites/{site-id}/drives
+  ```
 
-         - Replace `your_application_id` with your application's **Client ID**.
-         - Replace `Your Application Name` with your application's name.
-         - The `"roles"` can be `"read"` or `"write"` depending on your needs.
+  Response snippet:
 
-       - **Example**:
+  ```json
+  {
+    "value": [
+      {
+        "id": "b!abcd1234_efgh5678_ijkl9012_mnop3456",
+        "name": "Documents",
+        "driveType": "documentLibrary"
+      },
+      {
+        "id": "b!qrst9876_uvwx5432_yzab1098_cdef7654",
+        "name": "Shared Documents",
+        "driveType": "documentLibrary"
+      }
+      // ...
+    ]
+  }
+  ```
+* **Why This Matters**: Your ingestion code uses endpoints like `/sites/{site-id}/drives/{drive-id}/root/children` to traverse files ([Graph list children reference](https://learn.microsoft.com/en-us/graph/api/driveitem-list-children?view=graph-rest-1.0)).
 
-         ```json
-         {
-           "roles": ["read"],
-           "grantedToIdentities": [
-             {
-               "application": {
-                 "id": "12345678-90ab-cdef-1234-567890abcdef",
-                 "displayName": "SharePointDataIngestionApp"
-               }
-             }
-           ]
-         }
-         ```
+#### 3.3 Grant the Application Access to the Site
 
-       - **Run the Query** and ensure you receive a `201 Created` response.
+After obtaining Site ID (and Drive ID), grant the registered application access to the site:
 
-     - **Repeat** the permission assignment for each site you wish to index.
+* **POST to `/sites/{site-id}/permissions`**:
 
-    ![Assign Site Permissions](../media/sharepoint-site-permissions-created.png)
-         *Assigning site permissions via Microsoft Graph Explorer*
-    
-    
-       - **If you encounter a permission denied error when trying to assign site permissions**:
-    
-    If you encounter a permission error, like the one shown in the next screen, it may be necessary to grant permissions to your user.
-    
-    ![Assign Site Permissions](../media/sharepoint-site-permissions-403.png)
-    *Permission error when assigning permissions*
-    
-    If this is the case, grant the required permissions as shown in the next image.
-    
-    ![Assign Site Permissions](../media/sharepoint-site-permissions-403-02.png)
-    *Adding consent for user to apply permissions*
+  ```http
+  POST https://graph.microsoft.com/v1.0/sites/{site-id}/permissions
+  ```
 
-4. **Create a Client Secret**
+  **Request Body**:
 
-   - **Navigate to Certificates & Secrets**:
+  ```json
+  {
+    "roles": ["read"],
+    "grantedToIdentities": [
+      {
+        "application": {
+          "id": "<application-client-id>",
+          "displayName": "SharePointDataIngestionApp"
+        }
+      }
+    ]
+  }
+  ```
 
-     - Under the **Manage** section of your application, select **Certificates & secrets**.
+  Replace `<application-client-id>` with your Application (client) ID. Use `"read"` or `"write"` depending on whether you need to update indexed content.
+* **Verify 201 Created**: A successful creation returns HTTP 201. Repeat for each site.
+* **Error Handling**: If you get 403 Forbidden, ensure your admin account has privilege to grant the permission and that you granted admin consent for `Sites.Selected`.
 
-   - **Add a New Client Secret**:
+  ![Assign Site Permissions](../media/sharepoint-site-permissions-created.png)
+  *Assigning site permissions via Graph Explorer*
 
-     - Under **Client secrets**, click on **New client secret**.
-     - **Description**: Provide a description for the client secret (e.g., `SharePointClientSecret`).
-     - **Expires**: Choose an appropriate expiration period that suits your needs.
-     - Click **Add**.
+  ![Permission Error](../media/sharepoint-site-permissions-403.png)
+  *Example permission denied when assigning permissions*
 
-   - **Record the Client Secret Value**:
+  ![Grant Consent for Permissions](../media/sharepoint-site-permissions-403-02.png)
+  *Granting consent so the application can apply permissions*
 
-     - *Copy and securely store the **Client Secret Value** for later use.*
+### 4. Create a Client Secret
 
-       > **Note**: Do not copy the "Secret ID" as it is not required.
+* **Navigate to Certificates & Secrets**: In the registered app, select **Certificates & secrets** under **Manage**.
+* **Add a New Client Secret**:
 
-    ![Register Application](../media/sharepoint-secret-app.png)
+  * Click **New client secret**.
+  * Provide a description (e.g., `SharePointClientSecret`) and choose expiration.
+  * Click **Add**.
+* **Record the Client Secret Value**: Copy and securely store the secret value (not the ID). You will use this in your Function App or Key Vault retrieval logic.
 
-> [!NOTE]
-> Done! You have completed the necessary permissions for SharePoint. Now, to complete the configuration in your Function App:
+  ![Register Client Secret](../media/sharepoint-secret-app.png)
+  *Creating and recording the client secret value*
 
-5. **Gather SharePoint Site Information**
+### 5. Gather SharePoint Site and Drive Information
 
-   - **Site Domain**: The domain of your SharePoint site (e.g., `yourdomain.sharepoint.com`).
-   - **Site Name**: The name of your SharePoint site (e.g., `YourSiteName`).
-   - **Site Folder**: Folder path to index (e.g., `/Shared Documents/General`). Leave empty for root.
-   - **File Formats**: Specify the file formats to index (e.g., `pdf,docx,pptx`).
+* **Site Domain**: e.g., `yourdomain.sharepoint.com`.
+* **Site Name**: e.g., `YourSiteName`.
+* **Site ID**: Retrieved earlier via Graph.
+* **Drive ID**: Retrieved via `/sites/{site-id}/drive` or `/sites/{site-id}/drives`.
+* **Subfolder Names (optional)**: Comma-separated list of folder paths under root of drive, e.g., `Shared Documents/General,Shared Documents/Reports`. Leave empty or set to `/` to index entire drive.
+* **File Formats**: Comma-separated extensions to index (e.g., `pdf,docx,pptx`).
 
-6. **Update Function App Environment Variables**
+### 6. Configure Function App Environment Variables
 
-   - **Navigate to Function App Configuration**:
+In the Azure Portal, navigate to your Function App > **Configuration** > **Application settings**. Add:
 
-     - In the Azure Portal, go to your **Function App** > **Configuration** > **Application settings**.
+```plaintext
+# Enable the connector
+SHAREPOINT_CONNECTOR_ENABLED=true
 
-   - **Set the Following Environment Variables**:
+# Required authentication
+SHAREPOINT_TENANT_ID=<your_tenant_id>
+SHAREPOINT_CLIENT_ID=<your_client_id>
+# If using Key Vault:
+SHAREPOINT_CLIENT_SECRET=<your_client_secret>
+SHAREPOINT_CLIENT_SECRET_NAME=sharepointClientSecret
 
-     ```plaintext
-     # Enable or disable the SharePoint connector
-     SHAREPOINT_CONNECTOR_ENABLED=true
-     
-     SHAREPOINT_TENANT_ID=your_actual_tenant_id
-     SHAREPOINT_CLIENT_ID=your_actual_client_id
-     SHAREPOINT_CLIENT_SECRET=your_client_secret_value
-     SHAREPOINT_SITE_DOMAIN=your_actual_site_domain
-     SHAREPOINT_SITE_NAME=your_actual_site_name
-     SHAREPOINT_SITE_FOLDER=/your/folder/path # Leave empty if using the root folder
-     SHAREPOINT_FILES_FORMAT=pdf,docx,pptx
-     AZURE_SEARCH_SHAREPOINT_INDEX_NAME=ragindex # index name
-     ```
+# SharePoint site and drive
+SHAREPOINT_SITE_DOMAIN=yourdomain.sharepoint.com
+SHAREPOINT_SITE_NAME=YourSiteName
+SHAREPOINT_DRIVE_ID=<your_drive_id>
 
-     - Replace placeholders with the actual values obtained from previous steps.
+# Optional: Subfolders to index
+SHAREPOINT_SUBFOLDERS_NAMES="Shared Documents/General,Shared Documents/Reports"
 
-   - **Save and Restart**:
+# File formats to include
+SHAREPOINT_FILES_FORMAT=pdf,docx,pptx
 
-     - Click **Save** to apply the changes.
-     - Restart the Function App to ensure the new settings take effect.
+# AI Search index name
+AZURE_SEARCH_SHAREPOINT_INDEX_NAME=ragindex
+```
 
+> `SHAREPOINT_SUBFOLDERS_NAMES` is a comma-separated list of folder paths relative to the root of the drive; use `/` or leave empty to index the entire drive. After saving, restart the Function App to apply changes.
 
-> [!NOTE] 
-> Done! You have completed the SharePoint configuration procedure.
-
-## Validation
+### Validation
 
 1. **Test Data Ingestion**
 
-   - **Trigger the Ingestion Process**:
-
-     - Wait for the data ingestion scheduled run.
-
-   - **Monitor Logs**:
-
-     - Check the Function App logs to verify that the SharePoint connector is running without errors.
-
+   * **Trigger the Ingestion Process**: Wait for the scheduled run (e.g., every 30 minutes) or invoke manually.
+   * **Monitor Logs**: Confirm that files are discovered, downloaded, chunked, and indexed without errors. Use Application Insights or Function logs.
 2. **Verify Indexed Data**
 
-   - **Check Azure AI Index**:
+   * **Check Azure Cognitive Search Index**: In Azure Portal or via REST API, confirm documents from SharePoint appear.
+   * **Perform Search Queries**: Execute test queries against the index to ensure content is searchable.
 
-     - Go to your Azure AI Index to confirm that the SharePoint data has been successfully indexed.
-
-   - **Perform Search Queries**:
-
-     - Execute search queries to ensure that content from the specific SharePoint sites is retrievable.
-
-> [!NOTE]
-> Using `Sites.Selected` ensures that your application only has access to the SharePoint sites you've explicitly granted permissions to, enhancing security by limiting access scope.
+> Using `Sites.Selected` ensures your app only accesses explicitly granted site collections, following least-privilege security principles.
 
 ---
 
-**Additional Information:**
+## Additional Information
 
-- **Removing Permissions**:
-
-  If you need to revoke the application's access to a site, you can delete the permission via Microsoft Graph API:
+* **Removing Permissions**:
 
   ```http
   DELETE https://graph.microsoft.com/v1.0/sites/{site-id}/permissions/{permission-id}
   ```
 
-  - You can obtain the `permission-id` by listing the permissions:
+  To get `permission-id`, list permissions:
 
-    ```http
-    GET https://graph.microsoft.com/v1.0/sites/{site-id}/permissions
-    ```
+  ```http
+  GET https://graph.microsoft.com/v1.0/sites/{site-id}/permissions
+  ```
 
-- **Understanding `Sites.Selected` Permission**:
+* **Understanding `Sites.Selected` Permission**:
+  By itself, it does not grant access to any site collections; only sites explicitly granted via Graph API calls are accessible ([Permissions reference](https://learn.microsoft.com/en-us/graph/permissions-reference#sites-selected)).
 
-  - The `Sites.Selected` permission by itself does not grant access to any SharePoint site collections.
-  - It allows your application to access only the site collections that you explicitly grant it access to.
-  - This approach adheres to the principle of least privilege, enhancing security.
+* **Graph API References**:
+
+  * **Get site by path**: `GET https://graph.microsoft.com/v1.0/sites/{hostname}:/{server-relative-path}` ([Get site](https://learn.microsoft.com/en-us/graph/api/site-get?view=graph-rest-1.0)).
+  * **Get default drive**: `GET https://graph.microsoft.com/v1.0/sites/{site-id}/drive` ([Get drive](https://learn.microsoft.com/en-us/graph/api/drive-get?view=graph-rest-1.0)).
+  * **List drives**: `GET https://graph.microsoft.com/v1.0/sites/{site-id}/drives` ([List drives](https://learn.microsoft.com/en-us/graph/api/drive-list?view=graph-rest-1.0)).
+  * **List folder children**: `GET https://graph.microsoft.com/v1.0/sites/{site-id}/drives/{drive-id}/root/children`.
+
+* **Example Q\&A and Community Guidance**:
+
+  * How to find Site ID and Drive ID: [Microsoft Q\&A](https://learn.microsoft.com/en-us/answers/questions/730575/how-to-find-site-id-and-drive-id-for-graph-api) confirms using `/sites?search=` or `/sites/{site-id}/drive`.
+  * Assigning `Sites.Selected` via Graph: community blogs and Microsoft Q\&A demonstrate the POST to `/sites/{site-id}/permissions` ([Graph permissions assignment example](https://techcommunity.microsoft.com/blog/spblog/develop-applications-that-use-sites-selected-permissions-for-spo-sites-/3790476)).
+
+* **Azure AI Search RBAC**:
+  Ensure the identity has at least Search Index Data Contributor role via Azure RBAC: see [Search security roles](https://learn.microsoft.com/en-us/azure/search/search-security-rbac).

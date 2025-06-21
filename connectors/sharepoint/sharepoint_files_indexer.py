@@ -33,15 +33,13 @@ class SharePointDocumentIngestor:
         self.client_id = os.getenv("SHAREPOINT_CLIENT_ID")
         self.site_domain = os.getenv("SHAREPOINT_SITE_DOMAIN")
         self.site_name = os.getenv("SHAREPOINT_SITE_NAME")
-        self.folder_path = os.getenv("SHAREPOINT_SITE_FOLDER", "/")
         self.drive_id = os.getenv("SHAREPOINT_DRIVE_ID")
 
         paths_to_traverse = os.getenv("SHAREPOINT_SUBFOLDERS_NAMES")
         if paths_to_traverse:
             self.paths_to_traverse = [name.strip() for name in paths_to_traverse.split(",")]
         else:
-            # If folder_path is "/" or blank, use root
-            self.paths_to_traverse = [self.folder_path] if self.folder_path else []
+            self.paths_to_traverse = []
 
         self.sharepoint_client_secret_name = os.getenv("SHAREPOINT_CLIENT_SECRET_NAME", "sharepointClientSecret")
         self.index_name = os.getenv("AZURE_SEARCH_SHAREPOINT_INDEX_NAME", "ragindex")
