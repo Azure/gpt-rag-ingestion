@@ -13,7 +13,7 @@
         "--reload"
       ],
       "env": {
-        "APP_CONFIG_ENDPOINT": "https://appcs-wvxk4btei6myq.azconfig.io"
+        "APP_CONFIG_ENDPOINT": "replace_by_your_app_config_endpoint"
       },      
       "jinja": true,
       "justMyCode": true
