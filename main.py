@@ -12,11 +12,8 @@ from fastapi.responses import JSONResponse, Response
 from contextlib import asynccontextmanager
 
 from chunking import DocumentChunker
-from connectors import (
-    ImagesDeletedFilesPurger,
-    SharepointDeletedFilesPurger,
-    SharepointFilesIndexer,
-)
+from connectors import SharePointDocumentIngestor, SharePointDeletedItemsCleaner
+from connectors import ImagesDeletedFilesPurger
 from tools import (
     AppConfigClient,
     AzureOpenAIClient,
@@ -113,25 +110,22 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-
 # -------------------------------
 # Timer job wrappers
 # -------------------------------
 async def run_sharepoint_index():
     logging.debug("[sharepoint_index_files] Starting")
     try:
-        await SharepointFilesIndexer().run()
+        await SharePointDocumentIngestor().run()
     except Exception:
         logging.exception("[sharepoint_index_files] Unexpected error")
-
 
 async def run_sharepoint_purge():
     logging.debug("[sharepoint_purge_deleted_files] Starting")
     try:
-        await SharepointDeletedFilesPurger().run()
+        await ImagesDeletedFilesPurger().run()
     except Exception:
         logging.exception("[sharepoint_purge_deleted_files] Unexpected error")
-
 
 async def run_images_purge():
     logging.info("[multimodality_images_purger] Starting")
@@ -143,7 +137,6 @@ async def run_images_purge():
         await ImagesDeletedFilesPurger().run()
     except Exception:
         logging.exception("[multimodality_images_purger] Error")
-
 
 # -------------------------------
 # HTTP-triggered document-chunking
