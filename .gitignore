@@ -1,4 +1,5 @@
 local/
+.local/
 backup/
 temp/
 .env
