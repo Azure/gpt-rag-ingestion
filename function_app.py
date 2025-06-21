@@ -10,7 +10,7 @@ import jsonschema
 import azure.functions as func
 
 from chunking import DocumentChunker
-from connectors import SharepointFilesIndexer, SharepointDeletedFilesPurger
+from connectors import SharePointDocumentIngestor, SharePointDeletedItemsCleaner
 from connectors import ImagesDeletedFilesPurger
 from tools import BlobClient
 from utils.file_utils import get_filename
@@ -62,7 +62,7 @@ app = func.FunctionApp()
 async def sharepoint_index_files(timer: func.TimerRequest) -> None:
     logging.debug("[sharepoint_index_files] Started sharepoint files indexing function.")
     try:
-        indexer = SharepointFilesIndexer()
+        indexer = SharePointDocumentIngestor()
         await indexer.run() 
     except Exception as e:
         logging.error(f"[sharepoint_index_files] An unexpected error occurred: {e}", exc_info=True)
@@ -76,7 +76,7 @@ async def sharepoint_index_files(timer: func.TimerRequest) -> None:
 async def sharepoint_purge_deleted_files(timer: func.TimerRequest) -> None:
     logging.debug("[sharepoint_purge_deleted_files] Started sharepoint purge deleted files function.")
     try:
-        purger = SharepointDeletedFilesPurger()
+        purger = SharePointDeletedItemsCleaner()
         await purger.run() 
     except Exception as e:
         logging.error(f"[sharepoint_purge_deleted_files] An unexpected error occurred: {e}", exc_info=True)

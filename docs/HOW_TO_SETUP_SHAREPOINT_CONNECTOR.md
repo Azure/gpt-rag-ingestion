@@ -218,6 +218,7 @@ This section explains how to configure SharePoint as a data source for the `ragi
      SHAREPOINT_SITE_NAME=your_actual_site_name
      SHAREPOINT_SITE_FOLDER=/your/folder/path # Leave empty if using the root folder
      SHAREPOINT_FILES_FORMAT=pdf,docx,pptx
+     AZURE_SEARCH_SHAREPOINT_INDEX_NAME=ragindex # index name
      ```
 
      - Replace placeholders with the actual values obtained from previous steps.

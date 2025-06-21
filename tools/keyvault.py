@@ -39,11 +39,10 @@ class KeyVaultClient:
 
         Returns:
         str: The value of the secret, or None if not found or an error occurs.
-        """
+        """       
         if not self.key_vault_name:
             logging.error("[keyvault] Key Vault name is not configured.")
             return None
-
         try:
             async with AsyncSecretClient(vault_url=self.kv_uri, credential=self.credential) as client:
                 retrieved_secret = await client.get_secret(secret_name)

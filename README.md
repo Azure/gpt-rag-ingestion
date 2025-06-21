@@ -95,39 +95,74 @@ When `MULTIMODAL` is set to `true`, the data ingestion pipeline extends its capa
 
 By activating `MULTIMODAL`, your ingestion process captures both text and visuals in a single workflow, providing a richer knowledge base for Retrieval Augmented Generation scenarios. Queries can match not just textual content but also relevant image captions, retrieving valuable visual context stored in `documents-images`.
 
-### Sharepoint Indexing
+
+
+
+
+
+
+
+
+
+
+
+
+
+### SharePoint Indexing
 
 The SharePoint connector operates through two primary processes, each running in a separate function within the Data Ingestion Function App:
 
-1. **Indexing SharePoint Files**: `sharepoint_index_files` function retrieves files from SharePoint, processes them, and indexes their content into the Azure AI Search Index (`ragindex`).
-2. **Purging Deleted Files**: `sharepoint_purge_deleted_files` identifies and removes files that have been deleted from SharePoint to keep the search index up-to-date.
+- **Indexing SharePoint Files**: the `sharepoint_index_files` function retrieves files from SharePoint, processes them, and indexes their content into the Azure AI Search Index (`ragindex`).
+- **Purging Deleted Files**: the `sharepoint_purge_deleted_files` function identifies and removes files that have been deleted from SharePoint to keep the search index up-to-date.
 
-Both processes are managed by scheduled Azure Functions that run at regular intervals, leveraging configuration settings to determine their behavior. The diagram below illustrates the Sharepoint indexing.
+Both processes are managed by scheduled Azure Functions that run at regular intervals, leveraging configuration settings to determine behavior. The diagram below illustrates the SharePoint indexing workflow:
 
-![Sharepoint Data Ingestion](media/sharepoint-flow.png)  
-*Sharepoint Indexing Workflow*
+![SharePoint Data Ingestion](media/sharepoint-flow.png)  
+*SharePoint Indexing Workflow*
+
+#### **Scalability and Performance Mechanisms**
+
+The SharePoint connector is designed to handle large-scale document sets reliably and efficiently. To support processing of potentially millions of items, we have built in several mechanisms:
+
+* **Pagination**: Used in both indexing (listing files/folders) and purging (retrieving indexed documents), it follows `@odata.nextLink` to page through results and avoid large single-response payloads.
+* **Semaphore Concurrency**: Employed in indexing (limiting parallel downloads and chunk/index operations) and purging (limiting concurrent existence-check requests), it acquires/releases permits around I/O to prevent API or resource overload.
+* **Producer–Consumer**: In indexing, the metadata streamer enqueues file metadata and multiple worker coroutines dequeue and process under semaphore control, enabling steady parallelism with low memory footprint.
+* **Batching**: Primarily in purging (grouping delete operations into batches, e.g., 100 IDs) and also for periodic progress logs in indexing, it batches API calls for efficiency and clearer visibility.
+* **Retry & Backoff**: Applied in both indexing (downloads, searches) and purging (existence checks), it handles transient errors (e.g., 429) by waiting “Retry-After” or using exponential backoff to improve resilience.
+* **Streaming & Low Memory**: In indexing, metadata is yielded one item at a time and each file’s content is downloaded, processed, and discarded immediately, allowing handling of very large libraries without high memory use.
+* **Progress Logging**: Used in indexing (e.g., logging every N files or when processing each file) and purging (pages fetched, items checked, batches deleted), with colored output to give operators real-time visibility into throughput and issues.
+
+
+By combining these mechanisms, the SharePoint connector can traverse deep folder structures, handle large volumes of files, and coordinate parallel operations within safe limits. The design remains asynchronous and streaming-oriented, so that scale-out (more function app instances) or increased concurrency settings can be applied as needed.
 
 #### **Workflow**
 
 ##### 1. **Indexing Process** (sharepoint_index_files)
 
 1.1. List files from a specific SharePoint site, directory, and file types configured in the settings.  
-1.2.  Check if the document exists in the AI Search Index. If it exists, compare the `metadata_storage_last_modified` field to determine if the file has been updated.  
+1.2. Check if the document exists in the AI Search Index. If it exists, compare the `metadata_storage_last_modified` field to determine if the file has been updated.  
 1.3. Use the Microsoft Graph API to download the file if it is new or has been updated.  
 1.4. Process the file content using the regular document chunking process. For specific formats, like PDFs, use Document Intelligence.  
 1.5. Use Azure OpenAI to generate embeddings for the document chunks.  
-1.6. Upload the processed document chunks, metadata, and embeddings into the Azure AI Search Index.  
+1.6. Upload the processed document chunks, metadata, and embeddings into the Azure AI Search Index.
+
+- **Pagination**: listing in step 1.1 follows Graph API paging until all items under configured paths are enumerated.  
+- **Semaphore**: controls concurrency in step 1.3 downloads and chunk/index operations.  
+- **Producer–Consumer**: the metadata streamer acts as producer; multiple workers perform steps 1.2–1.6 concurrently.
 
 ##### 2. **Purging Deleted Files** (sharepoint_purge_deleted_files)
 
 2.1. Connect to the Azure AI Search Index to identify indexed documents.  
 2.2. Query the Microsoft Graph API to verify the existence of corresponding files in SharePoint.  
-2.3. Remove entries in the Azure AI Search Index for files that no longer exist.  
+2.3. Remove entries in the Azure AI Search Index for files that no longer exist.
+
+- **Pagination**: retrieving indexed docs pages through search client until all are fetched.  
+- **Semaphore & Concurrency**: existence checks run with limited parallel requests (e.g., 10 concurrent HTTP calls) with retry/backoff on 429.  
+- **Batching**: deletions in step 2.3 occur in groups (e.g., 100 IDs per batch) for efficiency.
 
 Azure Function triggers automate the indexing and purging processes. Indexing runs at regular intervals to ingest updated SharePoint files, while purging removes deleted files to maintain an accurate search index. By default, both processes run every 10 minutes when enabled.
 
 If you'd like to learn how to set up the SharePoint connector, check out [SharePoint Connector Setup](https://github.com/Azure/GPT-RAG/blob/main/docs/INGESTION_SHAREPOINT_SETUP.md).
-
 
 ## How-to: Developer
 
