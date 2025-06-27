@@ -393,7 +393,7 @@ def create_index_body(index_name: str, search_api_version: str = "2024-11-01-pre
                 "sortable": True,
                 "facetable": True,
                 "key": False,
-                "analyzer": "standard",
+                "analyzer": "standard.lucene",
                 "synonymMaps": [],
             },
             {
@@ -442,7 +442,7 @@ def create_index_body(index_name: str, search_api_version: str = "2024-11-01-pre
                 "sortable": True,
                 "facetable": True,
                 "key": False,
-                "analyzer": "standard",
+                "analyzer": "standard.lucene",
                 "synonymMaps": [],
             },
             {
@@ -455,7 +455,7 @@ def create_index_body(index_name: str, search_api_version: str = "2024-11-01-pre
                 "sortable": True,
                 "facetable": True,
                 "key": False,
-                "analyzer": "standard",
+                "analyzer": "standard.lucene",  
                 "synonymMaps": [],
             },
             {
@@ -1630,7 +1630,7 @@ def execute_setup(
                     "sortable": True,
                     "facetable": True,
                     "key": False,
-                    "analyzer": "standard",
+                    "analyzer": "standard.lucene",
                     "synonymMaps": [],
                 },
                 {
@@ -1679,7 +1679,7 @@ def execute_setup(
                     "sortable": True,
                     "facetable": True,
                     "key": False,
-                    "analyzer": "standard",
+                    "analyzer": "standard.lucene",
                     "synonymMaps": [],
                 },
                 {
@@ -1692,7 +1692,7 @@ def execute_setup(
                     "sortable": True,
                     "facetable": True,
                     "key": False,
-                    "analyzer": "standard",
+                    "analyzer": "standard.lucene",
                     "synonymMaps": [],
                 },
                 {

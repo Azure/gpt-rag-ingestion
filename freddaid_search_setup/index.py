@@ -331,13 +331,13 @@ def create_index_body(
             {
                 "name": f"{index_name}-scoring-profile",
                 "functionAggregation": "sum",
-                "text": {"weights": {"content": 45, "keyPhrases": 45, "title": 5}},
+                "text": {"weights": {"content": 4, "keyPhrases": 5, "title": 7}},
                 "functions": [
                     {
                         "fieldName": "date_last_modified",
                         "interpolation": "linear",
                         "type": "freshness",
-                        "boost": 8,
+                        "boost": 10,
                         "freshness": {
                             "boostingDuration": "P183D",
                         },
@@ -345,6 +345,7 @@ def create_index_body(
                 ],
             }
         ],
+        "defaultScoringProfile": f"{index_name}-scoring-profile",
         "corsOptions": {"allowedOrigins": ["*"], "maxAgeInSeconds": 60},
         "suggesters": [],
         "analyzers": [],
@@ -360,6 +361,7 @@ def create_index_body(
                     "prioritizedFields": {
                         "prioritizedContentFields": [{"fieldName": "content"}],
                         "prioritizedKeywordsFields": [{"fieldName": "category"}],
+                        "titleField": {"fieldName": "title"},
                     },
                 }
             ]
