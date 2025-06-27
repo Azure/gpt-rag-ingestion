@@ -355,6 +355,7 @@ def create_index_body(
         "charFilters": [],
         "similarity": {"@odata.type": "#Microsoft.Azure.Search.BM25Similarity"},
         "semantic": {
+            "defaultConfiguration": "my-semantic-config",
             "configurations": [
                 {
                     "name": "my-semantic-config",
