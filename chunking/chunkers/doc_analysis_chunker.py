@@ -57,7 +57,7 @@ class DocAnalysisChunker(BaseChunker):
     """
     def __init__(self, data, max_chunk_size=None, minimum_chunk_size=None, token_overlap=None):
         super().__init__(data)       
-        self.max_chunk_size = max_chunk_size or int(os.getenv("NUM_TOKENS", "2048"))
+        self.max_chunk_size = max_chunk_size or int(os.getenv("NUM_TOKENS", "750"))
         self.minimum_chunk_size = minimum_chunk_size or int(os.getenv("MIN_CHUNK_SIZE", "100"))
         self.token_overlap = token_overlap or int(os.getenv("TOKEN_OVERLAP", "100"))
         self.docint_client = DocumentIntelligenceClient()
