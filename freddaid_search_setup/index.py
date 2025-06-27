@@ -172,7 +172,7 @@ def create_index_body(
                 "sortable": True,
                 "facetable": True,
                 "key": False,
-                "analyzer": "standard",
+                "analyzer": "standard.lucene",
                 "synonymMaps": [],
             },
             {
@@ -221,7 +221,7 @@ def create_index_body(
                 "sortable": True,
                 "facetable": True,
                 "key": False,
-                "analyzer": "standard",
+                "analyzer": "standard.lucene",
                 "synonymMaps": [],
             },
             {
@@ -234,7 +234,7 @@ def create_index_body(
                 "sortable": True,
                 "facetable": True,
                 "key": False,
-                "analyzer": "standard",
+                "analyzer": "standard.lucene",
                 "synonymMaps": [],
             },
             {
