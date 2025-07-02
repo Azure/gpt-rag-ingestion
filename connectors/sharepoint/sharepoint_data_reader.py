@@ -12,7 +12,9 @@ Every 10 files found, it logs a simple progress message so you always know how m
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterator, List, Optional, Union
 import msal
+import os
 import requests
+import re
 import logging
 
 GREEN = "\033[32m"
@@ -40,6 +42,7 @@ class SharePointMetadataStreamer:
         self.scope = ["https://graph.microsoft.com/.default"]
         self.access_token: Optional[str] = None
         self._file_count = 0
+        self._max_file_count = int(os.getenv("SHAREPOINT_MAX_FILE_COUNT", -1))
 
     def stream_file_metadata(
         self,
@@ -47,6 +50,7 @@ class SharePointMetadataStreamer:
         site_name: str,
         drive_id: str,
         folders_names: List[str],
+        folder_regex: Optional[str] = None,
         file_formats: Optional[List[str]] = None,
     ) -> Iterator[Dict[str, Any]]:
         """
@@ -72,7 +76,7 @@ class SharePointMetadataStreamer:
         for path in paths_to_traverse:
             clean_path = path.replace('"', '')
             try:
-                yield from self._stream_files(site_id, drive_id, clean_path, file_formats)
+                yield from self._stream_files(site_id, drive_id, clean_path, folder_regex, file_formats)
             except Exception as e:
                 logging.error(f"[sharepoint] Error traversing '{clean_path}': {e}")
 
@@ -81,9 +85,15 @@ class SharePointMetadataStreamer:
         site_id: str,
         drive_id: str,
         rel_path: str,
+        folder_regex: str,        
         file_formats: Optional[List[str]] = None,
     ) -> Iterator[Dict[str, Any]]:
         # Helper to recursively traverse and yield metadata
+
+        # Stop recursion immediately if max file count is reached
+        if self._max_file_count > 0 and self._file_count >= self._max_file_count:
+            return
+
         if rel_path:
             next_url = (
                 f"{self.graph_uri}/v1.0/sites/{site_id}"
@@ -96,15 +106,36 @@ class SharePointMetadataStreamer:
             )
 
         while next_url:
+            # Stop if max file count is reached before making the request
+            if self._max_file_count > 0 and self._file_count >= self._max_file_count:
+                logging.info(
+                    f"[sharepoint] Reached max file count limit: {self._max_file_count}. Stopping."
+                )
+                return
+
             logging.info(f"[sharepoint] Fetching page: {next_url}")
             resp = self._make_ms_graph_request(next_url)
 
             for item in resp.get("value", []):
+                # Stop if max file count is reached before yielding more files or recursing
+                if self._max_file_count > 0 and self._file_count >= self._max_file_count:
+                    logging.info(
+                        f"[sharepoint] Reached max file count limit: {self._max_file_count}. Stopping."
+                    )
+                    return
                 if "folder" in item:
+                    folder_name = item['name']
+                    # Ignore folders that do not match the folder regex
+                    if folder_regex and rel_path == ''  and not re.match(folder_regex, folder_name):
+                        continue
                     child = f"{rel_path}/{item['name']}" if rel_path else item['name']
-                    yield from self._stream_files(site_id, drive_id, child, file_formats)
+                    yield from self._stream_files(site_id, drive_id, child, folder_regex, file_formats)
 
                 elif "file" in item:
+                    # ignore files that are in root folder when folder_regex is specified
+                    if rel_path == '' and folder_regex != '.*':
+                        continue
+                    # ignore files that do not match the file extension filter
                     if file_formats and not any(
                         item['name'].lower().endswith(f".{ext.strip().lower()}")
                         for ext in file_formats
@@ -121,6 +152,7 @@ class SharePointMetadataStreamer:
                     logging.info(
                         GREEN + f"[sharepoint] Selected file: {item['parentReference']['path']}/{item['name']}" + RESET
                     )
+
                     yield item
 
             next_url = resp.get('@odata.nextLink')
@@ -210,6 +242,8 @@ class SharePointMetadataStreamer:
                     if "folder" in item:
                         # Recurse into subfolder
                         child = f"{rel_path}/{item['name']}" if rel_path else item['name']
+                        # if child.lower().startswith("practica") and "_2025" in child:
+                        logging.info(f"CHILD : {child}")
                         traverse(child)
 
                     elif "file" in item:
@@ -243,6 +277,8 @@ class SharePointMetadataStreamer:
         for path in paths_to_traverse:
             clean_path = path.replace('"', '')
             try:
+                # if clean_path.lower().startswith("practica") and "_2025" in clean_path:
+                logging.info(f"CLEAN PATH {clean_path}")
                 traverse(clean_path)
             except Exception as e:
                 logging.error(f"[sharepoint] Error traversing '{clean_path}': {e}")

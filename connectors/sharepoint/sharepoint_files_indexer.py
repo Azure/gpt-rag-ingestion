@@ -41,6 +41,12 @@ class SharePointDocumentIngestor:
         else:
             self.paths_to_traverse = []
 
+        folder_regex = os.getenv("SHAREPOINT_SUBFOLDERS_REGEX")
+        if folder_regex:
+            self.folder_regex = folder_regex.strip()
+        else:
+            self.folder_regex = ".*"
+
         self.sharepoint_client_secret_name = os.getenv("SHAREPOINT_CLIENT_SECRET_NAME", "sharepointClientSecret")
         self.index_name = os.getenv("AZURE_SEARCH_SHAREPOINT_INDEX_NAME", "ragindex")
 
@@ -253,6 +259,7 @@ class SharePointDocumentIngestor:
             site_name=self.site_name,
             drive_id=self.drive_id,
             folders_names=self.paths_to_traverse,
+            folder_regex=self.folder_regex,
             file_formats=self.file_formats,
         )
 
