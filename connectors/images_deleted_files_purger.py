@@ -4,6 +4,10 @@ import logging
 from tools import BlobContainerClient
 from tools import AISearchClient 
 
+from dependencies import get_config
+
+app_config_client = get_config()
+
 
 class ImagesDeletedFilesPurger:
     """
@@ -16,9 +20,9 @@ class ImagesDeletedFilesPurger:
         """
         Initialize with environment variables and any other configuration.
         """
-        self.index_name = os.getenv("AZURE_SEARCH_INDEX_NAME", "ragindex")
-        self.container_name = os.getenv("STORAGE_CONTAINER_IMAGES", "documents-images")
-        self.storage_account_name = os.getenv("STORAGE_ACCOUNT_NAME")
+        self.index_name = app_config_client.get("AZURE_SEARCH_INDEX_NAME", "ragindex")
+        self.container_name = app_config_client.get("STORAGE_CONTAINER_IMAGES", "documents-images")
+        self.storage_account_name = app_config_client.get("STORAGE_ACCOUNT_NAME")
         self.blob_base_url = f"https://{self.storage_account_name}.blob.core.windows.net"
 
         # Warn if some env vars are missing

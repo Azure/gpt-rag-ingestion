@@ -7,6 +7,9 @@ import logging
 import openai
 import tiktoken
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+from dependencies import get_config
+
+app_config_client = get_config()
 
 class AzureOpenAIClient:
     def __init__(self, document_filename: str = ""):
@@ -14,10 +17,10 @@ class AzureOpenAIClient:
         self.document_filename = f"[{document_filename}]" if document_filename else ""
 
         # Load configuration from environment
-        self.endpoint             = os.getenv("AI_FOUNDRY_ACCOUNT_ENDPOINT")        # e.g. "https://<your-resource>.openai.azure.com/"
-        self.api_version          = os.getenv("OPENAI_API_VERSION", "2024-10-21")
-        self.chat_deployment      = os.getenv("CHAT_DEPLOYMENT_NAME")         # deployment name in Azure OpenAI Studio
-        self.embedding_deployment = os.getenv("EMBEDDING_DEPLOYMENT_NAME")
+        self.endpoint             = app_config_client.get("AI_FOUNDRY_ACCOUNT_ENDPOINT")        # e.g. "https://<your-resource>.openai.azure.com/"
+        self.api_version          = app_config_client.get("OPENAI_API_VERSION", "2024-10-21")
+        self.chat_deployment      = app_config_client.get("CHAT_DEPLOYMENT_NAME")         # deployment name in Azure OpenAI Studio
+        self.embedding_deployment = app_config_client.get("EMBEDDING_DEPLOYMENT_NAME")
 
         # Warn if any required var is missing
         for var, val in {

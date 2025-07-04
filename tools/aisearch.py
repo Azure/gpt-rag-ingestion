@@ -5,7 +5,9 @@ from azure.search.documents.models import SearchMode
 from azure.core.exceptions import AzureError
 from azure.identity.aio import ManagedIdentityCredential, AzureCliCredential, ChainedTokenCredential
 from typing import Any, Dict, List, Optional
+from dependencies import get_config
 
+app_config_client = get_config()
 
 class AISearchClient:
     """
@@ -14,7 +16,7 @@ class AISearchClient:
     """
 
     def __init__(self):
-        self.search_service_name = os.getenv("SEARCH_SERVICE_NAME")
+        self.search_service_name = app_config_client.get("SEARCH_SERVICE_NAME")
         if not self.search_service_name:
             logging.error("[aisearch] SEARCH_SERVICE_NAME environment variable not set.")
             raise ValueError("SEARCH_SERVICE_NAME environment variable not set.")

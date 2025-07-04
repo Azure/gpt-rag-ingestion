@@ -15,6 +15,9 @@ from connectors import SharePointMetadataStreamer
 from tools import KeyVaultClient, AISearchClient
 from typing import Any, Dict, List, Optional
 from chunking import DocumentChunker, ChunkerFactory
+from dependencies import get_config
+
+app_config_client = get_config()
 
 TEAL   = "\033[38;5;6m"
 ORANGE = "\033[38;5;208m"
@@ -28,29 +31,29 @@ class SharePointDocumentIngestor:
     """
     def __init__(self):
         # Connector settings
-        self.connector_enabled = os.getenv("SHAREPOINT_CONNECTOR_ENABLED", "false").lower() == "true"
-        self.tenant_id = os.getenv("SHAREPOINT_TENANT_ID")
-        self.client_id = os.getenv("SHAREPOINT_CLIENT_ID")
-        self.site_domain = os.getenv("SHAREPOINT_SITE_DOMAIN")
-        self.site_name = os.getenv("SHAREPOINT_SITE_NAME")
-        self.drive_id = os.getenv("SHAREPOINT_DRIVE_ID")
+        self.connector_enabled = app_config_client.get("SHAREPOINT_CONNECTOR_ENABLED", "false").lower() == "true"
+        self.tenant_id = app_config_client.get("SHAREPOINT_TENANT_ID")
+        self.client_id = app_config_client.get("SHAREPOINT_CLIENT_ID")
+        self.site_domain = app_config_client.get("SHAREPOINT_SITE_DOMAIN")
+        self.site_name = app_config_client.get("SHAREPOINT_SITE_NAME")
+        self.drive_id = app_config_client.get("SHAREPOINT_DRIVE_ID")
 
-        paths_to_traverse = os.getenv("SHAREPOINT_SUBFOLDERS_NAMES")
+        paths_to_traverse = app_config_client.get("SHAREPOINT_SUBFOLDERS_NAMES")
         if paths_to_traverse:
             self.paths_to_traverse = [name.strip() for name in paths_to_traverse.split(",")]
         else:
             self.paths_to_traverse = []
 
-        folder_regex = os.getenv("SHAREPOINT_SUBFOLDERS_REGEX")
+        folder_regex = app_config_client.get("SHAREPOINT_SUBFOLDERS_REGEX")
         if folder_regex:
             self.folder_regex = folder_regex.strip()
         else:
             self.folder_regex = ".*"
 
-        self.sharepoint_client_secret_name = os.getenv("SHAREPOINT_CLIENT_SECRET_NAME", "sharepointClientSecret")
-        self.index_name = os.getenv("AZURE_SEARCH_SHAREPOINT_INDEX_NAME", "ragindex")
+        self.sharepoint_client_secret_name = app_config_client.get("SHAREPOINT_CLIENT_SECRET_NAME", "sharepointClientSecret")
+        self.index_name = app_config_client.get("AZURE_SEARCH_SHAREPOINT_INDEX_NAME", "ragindex")
 
-        env_formats = os.getenv("SHAREPOINT_FILES_FORMAT")
+        env_formats = app_config_client.get("SHAREPOINT_FILES_FORMAT")
         if env_formats:
             self.file_formats = [fmt.strip() for fmt in env_formats.split(",")]
         else:

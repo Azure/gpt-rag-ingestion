@@ -1,4 +1,5 @@
-FROM python:3.12-slim
+FROM mcr.microsoft.com/devcontainers/python:dev-3.12
+
 WORKDIR /app
 
 COPY requirements.txt .

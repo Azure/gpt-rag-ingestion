@@ -7,9 +7,13 @@ import jsonschema
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from fastapi import FastAPI, HTTPException, Request
+
+from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.responses import JSONResponse, Response
 from contextlib import asynccontextmanager
+
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 
 from chunking import DocumentChunker
 from connectors import SharePointDocumentIngestor, SharePointDeletedItemsCleaner
@@ -21,27 +25,16 @@ from tools import (
 )
 from utils.file_utils import get_filename
 
+from tools.appconfig import AppConfigClient
+from dependencies import get_config, validate_api_key_header
+from telemetry import Telemetry
+from constants import APPLICATION_INSIGHTS_CONNECTION_STRING, APP_NAME
+from utils.tools import is_azure_environment
+
 # -------------------------------
 # Load App Configuration into ENV
 # -------------------------------
-app_config_client = AppConfigClient()
-app_config_client.apply_environment_settings()
-
-# ----------------------------------------
-# Logging configuration
-# ----------------------------------------
-log_level = os.getenv("LOG_LEVEL", "INFO")
-logging.basicConfig(  
-    level=getattr(logging, log_level, logging.INFO),
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-http_logger = logging.getLogger("azure.core.pipeline.policies.http_logging_policy")
-http_logger.setLevel(logging.DEBUG) 
-class DebugModeFilter(logging.Filter):
-    def filter(self, record):
-        return logging.getLogger().getEffectiveLevel() == logging.DEBUG
-http_logger.addFilter(DebugModeFilter())
+app_config_client : AppConfigClient = get_config()
 
 # -------------------------------
 # FastAPI app + Scheduler
@@ -50,11 +43,14 @@ scheduler = AsyncIOScheduler(timezone="UTC")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+
+    Telemetry.configure_monitoring(app_config_client, APPLICATION_INSIGHTS_CONNECTION_STRING, APP_NAME)
+
     # Inicia o scheduler antes de agendar qualquer tarefa
     scheduler.start()
 
     # 1) SharePoint index job
-    cron_expr = os.getenv("CRON_RUN_SHAREPOINT_INDEX")
+    cron_expr = app_config_client.get("CRON_RUN_SHAREPOINT_INDEX")
     if cron_expr:
         try:
             trigger = CronTrigger.from_crontab(cron_expr)
@@ -71,7 +67,7 @@ async def lifespan(app: FastAPI):
         logging.warning("CRON_RUN_SHAREPOINT_INDEX not set — skipping sharepoint_index_files")
 
     # 2) SharePoint purge job
-    cron_expr = os.getenv("CRON_RUN_SHAREPOINT_PURGE")
+    cron_expr = app_config_client.get("CRON_RUN_SHAREPOINT_PURGE")
     if cron_expr:
         try:
             trigger = CronTrigger.from_crontab(cron_expr)
@@ -88,7 +84,7 @@ async def lifespan(app: FastAPI):
         logging.warning("CRON_RUN_SHAREPOINT_PURGE not set — skipping sharepoint_purge_deleted_files")
 
     # 3) Images purge job
-    cron_expr = os.getenv("CRON_RUN_IMAGES_PURGE")
+    cron_expr = app_config_client.get("CRON_RUN_IMAGES_PURGE")
     if cron_expr:
         try:
             trigger = CronTrigger.from_crontab(cron_expr)
@@ -129,7 +125,7 @@ async def run_sharepoint_purge():
 
 async def run_images_purge():
     logging.info("[multimodality_images_purger] Starting")
-    multi_var = (os.getenv("MULTIMODAL") or "").lower()
+    multi_var = (app_config_client.get("MULTIMODAL") or "").lower()
     if multi_var not in ("true", "1", "yes"):
         logging.info("[multimodality_images_purger] Skipped (MULTIMODAL!=true)")
         return
@@ -141,7 +137,7 @@ async def run_images_purge():
 # -------------------------------
 # HTTP-triggered document-chunking
 # -------------------------------
-@app.post("/document-chunking")
+@app.post("/document-chunking", dependencies=[Depends(validate_api_key_header)])
 async def document_chunking(request: Request):
     start_time = time.time()
     # --- parse JSON ---
@@ -241,7 +237,7 @@ def get_document_chunking_request_schema():
 # -------------------------------
 # HTTP-triggered text-embedding
 # -------------------------------
-@app.post("/text-embedding")
+@app.post("/text-embedding", dependencies=[Depends(validate_api_key_header)])
 async def text_embedding(request: Request):
     start_time = time.time()
     try:
@@ -289,3 +285,6 @@ async def text_embedding(request: Request):
     logging.info(f'[text_embedding] Finished in {elapsed:.2f} seconds.')
 
     return JSONResponse(content=results)
+
+HTTPXClientInstrumentor().instrument()
+FastAPIInstrumentor.instrument_app(app)

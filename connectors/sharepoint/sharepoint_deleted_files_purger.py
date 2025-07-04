@@ -5,6 +5,9 @@ import aiohttp
 from collections import defaultdict
 from typing import Any, Dict, List, Optional
 from tools import KeyVaultClient, AISearchClient
+from dependencies import get_config
+
+app_config_client = get_config()
 
 # ANSI color codes for logging
 DEBUG_COLOR   = "\033[36m"  # Cyan
@@ -16,14 +19,14 @@ RESET_COLOR   = "\033[0m"
 class SharePointDeletedItemsCleaner:
     def __init__(self):
         # Load environment
-        self.connector_enabled = os.getenv("SHAREPOINT_CONNECTOR_ENABLED", "false").lower() == "true"
-        self.tenant_id = os.getenv("SHAREPOINT_TENANT_ID")
-        self.client_id = os.getenv("SHAREPOINT_CLIENT_ID")
-        self.client_secret_name = os.getenv("SHAREPOINT_CLIENT_SECRET_NAME", "sharepointClientSecret")
-        self.index_name = os.getenv("AZURE_SEARCH_SHAREPOINT_INDEX_NAME", "ragindex")
-        self.site_domain = os.getenv("SHAREPOINT_SITE_DOMAIN")
-        self.site_name = os.getenv("SHAREPOINT_SITE_NAME")
-        self.drive_id = os.getenv("SHAREPOINT_DRIVE_ID")
+        self.connector_enabled = app_config_client.get("SHAREPOINT_CONNECTOR_ENABLED", "false").lower() == "true"
+        self.tenant_id = app_config_client.get("SHAREPOINT_TENANT_ID")
+        self.client_id = app_config_client.get("SHAREPOINT_CLIENT_ID")
+        self.client_secret_name = app_config_client.get("SHAREPOINT_CLIENT_SECRET_NAME", "sharepointClientSecret")
+        self.index_name = app_config_client.get("AZURE_SEARCH_SHAREPOINT_INDEX_NAME", "ragindex")
+        self.site_domain = app_config_client.get("SHAREPOINT_SITE_DOMAIN")
+        self.site_name = app_config_client.get("SHAREPOINT_SITE_NAME")
+        self.drive_id = app_config_client.get("SHAREPOINT_DRIVE_ID")
 
         self.keyvault_client: Optional[KeyVaultClient] = None
         self.client_secret: Optional[str] = None

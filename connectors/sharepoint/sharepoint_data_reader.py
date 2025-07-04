@@ -17,6 +17,10 @@ import requests
 import re
 import logging
 
+from dependencies   import get_config
+
+app_config_client = get_config()
+
 GREEN = "\033[32m"
 ORANGE = "\033[38;5;208m"
 RESET = "\033[0m"
@@ -42,7 +46,7 @@ class SharePointMetadataStreamer:
         self.scope = ["https://graph.microsoft.com/.default"]
         self.access_token: Optional[str] = None
         self._file_count = 0
-        self._max_file_count = int(os.getenv("SHAREPOINT_MAX_FILE_COUNT", -1))
+        self._max_file_count = int(app_config_client.get("SHAREPOINT_MAX_FILE_COUNT", -1))
 
     def stream_file_metadata(
         self,

@@ -86,6 +86,7 @@ Write-Host ""
 Write-Blue "🔐 Checking Azure CLI login and subscription…"
 try {
     az account show > $null 2>&1
+    az account set -s $env:AZURE_SUBSCRIPTION_ID 2>$null
 } catch {
     Write-Yellow "⚠️  Not logged in. Please run 'az login'."
     exit 1
@@ -160,7 +161,7 @@ Write-Host ""
 #region Login to ACR
 Write-Green ("🔐 Logging into ACR ({0})…" -f $values.CONTAINER_REGISTRY_NAME)
 try {
-    az acr login --name $values.CONTAINER_REGISTRY_NAME
+    az acr login --name $values.CONTAINER_REGISTRY_NAME --resource-group $values.RESOURCE_GROUP_NAME
     Write-Green "✅ Logged into ACR."
 } catch {
     $errMsg = $_.Exception.Message
@@ -198,7 +199,7 @@ if ($env:tag) {
 #endregion
 
 #region Build or ACR build image
-$fullImageName = "$($values.CONTAINER_REGISTRY_LOGIN_SERVER)/azure-gpt-rag/data-ingestion-build:$tag"
+$fullImageName = "$($values.CONTAINER_REGISTRY_LOGIN_SERVER)/azure-gpt-rag/data-ingestion:$tag"
 Write-Green "🛠️  Building Docker image…"
 if (Get-Command docker -ErrorAction SilentlyContinue) {
     try {
@@ -214,7 +215,7 @@ if (Get-Command docker -ErrorAction SilentlyContinue) {
     try {
         az acr build `
             --registry $values.CONTAINER_REGISTRY_NAME `
-            --image "azure-gpt-rag/data-ingestion-build:$tag" `
+            --image "azure-gpt-rag/data-ingestion:$tag" `
             --file Dockerfile `
             .
         Write-Green "✅ ACR cloud build succeeded."
@@ -257,6 +258,28 @@ try {
 } catch {
     $errMsg = $_.Exception.Message
     Write-Yellow ("⚠️  Failed to update container app: {0}" -f $errMsg)
+    exit 1
+}
+
+#get the current revision
+Write-Blue "🔍 Fetching current revision…"
+$currentRevision = az containerapp revision list `
+    --name $values.DATA_INGEST_APP_NAME `
+    --resource-group $values.RESOURCE_GROUP_NAME `
+    --query "[0].name" -o tsv
+
+#region Restart Container App
+Write-Green "🔄 Restarting container app revision : $currentRevision…"
+try {
+    az containerapp revision restart `
+        --name $values.DATA_INGEST_APP_NAME `
+        --resource-group $values.RESOURCE_GROUP_NAME `
+        --revision $currentRevision
+
+    Write-Green "✅ Container app revision restarted."
+} catch {
+    $errMsg = $_.Exception.Message
+    Write-Yellow ("⚠️  Failed to restart container app: {0}" -f $errMsg)
     exit 1
 }
 #endregion
