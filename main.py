@@ -4,6 +4,7 @@ import logging
 import os
 import time
 import jsonschema
+import uvicorn
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -288,3 +289,8 @@ async def text_embedding(request: Request):
 
 HTTPXClientInstrumentor().instrument()
 FastAPIInstrumentor.instrument_app(app)
+
+if (not is_azure_environment()):
+    # Run the app locally
+    #asyncio.run(uvicorn.run(app, host="0.0.0.0", port=mcp_port, log_level="debug", timeout_keep_alive=60))
+    uvicorn.run(app, host="0.0.0.0", port=80, log_level="debug", timeout_keep_alive=60)

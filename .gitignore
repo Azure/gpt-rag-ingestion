@@ -4,8 +4,6 @@ backup/
 temp/
 .env
 local.settings.json
-.vscode/
-.vscode
 .python_packages/
 .venv/
 .venv_temp/

@@ -10,7 +10,7 @@ Every 10 files found, it logs a simple progress message so you always know how m
 """
 
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Iterator, List, Optional, Union
+from typing import Any, Dict, Iterator, List, Optional, Union, Tuple
 import msal
 import os
 import requests
@@ -27,6 +27,9 @@ RESET = "\033[0m"
 
 class SharePointMetadataStreamer:
     """Facilitates streaming of file metadata from SharePoint via Microsoft Graph API. Supports filtering by folder names and file formats."""
+
+    site_id: str = None
+    drive_id: str = None
 
     def __init__(
         self,
@@ -52,8 +55,9 @@ class SharePointMetadataStreamer:
         self,
         site_domain: str,
         site_name: str,
-        drive_id: str,
-        folders_names: List[str],
+        drive_name: str,
+        sub_site_name: Optional[str] = None,
+        folders_names: List[str] = [],
         folder_regex: Optional[str] = None,
         file_formats: Optional[List[str]] = None,
     ) -> Iterator[Dict[str, Any]]:
@@ -63,10 +67,11 @@ class SharePointMetadataStreamer:
         """
         if self._are_required_variables_missing():
             return
-
-        site_id = self._get_site_id(site_domain, site_name)
-        if not site_id:
-            return
+        
+        self.site_id, self.drive_id = self._get_site_and_drive_ids(site_domain, site_name, sub_site_name, drive_name=drive_name)
+        
+        if not self.site_id or not self.drive_id:
+            return None
 
         self._msgraph_auth()
         self._file_count = 0
@@ -80,7 +85,7 @@ class SharePointMetadataStreamer:
         for path in paths_to_traverse:
             clean_path = path.replace('"', '')
             try:
-                yield from self._stream_files(site_id, drive_id, clean_path, folder_regex, file_formats)
+                yield from self._stream_files(self.site_id, self.drive_id, clean_path, folder_regex, file_formats)
             except Exception as e:
                 logging.error(f"[sharepoint] Error traversing '{clean_path}': {e}")
 
@@ -176,6 +181,41 @@ class SharePointMetadataStreamer:
             raise RuntimeError("Failed to acquire access token")
         self.access_token = token["access_token"]
 
+    def _get_site_and_drive_ids(
+        self, site_domain: str, site_name: str, sub_site_name: Optional[str] = None, drive_name: Optional[str] = None
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Retrieves the site ID and drive ID for a given site domain and site name.
+
+        :param site_domain: The domain of the site.
+        :param site_name: The name of the site.
+        :return: A tuple containing the site ID and drive ID, or (None, None) if either ID could not be retrieved.
+        """
+        self.site_id = self._get_site_id(site_domain, site_name)
+        if not self.site_id:
+            logging.error("[sharepoint_files_reader] Failed to retrieve site_id")
+            return None, None
+
+        logging.info(f"[sharepoint_files_reader] Retrieved site_id: {self.site_id}")
+
+        if sub_site_name:
+            # If a sub-site name is provided, retrieve the sub-site ID
+            self.sub_site_id = self._get_sub_site(self.site_id, sub_site_name)
+            if not self.site_id:
+                logging.error("[sharepoint_files_reader] Failed to retrieve sub-site ID")
+                return None, None
+            
+            logging.info(f"[sharepoint_files_reader] Retrieved sub-site ID: {self.site_id}")
+
+        self.drive_id = self._get_drive_id(self.site_id, drive_name=drive_name)
+        if not self.drive_id:
+            logging.error("[sharepoint_files_reader] Failed to retrieve drive ID")
+            return None, None
+
+        logging.info(f"[sharepoint_files_reader] Retrieved drive_id: {self.drive_id}")
+
+        return self.site_id, self.drive_id
+
     def _get_site_id(
         self,
         site_domain: str,
@@ -184,14 +224,75 @@ class SharePointMetadataStreamer:
         url = f"{self.graph_uri}/v1.0/sites/{site_domain}:/sites/{site_name}:/"
         resp = self._make_ms_graph_request(url)
         return resp.get("id")
+    
+    def _get_drive_id(self, site_id: str, drive_name: str, access_token: Optional[str] = None) -> str:
+        """
+        Get the drive ID from a Microsoft Graph site.
+        """
+        url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drives"
+
+        try:
+            json_response = self._make_ms_graph_request(url)
+
+            logging.debug("[sharepoint_files_reader] Successfully retrieved drives from site.")
+
+            # Find the drive with the specified name
+            drives = json_response.get("value", [])
+            if not drives:
+                logging.error("[sharepoint_files_reader] No drives found in the site.")
+                raise ValueError("No drives found in the site.")
+            for drive in drives:
+                if drive.get("name") == drive_name:
+                    logging.debug(f"[sharepoint_files_reader] Found drive: {drive_name}")
+                    return drive.get("id")
+        
+        except Exception as err:
+            logging.error(f"[sharepoint_files_reader] Error in get_drive_id: {err}")
+            raise
+    
+    def _get_sub_site(
+        self, site_id: str, site_name: str, access_token: Optional[str] = None
+    ) -> Optional[str]:
+        """
+        Get the Site ID from Microsoft Graph API.
+        """
+
+        endpoint = (
+            f"https://graph.microsoft.com/v1.0/sites/{site_id}/sites"
+        )
+
+        try:
+            logging.debug("[sharepoint_files_reader] Getting the sub Site ID...")
+            result = self._make_ms_graph_request(endpoint)
+            # Find the sub-site with the specified name
+            for site in result.get("value", []):
+                if site.get("name") == site_name:
+                    logging.debug(f"[sharepoint_files_reader] Found sub-site: {site_name}")
+                    return site.get("id")
+        except Exception as err:
+            logging.error(f"[sharepoint_files_reader] Error retrieving sub Site ID: {err}")
+            return None
 
     def _make_ms_graph_request(
         self,
         url: str,
+        get_all_pages: bool = False
     ) -> Dict:
         if not self.access_token:
             raise ValueError("Access token is required for graph requests")
         headers = {"Authorization": f"Bearer {self.access_token}"}
+
+        if get_all_pages:
+            # Handle pagination if requested
+            all_items = []
+            while url:
+                response = requests.get(url, headers=headers)
+                response.raise_for_status()
+                data = response.json()
+                all_items.extend(data.get("value", []))
+                url = data.get("@odata.nextLink")
+            return {"value": all_items}
+        
         response = requests.get(url, headers=headers)
         response.raise_for_status()
         return response.json()
