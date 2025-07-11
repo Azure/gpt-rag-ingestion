@@ -42,7 +42,7 @@ azd deploy
 ## Release 1.0.0
 
 > [!NOTE]
-> If you want to use the original version, simply use the v1.0.0 release from the GitHub repository.
+> If you want to use GPT-RAG original version, simply use the v1.0.0 release from the GitHub repository.
 
 ## 🤝 Contributing
 

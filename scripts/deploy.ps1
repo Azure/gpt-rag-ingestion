@@ -158,9 +158,10 @@ Write-Host ""
 #endregion
 
 #region Login to ACR
-Write-Green ("🔐 Logging into ACR ({0})…" -f $values.CONTAINER_REGISTRY_NAME)
+
+Write-Green ("🔐 Logging into ACR ({0} in {1})…" -f $values.CONTAINER_REGISTRY_NAME, $values.RESOURCE_GROUP_NAME)
 try {
-    az acr login --name $values.CONTAINER_REGISTRY_NAME
+    az acr login --name $values.CONTAINER_REGISTRY_NAME --resource-group $values.RESOURCE_GROUP_NAME
     Write-Green "✅ Logged into ACR."
 } catch {
     $errMsg = $_.Exception.Message
