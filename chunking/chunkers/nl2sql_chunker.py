@@ -3,6 +3,9 @@ import os
 import json
 
 from .base_chunker import BaseChunker
+from dependencies import get_config
+
+app_config_client = get_config()
 
 class NL2SQLChunker(BaseChunker):
     """
@@ -35,7 +38,7 @@ class NL2SQLChunker(BaseChunker):
             data (str): The JSON content to be chunked.
         """
         super().__init__(data)
-        self.max_chunk_size = max_chunk_size or int(os.getenv("CHUNKING_NUM_TOKENS", "2048"))
+        self.max_chunk_size = max_chunk_size or int(app_config_client.get("CHUNKING_NUM_TOKENS", "2048"))
         self.token_overlap = token_overlap or 100
 
     def get_chunks(self):

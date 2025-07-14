@@ -3,6 +3,9 @@ import logging
 from azure.identity.aio import ManagedIdentityCredential, AzureCliCredential, ChainedTokenCredential
 from azure.keyvault.secrets.aio import SecretClient as AsyncSecretClient
 from azure.core.exceptions import ResourceNotFoundError, ClientAuthenticationError
+from dependencies import get_config
+
+app_config_client = get_config()
 
 class KeyVaultClient:
     """
@@ -10,7 +13,7 @@ class KeyVaultClient:
     """
 
     def __init__(self):
-        self.kv_uri = os.getenv("KEY_VAULT_URI")
+        self.kv_uri = app_config_client.get("KEY_VAULT_URI")
         if not self.kv_uri:
             logging.error("[keyvault] KEY_VAULT_URI environment variable not set.")
             raise ValueError("KEY_VAULT_URI environment variable not set.")

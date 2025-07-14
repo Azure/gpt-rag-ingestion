@@ -4,6 +4,9 @@ import re
 from .base_chunker import BaseChunker
 from ..exceptions import UnsupportedFormatError
 from langchain_text_splitters import MarkdownTextSplitter, RecursiveCharacterTextSplitter, PythonCodeTextSplitter, RecursiveJsonSplitter
+from dependencies import get_config
+
+app_config_client = get_config()
 
 class LangChainChunker(BaseChunker):
     """
@@ -44,9 +47,9 @@ class LangChainChunker(BaseChunker):
             data (str): The document content to be chunked.
         """
         super().__init__(data)
-        self.max_chunk_size = int(os.getenv("CHUNKING_NUM_TOKENS", "2048"))
-        self.minimum_chunk_size = int(os.getenv("CHUNKING_MIN_CHUNK_SIZE", "100"))
-        self.token_overlap = int(os.getenv("TOKEN_OVERLAP", "100"))
+        self.max_chunk_size = int(app_config_client.get("CHUNKING_NUM_TOKENS", "2048"))
+        self.minimum_chunk_size = int(app_config_client.get("CHUNKING_MIN_CHUNK_SIZE", "100"))
+        self.token_overlap = int(app_config_client.get("TOKEN_OVERLAP", "100"))
         self.supported_formats = {
             "md": "markdown",
             "txt": "text",

@@ -9,6 +9,10 @@ from azure.identity import ManagedIdentityCredential, AzureCliCredential, Chaine
 from azure.storage.blob import BlobServiceClient
 from azure.core.exceptions import ClientAuthenticationError, ResourceNotFoundError
 
+from dependencies import get_config
+
+app_config_client = get_config()
+
 class DocumentIntelligenceClient:
     """
     A client for interacting with Azure's Document Intelligence service.
@@ -16,7 +20,7 @@ class DocumentIntelligenceClient:
 
     def __init__(self):
         # AI service resource endpoint
-        self.service_endpoint = os.getenv('AI_FOUNDRY_ACCOUNT_ENDPOINT')
+        self.service_endpoint = app_config_client.get('AI_FOUNDRY_ACCOUNT_ENDPOINT')
         logging.debug(f"[docintelligence] AI_FOUNDRY_ACCOUNT_ENDPOINT = {self.service_endpoint!r}")
         if not self.service_endpoint:
             logging.error("[docintelligence] 'AI_FOUNDRY_ACCOUNT_ENDPOINT' not set.")
@@ -26,12 +30,12 @@ class DocumentIntelligenceClient:
         # API configuration
         self.DOCINT_40_API = '2023-10-31-preview'
         self.DEFAULT_API_VERSION = '2024-11-30'
-        self.api_version = os.getenv('DOC_INTELLIGENCE_API_VERSION', self.DEFAULT_API_VERSION)
+        self.api_version = app_config_client.get('DOC_INTELLIGENCE_API_VERSION', self.DEFAULT_API_VERSION)
         logging.debug(f"[docintelligence] DOC_INTELLIGENCE_API_VERSION = {self.api_version!r}")
         self.docint_40_api = self.api_version >= self.DOCINT_40_API
 
         # Network isolation
-        self.network_isolation = os.getenv('NETWORK_ISOLATION', 'false').lower() == 'true'
+        self.network_isolation = app_config_client.get('NETWORK_ISOLATION', 'false').lower() == 'true'
         logging.debug(f"[docintelligence] NETWORK_ISOLATION = {self.network_isolation}")
 
         # File types and service type

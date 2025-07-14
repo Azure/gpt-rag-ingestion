@@ -8,6 +8,9 @@ from openpyxl import load_workbook
 from tabulate import tabulate
 
 from .base_chunker import BaseChunker
+from dependencies import get_config
+
+app_config_client = get_config()
 
 class SpreadsheetChunker(BaseChunker):
     """
@@ -49,18 +52,18 @@ class SpreadsheetChunker(BaseChunker):
         super().__init__(data)
         
         if max_chunk_size is None:
-            self.max_chunk_size = int(os.getenv("SPREADSHEET_CHUNKING_NUM_TOKENS", 0))
+            self.max_chunk_size = int(app_config_client.get("SPREADSHEET_CHUNKING_NUM_TOKENS", 0))
         else:
             self.max_chunk_size = int(max_chunk_size)
         
         if chunking_by_row is None:
-            chunking_env = os.getenv("SPREADSHEET_CHUNKING_BY_ROW", "false").lower()
+            chunking_env = app_config_client.get("SPREADSHEET_CHUNKING_BY_ROW", "false").lower()
             self.chunking_by_row = chunking_env in ["true", "1", "yes"]
         else:
             self.chunking_by_row = bool(chunking_by_row)
         
         if include_header_in_chunks is None:
-            include_header_env = os.getenv("SPREADSHEET_CHUNKING_BY_ROW_INCLUDE_HEADER", "false").lower()
+            include_header_env = app_config_client.get("SPREADSHEET_CHUNKING_BY_ROW_INCLUDE_HEADER", "false").lower()
             self.include_header_in_chunks = include_header_env in ["true", "1", "yes"]
         else:
             self.include_header_in_chunks = bool(include_header_in_chunks)

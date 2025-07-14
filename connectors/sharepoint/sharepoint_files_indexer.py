@@ -15,6 +15,9 @@ from connectors import SharePointMetadataStreamer
 from tools import KeyVaultClient, AISearchClient
 from typing import Any, Dict, List, Optional
 from chunking import DocumentChunker, ChunkerFactory
+from dependencies import get_config
+
+app_config_client = get_config()
 
 TEAL   = "\033[38;5;6m"
 ORANGE = "\033[38;5;208m"
@@ -28,29 +31,31 @@ class SharePointDocumentIngestor:
     """
     def __init__(self):
         # Connector settings
-        self.connector_enabled = os.getenv("SHAREPOINT_CONNECTOR_ENABLED", "false").lower() == "true"
-        self.tenant_id = os.getenv("SHAREPOINT_TENANT_ID")
-        self.client_id = os.getenv("SHAREPOINT_CLIENT_ID")
-        self.site_domain = os.getenv("SHAREPOINT_SITE_DOMAIN")
-        self.site_name = os.getenv("SHAREPOINT_SITE_NAME")
-        self.drive_id = os.getenv("SHAREPOINT_DRIVE_ID")
+        self.connector_enabled = app_config_client.get("SHAREPOINT_CONNECTOR_ENABLED", "false").lower() == "true"
+        self.tenant_id = app_config_client.get("SHAREPOINT_TENANT_ID")
+        self.client_id = app_config_client.get("SHAREPOINT_CLIENT_ID")
+        self.site_domain = app_config_client.get("SHAREPOINT_SITE_DOMAIN")
+        self.site_name = app_config_client.get("SHAREPOINT_SITE_NAME")
+        self.sub_site_name = app_config_client.get("SHAREPOINT_SUB_SITE_NAME")
+        #self.drive_id = app_config_client.get("SHAREPOINT_DRIVE_ID")
+        self.drive_name = app_config_client.get("SHAREPOINT_DRIVE_NAME")
 
-        paths_to_traverse = os.getenv("SHAREPOINT_SUBFOLDERS_NAMES")
+        paths_to_traverse = app_config_client.get("SHAREPOINT_SUBFOLDERS_NAMES")
         if paths_to_traverse:
             self.paths_to_traverse = [name.strip() for name in paths_to_traverse.split(",")]
         else:
             self.paths_to_traverse = []
 
-        folder_regex = os.getenv("SHAREPOINT_SUBFOLDERS_REGEX")
+        folder_regex = app_config_client.get("SHAREPOINT_SUBFOLDERS_REGEX")
         if folder_regex:
             self.folder_regex = folder_regex.strip()
         else:
             self.folder_regex = ".*"
 
-        self.sharepoint_client_secret_name = os.getenv("SHAREPOINT_CLIENT_SECRET_NAME", "sharepointClientSecret")
-        self.index_name = os.getenv("AZURE_SEARCH_SHAREPOINT_INDEX_NAME", "ragindex")
+        self.sharepoint_client_secret_name = app_config_client.get("SHAREPOINT_CLIENT_SECRET_NAME", "sharepointClientSecret")
+        self.index_name = app_config_client.get("AZURE_SEARCH_SHAREPOINT_INDEX_NAME", "ragindex")
 
-        env_formats = os.getenv("SHAREPOINT_FILES_FORMAT")
+        env_formats = app_config_client.get("SHAREPOINT_FILES_FORMAT")
         if env_formats:
             self.file_formats = [fmt.strip() for fmt in env_formats.split(",")]
         else:
@@ -61,7 +66,10 @@ class SharePointDocumentIngestor:
         self.client_secret: Optional[str] = None
         self.sharepoint_data_reader: Optional[SharePointMetadataStreamer] = None
         self.search_client: Optional[AISearchClient] = None
-        self.site_id_reader: Optional[str] = None
+        self.site_id: Optional[str] = None
+        self.drive_id: Optional[str] = None
+        
+        self.files_to_ignore: List[str] = os.getenv("SHAREPOINT_FILES_TO_IGNORE", "").split(",") if os.getenv("SHAREPOINT_FILES_TO_IGNORE") else []
 
         # Tracking attributes
         self.total_files: int = 0
@@ -91,7 +99,7 @@ class SharePointDocumentIngestor:
             "SHAREPOINT_CLIENT_ID": self.client_id,
             "SHAREPOINT_SITE_DOMAIN": self.site_domain,
             "SHAREPOINT_SITE_NAME": self.site_name,
-            "SHAREPOINT_DRIVE_ID": self.drive_id,
+            "SHAREPOINT_DRIVE_NAME": self.drive_name,
         }.items() if not val]
 
         if missing:
@@ -107,8 +115,9 @@ class SharePointDocumentIngestor:
         try:
             # Authenticate and get site ID for reader
             self.sharepoint_data_reader._msgraph_auth()
-            self.site_id_reader = self.sharepoint_data_reader._get_site_id(
-                self.site_domain, self.site_name)
+            self.site_id, self.drive_id = self.sharepoint_data_reader._get_site_and_drive_ids(
+                self.site_domain, self.site_name, self.sub_site_name, self.drive_name
+                )
             logging.debug("[indexer] Authenticated with Microsoft Graph and obtained site ID.")
         except Exception as e:
             logging.error(f"[indexer] Graph authentication or site lookup failed: {e}")
@@ -147,6 +156,11 @@ class SharePointDocumentIngestor:
         async with semaphore:
             file_name = file.get("name")
             sp_id = file.get("id")
+
+            if file_name in self.files_to_ignore:
+                logging.info(f"[sharepoint_files_indexer] Ignoring file '{file_name}' as it is in the ignore list.")
+                return
+            
             # Track total files
             async with self._lock:
                 self.total_files += 1
@@ -160,7 +174,7 @@ class SharePointDocumentIngestor:
                 document_bytes = await asyncio.get_event_loop().run_in_executor(
                     None,
                     self.sharepoint_data_reader._get_file_content_bytes,
-                    self.site_id_reader,
+                    self.site_id,
                     self.drive_id,
                     file
                 )
@@ -257,11 +271,15 @@ class SharePointDocumentIngestor:
         metadata_iterator = self.sharepoint_data_reader.stream_file_metadata(
             site_domain=self.site_domain,
             site_name=self.site_name,
-            drive_id=self.drive_id,
+            sub_site_name=self.sub_site_name,
+            drive_name=self.drive_name,  #use the library name instead of drive_id
+            #drive_id=self.drive_id,
             folders_names=self.paths_to_traverse,
             folder_regex=self.folder_regex,
             file_formats=self.file_formats,
         )
+
+        self.drive_id = self.sharepoint_data_reader.drive_id
 
         # Producer-consumer pattern
         queue: asyncio.Queue = asyncio.Queue(maxsize=20)

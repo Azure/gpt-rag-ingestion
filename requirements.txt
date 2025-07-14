@@ -33,3 +33,8 @@ tenacity==8.5.0
 
 # Image library
 Pillow==11.1.0
+
+azure-monitor-opentelemetry
+azure-monitor-opentelemetry-exporter
+opentelemetry-instrumentation-httpx==0.52b1
+opentelemetry-instrumentation-fastapi
