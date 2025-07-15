@@ -6,7 +6,9 @@ from langchain_text_splitters import MarkdownTextSplitter, RecursiveCharacterTex
 from .base_chunker import BaseChunker
 from ..exceptions import UnsupportedFormatError
 from tools import DocumentIntelligenceClient
+from dependencies import get_config
 
+app_config_client = get_config()
 
 class DocAnalysisChunker(BaseChunker):
     """
@@ -24,11 +26,11 @@ class DocAnalysisChunker(BaseChunker):
 
     Chunking Parameters:
     --------------------
-    - max_chunk_size: The maximum size of each chunk in tokens. This value is sourced from the `NUM_TOKENS` 
+    - max_chunk_size: The maximum size of each chunk in tokens. This value is sourced from the `CHUNKING_NUM_TOKENS` 
     environment variable, with a default of 2048 tokens.
     - token_overlap: The number of overlapping tokens between consecutive chunks, sourced from the `TOKEN_OVERLAP` 
     environment variable, with a default of 100 tokens.
-    - minimum_chunk_size: The minimum size of each chunk in tokens, sourced from the `MIN_CHUNK_SIZE` environment 
+    - minimum_chunk_size: The minimum size of each chunk in tokens, sourced from the `CHUNKING_MIN_CHUNK_SIZE` environment 
     variable, with a default of 100 tokens.
 
     Document Analysis:
@@ -53,9 +55,9 @@ class DocAnalysisChunker(BaseChunker):
     """
     def __init__(self, data, max_chunk_size=None, minimum_chunk_size=None, token_overlap=None):
         super().__init__(data)       
-        self.max_chunk_size = max_chunk_size or int(os.getenv("NUM_TOKENS", "2048"))
-        self.minimum_chunk_size = minimum_chunk_size or int(os.getenv("MIN_CHUNK_SIZE", "100"))
-        self.token_overlap = token_overlap or int(os.getenv("TOKEN_OVERLAP", "100"))
+        self.max_chunk_size = max_chunk_size or int(app_config_client.get("CHUNKING_NUM_TOKENS", 2048))
+        self.minimum_chunk_size = minimum_chunk_size or int(app_config_client.get("CHUNKING_MIN_CHUNK_SIZE", 100))
+        self.token_overlap = token_overlap or int(app_config_client.get("TOKEN_OVERLAP", 100))
         self.docint_client = DocumentIntelligenceClient()
         self.supported_formats = self.docint_client.file_extensions
 

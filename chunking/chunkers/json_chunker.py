@@ -3,6 +3,9 @@
 import json
 import logging
 from .base_chunker import BaseChunker
+from dependencies import get_config
+
+app_config_client = get_config()
 
 class JSONChunker(BaseChunker):
     """
@@ -14,9 +17,9 @@ class JSONChunker(BaseChunker):
     def __init__(self, data, max_chunk_size=None, token_overlap=None, minimum_chunk_size=None):
         super().__init__(data)
         import os
-        self.max_chunk_size = int(max_chunk_size or os.getenv("NUM_TOKENS", "2048"))
-        self.token_overlap = int(token_overlap or os.getenv("TOKEN_OVERLAP", "100"))
-        self.minimum_chunk_size = int(minimum_chunk_size or os.getenv("MIN_CHUNK_SIZE", "100"))
+        self.max_chunk_size = int(max_chunk_size or app_config_client.get("CHUNKING_NUM_TOKENS", 2048))
+        self.token_overlap = int(token_overlap or app_config_client.get("TOKEN_OVERLAP", 100))
+        self.minimum_chunk_size = int(minimum_chunk_size or app_config_client.get("CHUNKING_MIN_CHUNK_SIZE", 100))
 
     def get_chunks(self):
         """

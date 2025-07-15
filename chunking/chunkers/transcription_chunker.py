@@ -7,6 +7,9 @@ import webvtt
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from .base_chunker import BaseChunker
+from dependencies import get_config
+
+app_config_client = get_config()
 
 class TranscriptionChunker(BaseChunker):
     """
@@ -16,7 +19,7 @@ class TranscriptionChunker(BaseChunker):
     ---------------
     The TranscriptionChunker is initialized with the following parameters:
     - data (str): The transcription text content to be chunked.
-    - max_chunk_size (int, optional): The maximum size of each chunk in tokens. Defaults to 2048 tokens or the value specified in the `NUM_TOKENS` environment variable.
+    - max_chunk_size (int, optional): The maximum size of each chunk in tokens. Defaults to 2048 tokens or the value specified in the `CHUNKING_NUM_TOKENS` environment variable.
     - token_overlap (int, optional): The number of overlapping tokens between consecutive chunks. Defaults to 100 tokens.
 
     Methods:
@@ -51,7 +54,7 @@ class TranscriptionChunker(BaseChunker):
             data (str): The document content to be chunked.
         """
         super().__init__(data)       
-        self.max_chunk_size = max_chunk_size or int(os.getenv("NUM_TOKENS", "2048"))
+        self.max_chunk_size = max_chunk_size or int(app_config_client.get("CHUNKING_NUM_TOKENS", "2048"))
         self.token_overlap = token_overlap or 100
 
     def get_chunks(self):           

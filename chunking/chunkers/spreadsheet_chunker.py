@@ -8,6 +8,9 @@ from openpyxl import load_workbook
 from tabulate import tabulate
 
 from .base_chunker import BaseChunker
+from dependencies import get_config
+
+app_config_client = get_config()
 
 class SpreadsheetChunker(BaseChunker):
     """
@@ -42,25 +45,25 @@ class SpreadsheetChunker(BaseChunker):
         
         Args:
             data (str): The spreadsheet content to be chunked.
-            max_chunk_size (int, optional): Maximum allowed size of each chunk in tokens. Defaults to an environment variable 'SPREADSHEET_NUM_TOKENS' or 0 if not set.
+            max_chunk_size (int, optional): Maximum allowed size of each chunk in tokens. Defaults to an environment variable 'SPREADSHEET_CHUNKING_NUM_TOKENS' or 0 if not set.
             chunking_by_row (bool, optional): Whether to chunk by row instead of by sheet. Defaults to an environment variable 'CHUNKING_BY_ROW' or False.
             include_header_in_chunks (bool, optional): Whether to include the header row in each chunk if chunking by row. Defaults to 'INCLUDE_HEADER_IN_CHUNKS' environment variable or False.
         """
         super().__init__(data)
         
         if max_chunk_size is None:
-            self.max_chunk_size = int(os.getenv("SPREADSHEET_NUM_TOKENS", 0))
+            self.max_chunk_size = int(app_config_client.get("SPREADSHEET_CHUNKING_NUM_TOKENS", 0))
         else:
             self.max_chunk_size = int(max_chunk_size)
         
         if chunking_by_row is None:
-            chunking_env = os.getenv("SPREADSHEET_CHUNKING_BY_ROW", "false").lower()
+            chunking_env = app_config_client.get("SPREADSHEET_CHUNKING_BY_ROW", "false").lower()
             self.chunking_by_row = chunking_env in ["true", "1", "yes"]
         else:
             self.chunking_by_row = bool(chunking_by_row)
         
         if include_header_in_chunks is None:
-            include_header_env = os.getenv("SPREADSHEET_CHUNKING_BY_ROW_INCLUDE_HEADER", "false").lower()
+            include_header_env = app_config_client.get("SPREADSHEET_CHUNKING_BY_ROW_INCLUDE_HEADER", "false").lower()
             self.include_header_in_chunks = include_header_env in ["true", "1", "yes"]
         else:
             self.include_header_in_chunks = bool(include_header_in_chunks)

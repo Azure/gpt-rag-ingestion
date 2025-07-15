@@ -7,6 +7,9 @@ from ..exceptions import UnsupportedFormatError
 from .doc_analysis_chunker import DocAnalysisChunker
 from tools import  BlobClient
 from typing import List, Dict
+from dependencies import get_config
+
+app_config_client = get_config()
 
 class MultimodalChunker(DocAnalysisChunker):
     """
@@ -26,9 +29,9 @@ class MultimodalChunker(DocAnalysisChunker):
             token_overlap (int, optional): Number of overlapping tokens between chunks. Defaults to None.
         """
         super().__init__(data, max_chunk_size, minimum_chunk_size, token_overlap)
-        self.image_container = os.getenv("STORAGE_CONTAINER_IMAGES", "documents-images")
-        self.storage_account_name = os.getenv("STORAGE_ACCOUNT_NAME", "set-storage-account-name-env-var")
-        self.minimum_figure_area_percentage = float(os.getenv("MINIMUM_FIGURE_AREA_PERCENTAGE", "4.0"))
+        self.image_container = app_config_client.get("DOCUMENTS_IMAGES_STORAGE_CONTAINER", "documents-images")
+        self.storage_account_name = app_config_client.get("STORAGE_ACCOUNT_NAME", "set-storage-account-name-env-var")
+        self.minimum_figure_area_percentage = float(app_config_client.get("MINIMUM_FIGURE_AREA_PERCENTAGE", "4.0"))
 
     def get_chunks(self):
         """

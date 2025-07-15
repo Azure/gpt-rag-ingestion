@@ -213,39 +213,3 @@ class BlobContainerClient:
             logging.info(f"[blob] Failed to list blobs: {e}")
             return []
 
-# Example usage
-if __name__ == "__main__":
-    # Replace these variables with your actual values
-    STORAGE_ACCOUNT_URL = "https://mystorage.blob.core.windows.net"
-    CONTAINER_NAME = "mycontainer"
-    CREDENTIAL = os.getenv("AZURE_STORAGE_KEY")  # Or use another method for credentials
-
-    try:
-        # Initialize BlobContainerClient
-        container_client = BlobContainerClient(
-            storage_account_base_url=STORAGE_ACCOUNT_URL,
-            container_name=CONTAINER_NAME,
-            credential=CREDENTIAL
-        )
-
-        # Upload a blob
-        container_client.upload_blob(
-            blob_name="example_blob.txt",
-            file_path="/path/to/local/example_blob.txt",
-            overwrite=True
-        )
-
-        # List blobs
-        container_client.list_blobs()
-
-        # Download a blob
-        container_client.download_blob(
-            blob_name="example_blob.txt",
-            download_file_path="/path/to/downloaded/example_blob.txt"
-        )
-
-        # Delete a blob
-        container_client.delete_blob(blob_name="example_blob.txt")
-
-    except Exception as e:
-        logging.info(f"[blob] An error occurred: {e}")

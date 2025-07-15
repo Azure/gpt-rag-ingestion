@@ -11,6 +11,9 @@ from .chunkers.nl2sql_chunker import NL2SQLChunker
 
 from tools import DocumentIntelligenceClient
 from utils import get_filename_from_data, get_file_extension
+from dependencies import get_config
+
+app_config_client = get_config()
 
 class ChunkerFactory:
     """Factory class to create appropriate chunker based on file extension."""
@@ -18,7 +21,7 @@ class ChunkerFactory:
     def __init__(self):
         docint_client = DocumentIntelligenceClient()
         self.docint_40_api = docint_client.docint_40_api 
-        _multimodality = os.getenv("MULTIMODAL", "false").lower()
+        _multimodality = app_config_client.get("MULTIMODAL", "false").lower()
         self.multimodality = _multimodality in ["true", "1", "yes"]
 
     def get_chunker(self, data):

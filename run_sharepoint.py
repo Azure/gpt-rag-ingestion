@@ -1,41 +1,37 @@
 """
 SharePoint Indexer
 
-This script indexes files from a SharePoint folder into Azure AI Search 
-and removes deleted files from the index. It uses asynchronous workflows for 
-efficient operation.
+Loads configuration from environment, then:
 
-Features:
-- File Indexing: Reads SharePoint files and uploads metadata to Azure AI Search.
-- File Purging: Removes metadata for deleted files to maintain index consistency.
-- Asynchronous Execution: Utilizes `asyncio` for network efficiency.
+ • Streams file metadata from the specified SharePoint site and drive  
+ • Downloads and chunks any new or changed files  
+ • Indexes those chunks into your Azure AI Search index  
+ • (Optional) Purges search entries for files deleted in SharePoint  
 
-Prerequisites:
-1. Environment Variables (set in `.env` or environment):
-   - General:
-     - SHAREPOINT_CONNECTOR_ENABLED: 'true' to enable the connector (default: 'false').
-     - SHAREPOINT_TENANT_ID, SHAREPOINT_CLIENT_ID: For SharePoint authentication.
-     - SHAREPOINT_CLIENT_SECRET_NAME: Azure Key Vault secret name (default: 'sharepointClientSecret').
-     - AZURE_SEARCH_SHAREPOINT_INDEX_NAME: Name of the Azure AI Search index (default: 'ragindex').
-   - SharePoint Config:
-     - SHAREPOINT_SITE_DOMAIN, SHAREPOINT_SITE_NAME: SharePoint site details.
-     - SHAREPOINT_SITE_FOLDER: Folder path (default: '/').
-     - SHAREPOINT_FILES_FORMAT: Comma-separated list of file formats (e.g., 'pdf,docx').
+Required environment variables (or put them in a `.env` file):
 
-2. Azure Config:
-   - Azure Key Vault: Contains the SharePoint client secret.
-   - Azure AI Search: Preconfigured with an appropriate schema.
+  • SHAREPOINT_CONNECTOR_ENABLED        — 'true' to run  
+  • SHAREPOINT_TENANT_ID                — Azure AD tenant ID  
+  • SHAREPOINT_CLIENT_ID                — Azure AD app (client) ID  
+  • SHAREPOINT_CLIENT_SECRET_NAME       — Key Vault secret name (default: 'sharepointClientSecret')  
+  • AZURE_SEARCH_SHAREPOINT_INDEX_NAME — Search index name (default: 'ragindex')  
+  • SHAREPOINT_SITE_DOMAIN              — e.g. 'contoso.sharepoint.com'  
+  • SHAREPOINT_SITE_NAME                — e.g. 'Documents'  
+  • SHAREPOINT_DRIVE_ID                 — Drive/library identifier  
+  • SHAREPOINT_SUBFOLDERS_NAMES         — comma-separated subfolders under the drive root (optional)  
+  • SHAREPOINT_FILES_FORMAT             — comma-separated extensions to include (e.g., 'pdf,docx')  
 
 Usage:
-- Run the script: `python run.py`.
 
+    python run_sharepoint.py
 """
+
 
 import logging
 import os
 import asyncio
 from dotenv import load_dotenv
-from connectors import SharepointFilesIndexer, SharepointDeletedFilesPurger
+from connectors import SharePointDocumentIngestor, SharePointDeletedItemsCleaner
 
 load_dotenv(override=True)
 
@@ -82,14 +78,14 @@ def main():
 
     # Index sharepoint files
     try:
-        indexer = SharepointFilesIndexer()
+        indexer = SharePointDocumentIngestor()
         asyncio.run(indexer.run())
     except Exception as e:
         logging.error(f"[main] An unexpected error occurred: {e}")
 
     # Purge deleted files
     try:
-        purger = SharepointDeletedFilesPurger()
+        purger = SharePointDeletedItemsCleaner()
         asyncio.run(purger.run())
     except Exception as e:
         logging.error(f"[main] An unexpected error occurred: {e}")
