@@ -27,7 +27,7 @@ openai==1.55.3
 tenacity==8.5.0
 
 # Web and async dependencies
-aiohttp==3.9.0b0
+aiohttp==3.12.14
 webvtt-py==0.5.1
 
 # Image library
