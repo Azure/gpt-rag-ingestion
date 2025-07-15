@@ -9,6 +9,7 @@ local.settings.json
 .venv_temp/
 .azure
 .azure/
+.vscode/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
