@@ -151,6 +151,7 @@ fi
 
 echo -e "${GREEN}🛠️  Building Docker image…${NC}"
 docker build \
+  --platform linux/amd64 \
   -t "${containerRegistryLoginServer}/azure-gpt-rag/data-ingestion:${tag}" \
   .
 
