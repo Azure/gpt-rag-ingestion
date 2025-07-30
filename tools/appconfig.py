@@ -132,7 +132,7 @@ class AppConfigClient:
     )
     def get_config_with_retry(self, name):
         try:
-            return self.config[name]
+            return self.client[name]
         except RetryError:
             pass
 
