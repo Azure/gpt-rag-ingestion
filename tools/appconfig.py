@@ -70,9 +70,9 @@ class AppConfigClient:
                 raise Exception(f"Unable to connect to Azure App Configuration. Please check your connection string or endpoint. {e}")
 
 
-    def get(self, key: str, default: Any = None, type: type = str) -> Any:
-        return self.get_value(key, default=default, allow_none=False, type=type)
-    
+    def get(self, key: str, default: Any = None, type: type = str, allow_none : bool = False) -> Any:
+        return self.get_value(key, default=default, allow_none=allow_none, type=type)
+
     def get_value(self, key: str, default: str = None, allow_none: bool = False, type: type = str) -> str:
 
         if key is None:
