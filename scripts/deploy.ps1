@@ -264,7 +264,7 @@ try {
             --name $values.DATA_INGEST_APP_NAME `
             --resource-group $values.RESOURCE_GROUP_NAME `
             --server "$($values.CONTAINER_REGISTRY_NAME).azurecr.io" `
-            --identity "/subscriptions/$($values.SUBSCRIPTION_ID)/resourceGroups/$($values.RESOURCE_GROUP_NAME)/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uai-ca-$($values.RESOURCE_TOKEN)-mcp" `
+            --identity "/subscriptions/$($values.SUBSCRIPTION_ID)/resourceGroups/$($values.RESOURCE_GROUP_NAME)/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uai-ca-$($values.RESOURCE_TOKEN)-dataingest" `
     }
     else {
         az containerapp registry set `
