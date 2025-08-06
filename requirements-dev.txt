@@ -1,0 +1,11 @@
+-r ./requirements.txt
+ruff
+black
+pytest
+pytest-asyncio
+coverage
+pytest-cov
+pre-commit
+locust
+pip-tools
+mypy==1.14.1

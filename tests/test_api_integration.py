@@ -1,5 +1,4 @@
 import pytest
-import asyncio
 from unittest.mock import Mock, AsyncMock, patch
 import azure.functions as func
 from function_app import document_chunking

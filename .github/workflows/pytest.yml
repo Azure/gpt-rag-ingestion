@@ -1,0 +1,29 @@
+name: Pytest Unit Tests
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+
+jobs:
+  test-package:
+    name: Test ${{matrix.os}} Python ${{matrix.python-version}}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        python-version: [3.11]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: python -m pytest ./tests
