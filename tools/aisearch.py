@@ -25,8 +25,10 @@ class AISearchClient:
 
         # Initialize the ChainedTokenCredential
         try:
+            client_id = os.environ.get('AZURE_CLIENT_ID', None)
+
             self.credential = ChainedTokenCredential(
-                ManagedIdentityCredential(),
+                ManagedIdentityCredential(client_id=client_id),
                 AzureCliCredential()
             )
             logging.debug("[aisearch] Initialized ChainedTokenCredential with ManagedIdentity and AzureCliCredential.")

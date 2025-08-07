@@ -54,8 +54,10 @@ class DocumentIntelligenceClient:
 
         # Credential
         try:
+            client_id = os.environ.get('AZURE_CLIENT_ID', None)
+
             self.credential = ChainedTokenCredential(
-                ManagedIdentityCredential(),
+                ManagedIdentityCredential(client_id=client_id),
                 AzureCliCredential()
             )
             logging.debug("[docintelligence] ChainedTokenCredential initialized.")
