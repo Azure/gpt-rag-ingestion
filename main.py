@@ -51,7 +51,7 @@ async def lifespan(app: FastAPI):
     scheduler.start()
 
     # 1) SharePoint index job
-    cron_expr = app_config_client.get("CRON_RUN_SHAREPOINT_INDEX")
+    cron_expr = app_config_client.get("CRON_RUN_SHAREPOINT_INDEX", default = None, allow_none=True)
     if cron_expr:
         try:
             trigger = CronTrigger.from_crontab(cron_expr)
@@ -68,7 +68,7 @@ async def lifespan(app: FastAPI):
         logging.warning("CRON_RUN_SHAREPOINT_INDEX not set — skipping sharepoint_index_files")
 
     # 2) SharePoint purge job
-    cron_expr = app_config_client.get("CRON_RUN_SHAREPOINT_PURGE")
+    cron_expr = app_config_client.get("CRON_RUN_SHAREPOINT_PURGE", default = None, allow_none=True)
     if cron_expr:
         try:
             trigger = CronTrigger.from_crontab(cron_expr)
@@ -85,7 +85,7 @@ async def lifespan(app: FastAPI):
         logging.warning("CRON_RUN_SHAREPOINT_PURGE not set — skipping sharepoint_purge_deleted_files")
 
     # 3) Images purge job
-    cron_expr = app_config_client.get("CRON_RUN_IMAGES_PURGE")
+    cron_expr = app_config_client.get("CRON_RUN_IMAGES_PURGE", default = None, allow_none=True)
     if cron_expr:
         try:
             trigger = CronTrigger.from_crontab(cron_expr)

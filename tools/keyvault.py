@@ -20,8 +20,10 @@ class KeyVaultClient:
         
         # Initialize the ChainedTokenCredential with ManagedIdentityCredential and AzureCliCredential
         try:
+            client_id = os.environ.get('AZURE_CLIENT_ID', None)
+
             self.credential = ChainedTokenCredential(
-                ManagedIdentityCredential(),
+                ManagedIdentityCredential(client_id=client_id),
                 AzureCliCredential()
             )
             logging.debug("[keyvault] Initialized ChainedTokenCredential with ManagedIdentityCredential and AzureCliCredential.")

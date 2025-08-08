@@ -49,10 +49,12 @@ class BlobClient:
         :param credential: Credential for authentication (optional)
         :return: Credential object
         """
+        client_id = os.environ.get('AZURE_CLIENT_ID', None)
+        
         if credential is None:
             try:
                 credential = ChainedTokenCredential(
-                    ManagedIdentityCredential(),
+                    ManagedIdentityCredential(client_id=client_id),
                     AzureCliCredential()
                 )
                 logging.debug("[blob] Initialized ChainedTokenCredential with ManagedIdentityCredential and AzureCliCredential.")
