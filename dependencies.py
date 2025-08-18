@@ -4,7 +4,7 @@ Provides dependencies for API calls.
 import logging
 from fastapi import Depends, HTTPException
 from fastapi.security import APIKeyHeader
-from tools import AppConfigClient      
+from tools.appconfig import AppConfigClient      
 
 __config: AppConfigClient = None
 

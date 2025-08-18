@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "Python: FastAPI (Uvicorn)",
-      "type": "python",
+      "type": "debugpy",
       "request": "launch",
       "module": "uvicorn",
       "args": [
