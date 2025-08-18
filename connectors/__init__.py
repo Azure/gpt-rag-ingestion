@@ -1,5 +1,3 @@
 from .sharepoint.sharepoint_data_reader import SharePointMetadataStreamer
 from .sharepoint.sharepoint_files_indexer import SharePointDocumentIngestor
 from .sharepoint.sharepoint_deleted_files_purger import SharePointDeletedItemsCleaner
-
-from .images_deleted_files_purger import ImagesDeletedFilesPurger

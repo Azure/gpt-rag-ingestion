@@ -6,7 +6,7 @@ import logging
 
 import openai
 import tiktoken
-from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+from azure.identity import AzureCliCredential, ManagedIdentityCredential, ChainedTokenCredential, get_bearer_token_provider
 from dependencies import get_config
 
 app_config_client = get_config()
@@ -36,9 +36,13 @@ class AzureOpenAIClient:
         self.max_gpt_tokens       = 128_000
         self.max_embed_tokens     =   8_192
 
-        # Build Managed Identity token provider
+        # Build token provider with preferred order: Azure CLI first, then Managed Identity (optional client_id)
+        client_id = os.environ.get("AZURE_CLIENT_ID", None)
         token_provider = get_bearer_token_provider(
-            DefaultAzureCredential(),
+            ChainedTokenCredential(
+                AzureCliCredential(),
+                ManagedIdentityCredential(client_id=client_id)
+            ),
             "https://cognitiveservices.azure.com/.default"
         )
         logging.debug(f"[aoai]{self.document_filename} Obtained bearer token provider")
@@ -49,8 +53,7 @@ class AzureOpenAIClient:
             api_version             = self.api_version,
             azure_ad_token_provider = token_provider
         )
-        logging.debug(f"[aoai]{self.document_filename} AzureOpenAI client initialized with Managed Identity")
-
+        logging.debug(f"[aoai]{self.document_filename} AzureOpenAI client initialized with AAD token provider")
         # Token estimator for truncation
         self.token_estimator = GptTokenEstimator()
 

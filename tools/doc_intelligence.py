@@ -56,11 +56,12 @@ class DocumentIntelligenceClient:
         try:
             client_id = os.environ.get('AZURE_CLIENT_ID', None)
 
+            # Prefer Azure CLI locally to avoid IMDS probes; fall back to MI when available
             self.credential = ChainedTokenCredential(
-                ManagedIdentityCredential(client_id=client_id),
-                AzureCliCredential()
+                AzureCliCredential(),
+                ManagedIdentityCredential(client_id=client_id)
             )
-            logging.debug("[docintelligence] ChainedTokenCredential initialized.")
+            logging.debug("[docintelligence] ChainedTokenCredential initialized (CLI first, then MI).")
         except Exception as e:
             logging.error(f"[docintelligence] Credential init failed: {e}")
             raise
