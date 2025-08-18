@@ -19,9 +19,16 @@ Part of the [GPT-RAG](https://github.com/Azure/gpt-rag) solution.
 
 The **GPT-RAG Data Ingestion** service automates the processing of diverse document types—such as PDFs, images, spreadsheets, transcripts, and SharePoint files—preparing them for indexing in Azure AI Search. It uses intelligent chunking strategies tailored to each format, generates text and image embeddings, and enables rich, multimodal retrieval experies for agent-based RAG applications.
 
-### How the Data Ingestion Works
+## How Data Ingestion Works
 
-_This section will be updated soon to include a detailed explanation of the data ingestion flow, chunking strategies and connectors._
+The service performs the following steps:
+
+* **Scan sources**: Detects new or updated files in configured locations
+* **Process content**: Chunks and enriches data (text, images, embeddings) for retrieval
+* **Index documents**: Writes processed chunks into Azure AI Search
+* **Schedule execution**: Runs on a CRON-based scheduler defined by environment variables
+
+**Supported connectors:** Blob Storage and SharePoint. See [Blob Connector](docs/blob_connector.md) for details.
 
 ## Prerequisites
 
@@ -39,14 +46,17 @@ azd deploy
 > [!IMPORTANT]
 > When running `azd env refresh`, make sure to use the **same subscription**, **resource group**, and **environment name** that you used during the infrastructure deployment. This ensures consistency across components.
 
-## Release 1.0.0
 
-> [!NOTE]
-> If you want to use GPT-RAG original version, simply use the v1.0.0 release from the GitHub repository.
+
+## Previous Releases
+
+> [!NOTE]  
+> For earlier versions, use the corresponding release in the GitHub repository (e.g., v1.0.0 for the initial version).
+
 
 ## 🤝 Contributing
 
-We appreciate contributions! See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines on the Contributor License Agreement (CLA), code of conduct, and submitting pull requests.
+We appreciate contributions! See [CONTRIBUTING.md](https://github.com/Azure/GPT-RAG/blob/main/CONTRIBUTING.md) for guidelines on the Contributor License Agreement (CLA), code of conduct, and submitting pull requests.
 
 ## Trademarks
 

@@ -1,8 +1,9 @@
 <#
 .SYNOPSIS
-    deploy.ps1 — validate APP_CONFIG_ENDPOINT, load App Config (label=gpt-rag), then build & push
+    deploy.ps1 — validate Docker and APP_CONFIG_ENDPOINT, load App Config (label=gpt-rag), then build & push
 
 .DESCRIPTION
+    - Validates Docker Desktop availability immediately when the script starts.
     - Checks for APP_CONFIG_ENDPOINT in environment; if missing, tries to fetch from `azd env get-values`.
     - Parses App Configuration name from endpoint.
     - Checks Azure CLI login.
@@ -30,6 +31,44 @@ function Write-ErrorColored($msg) {
 }
 #endregion
 
+Write-Host ""  # blank line
+
+#region Early Docker validation
+$pausedPattern   = 'Docker Desktop is manually paused'
+$daemonDownRegex = '((?i)error during connect|Cannot connect to the Docker daemon|Is the docker daemon running|The Docker daemon is not running|dockerDesktopLinuxEngine|dockerDesktopWindowsEngine|The system cannot find the file specified|open \\./pipe/|context deadline exceeded)'
+
+# Optional: try service check, but do NOT fail based on it
+try {
+    $dockerSvc = Get-Service -Name 'com.docker.service' -ErrorAction SilentlyContinue
+    if ($dockerSvc) {
+        Write-Blue "🔍 Docker Desktop service status: $($dockerSvc.Status)"
+    }
+} catch { }
+
+if (Get-Command docker -ErrorAction SilentlyContinue) {
+    Write-Blue "🔍 Checking Docker availability…"
+    $probeOutput = & docker info 2>&1
+    $probeExit   = $LASTEXITCODE
+    $probeText   = ($probeOutput | Out-String)
+
+    if ($probeText -match $pausedPattern -or $probeText -match $daemonDownRegex -or $probeExit -ne 0) {
+        if ($probeText -match $pausedPattern) {
+            Write-ErrorColored '❌ Docker Desktop is manually paused. Unpause it via the Whale menu or Dashboard.'
+        } else {
+            Write-ErrorColored '❌ Docker Desktop is not running.'
+        }
+        Write-Yellow '⚠️  Please start/unpause Docker Desktop and re-run this script.'
+        exit 1
+    }
+} else {
+    Write-ErrorColored '❌ Docker CLI not found on this system.'
+    Write-Yellow '⚠️  Please install Docker Desktop and re-run this script.'
+    exit 1
+}
+Write-Green "✅ Docker is available."
+Write-Host ""
+#endregion
+
 #region Debug toggle
 if ($env:DEBUG -eq 'true') {
     $VerbosePreference = 'Continue'
@@ -39,7 +78,6 @@ if ($env:DEBUG -eq 'true') {
 }
 #endregion
 
-Write-Host ""  # blank line
 
 #region APP_CONFIG_ENDPOINT check
 if ($null -ne $env:APP_CONFIG_ENDPOINT -and $env:APP_CONFIG_ENDPOINT.Trim() -ne '') {
