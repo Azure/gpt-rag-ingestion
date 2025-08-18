@@ -59,15 +59,47 @@ class AppConfigClient:
         no_label_selector = SettingSelector(label_filter=None, key_filter='*')
 
         try:
-            self.client = load(selects=[app_label_selector, base_label_selector, no_label_selector],endpoint=endpoint, credential=self.credential,key_vault_options=AzureAppConfigurationKeyVaultOptions(credential=self.credential))
+            self.client = load(
+                selects=[app_label_selector, base_label_selector, no_label_selector],
+                endpoint=endpoint,
+                credential=self.credential,
+                key_vault_options=AzureAppConfigurationKeyVaultOptions(credential=self.credential),
+            )
         except Exception as e:
-            logging.log("error", f"Unable to connect to Azure App Configuration. Please check APP_CONFIGURATION_URI setting. {e}")
-            try:
-                connection_string = os.environ["AZURE_APPCONFIG_CONNECTION_STRING"]
-                # Connect to Azure App Configuration using a connection string.
-                self.client = load(connection_string=connection_string, key_vault_options=AzureAppConfigurationKeyVaultOptions(credential=self.credential))
-            except Exception as e:
-                raise Exception(f"Unable to connect to Azure App Configuration. Please check your connection string or endpoint. {e}")
+            logging.error(
+                "Unable to connect to Azure App Configuration via endpoint. %s",
+                e,
+                exc_info=True,
+            )
+            # Fallback to connection string if provided
+            connection_string = os.environ.get("AZURE_APPCONFIG_CONNECTION_STRING")
+            if connection_string:
+                try:
+                    self.client = load(
+                        connection_string=connection_string,
+                        key_vault_options=AzureAppConfigurationKeyVaultOptions(credential=self.credential),
+                    )
+                except Exception as e2:
+                    logging.error(
+                        "Unable to connect to Azure App Configuration via connection string. %s",
+                        e2,
+                        exc_info=True,
+                    )
+                    raise
+            else:
+                # As a last resort, allow an empty client-like dict so the app can run with env vars
+                logging.warning(
+                    "AZURE_APPCONFIG_CONNECTION_STRING not set; AppConfig lookups will rely on environment variables only."
+                )
+                # Fallback: minimal shim that reads from os.environ
+                class _EnvOnly:
+                    def __getitem__(self, key):
+                        val = os.environ.get(key)
+                        if val is None:
+                            raise KeyError(key)
+                        return val
+
+                self.client = _EnvOnly()
 
 
     def get(self, key: str, default: Any = None, type: type = str, allow_none : bool = False) -> Any:
@@ -91,9 +123,13 @@ class AppConfigClient:
 
         if value is None:
             try:
-                value = self.get_config_with_retry(name=key)
-            except Exception as e:
-                pass
+                # If self.client behaves like a mapping, try it; otherwise skip
+                if isinstance(self.client, dict):
+                    value = None  # no value from config provider stub
+                else:
+                    value = self.get_config_with_retry(name=key)
+            except Exception:
+                value = None
 
         if value is not None:
             if type is not None:
@@ -134,7 +170,7 @@ class AppConfigClient:
         try:
             return self.client[name]
         except RetryError:
-            pass
+            raise
 
     # Helper functions for reading environment variables
     def read_env_variable(self, var_name, default=None):
