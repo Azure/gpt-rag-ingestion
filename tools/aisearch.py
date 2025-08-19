@@ -61,7 +61,7 @@ class AISearchClient:
                 raise
         return self.clients[index_name]
 
-    async def index_document(self, index_name: str, document: dict):
+    async def index_document(self, index_name: str, document: dict) -> bool:
         """
         Indexes a single document into the specified Azure AI Search index.
 
@@ -73,15 +73,23 @@ class AISearchClient:
 
         try:
             result = await client.upload_documents(documents=[document])
-            if result[0].succeeded:
+            if result and result[0].succeeded:
                 logging.info(f"[aisearch] Successfully indexed document into '{index_name}'.")
+                return True
             else:
-                error_messages = "; ".join([error["error"] for error in result[0].error_messages])
+                # Collect error messages when provided by the SDK
+                try:
+                    error_messages = "; ".join([err.get("error", str(err)) for err in (result[0].error_messages or [])])
+                except Exception:
+                    error_messages = "Unknown error"
                 logging.error(f"[aisearch] Failed to index document into '{index_name}': {error_messages}")
+                return False
         except AzureError as e:
             logging.error(f"[aisearch] AzureError while indexing document into '{index_name}': {e}")
+            return False
         except Exception as e:
             logging.error(f"[aisearch] Unexpected error while indexing document into '{index_name}': {e}")
+            return False
 
     async def delete_document(self, index_name: str, key_field: str, key_value: str):
         """
@@ -102,7 +110,7 @@ class AISearchClient:
         except Exception as e:
             logging.error(f"[aisearch] Unexpected error while deleting document from '{index_name}': {e}")
 
-    async def delete_documents(self, index_name: str, key_field: str, key_values: List[str]):
+    async def delete_documents(self, index_name: str, key_field: str, key_values: List[str]) -> Dict[str, int]:
         """
         Deletes multiple documents from the specified Azure AI Search index.
 
@@ -113,7 +121,7 @@ class AISearchClient:
         """
         if not key_values:
             logging.warning("[aisearch] No key values provided for deletion.")
-            return
+            return {"deleted": 0, "failed": 0}
 
         client = await self.get_search_client(index_name)
 
@@ -139,10 +147,13 @@ class AISearchClient:
             logging.info(f"[aisearch] Deleted {succeeded} documents from '{index_name}'.")
             if failed > 0:
                 logging.warning(f"[aisearch] Failed to delete {failed} documents from '{index_name}'. Check logs for details.")
+            return {"deleted": succeeded, "failed": failed}
         except AzureError as e:
             logging.error(f"[aisearch] AzureError while deleting documents from '{index_name}': {e}")
+            return {"deleted": 0, "failed": len(key_values)}
         except Exception as e:
             logging.error(f"[aisearch] Unexpected error while deleting documents from '{index_name}': {e}")
+            return {"deleted": 0, "failed": len(key_values)}
 
     async def search_documents(
         self,

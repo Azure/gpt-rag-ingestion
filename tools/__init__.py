@@ -19,6 +19,7 @@ __all__ = [
 	"KeyVaultClient",
 	"AISearchClient",
 	"DocumentIntelligenceClient",
+	"SharePointMetadataStreamer",
 ]
 
 
@@ -55,6 +56,11 @@ def __getattr__(name: str) -> Any:  # PEP 562 lazy attribute access
 			DocumentIntelligenceClient as _DocumentIntelligenceClient,
 		)
 		return _DocumentIntelligenceClient
+	if name == "SharePointMetadataStreamer":
+		from .sharepoint import (
+			SharePointMetadataStreamer as _SharePointMetadataStreamer,
+		)
+		return _SharePointMetadataStreamer	
 	raise AttributeError(name)
 
 

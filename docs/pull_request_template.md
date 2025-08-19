@@ -4,7 +4,7 @@
 
 ## Contributing guidelines
 
-Please see [Contributing Guidelines](../CONTRIBUTING.md) before creating your Pull Request.
+Please see [Contributing Guidelines](https://github.com/Azure/GPT-RAG/blob/main/CONTRIBUTING.md) before creating your Pull Request.
 
 ## Type of change
 
