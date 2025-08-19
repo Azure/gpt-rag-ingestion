@@ -23,30 +23,101 @@ The **GPT-RAG Data Ingestion** service automates the processing of diverse docum
 
 The service performs the following steps:
 
-* **Scan sources**: Detects new or updated files in configured locations
-* **Process content**: Chunks and enriches data (text, images, embeddings) for retrieval
+* **Scan sources**: Detects new or updated content in configured sources
+* **Process content**: Chunk and enrich data for retrieval
 * **Index documents**: Writes processed chunks into Azure AI Search
 * **Schedule execution**: Runs on a CRON-based scheduler defined by environment variables
 
-**Supported connectors:** Blob Storage and SharePoint. See [Blob Connector](docs/blob_connector.md) for details.
+## Supported data sources
 
-## Prerequisites
-
-Before deploying the web application, you must provision the infrastructure as described in the [GPT-RAG](https://github.com/azure/gpt-rag/tree/feature/vnext-architecture) repo. This includes creating all necessary Azure resources required to support the application runtime.
-
+- [Blob Storage](docs/blob_data_source.md)
+- [NL2SQL Metadata](docs/nl2sql_data_source.md)
+- SharePoint
 
 ## How to deploy the data ingestion service
 
-Clone this repository and then run:
+### Prerequisites
+
+Provision the infrastructure first by following the GPT-RAG repository instructions [GPT-RAG](https://github.com/azure/gpt-rag/tree/feature/vnext-architecture). This ensures all required Azure resources (e.g., Container App, Storage, AI Search) are in place before deploying the web application.
+
+<details markdown="block">
+<summary>Click to view <strong>software</strong> prerequisites</summary>
+<br>
+The machine used to customize and or deploy the service should have:
+
+* Azure CLI: [Install Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli)
+* Azure Developer CLI (optional, if using azd): [Install azd](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/install-azd)
+* Git: [Download Git](https://git-scm.com/downloads)
+* Python 3.12: [Download Python 3.12](https://www.python.org/downloads/release/python-3120/)
+* Docker CLI: [Install Docker](https://docs.docker.com/get-docker/)
+* VS Code (recommended): [Download VS Code](https://code.visualstudio.com/download)
+</details>
+
+
+<details markdown="block">
+<summary>Click to view <strong>permissions</strong> requirements</summary>
+<br>
+To customize the service, your user should have the following roles:
+
+| Resource                | Role                                | Description                                 |
+| :---------------------- | :---------------------------------- | :------------------------------------------ |
+| App Configuration Store | App Configuration Data Owner        | Full control over configuration settings    |
+| Container Registry      | AcrPush                             | Push and pull container images              |
+| AI Search Service       | Search Index Data Contributor       | Read and write index data                   |
+| Storage Account         | Storage Blob Data Contributor       | Read and write blob data                    |
+| Cosmos DB               | Cosmos DB Built-in Data Contributor | Read and write documents in Cosmos DB       |
+
+To deploy the service, assign these roles to your user or service principal:
+
+| Resource                                   | Role                             | Description           |
+| :----------------------------------------- | :------------------------------- | :-------------------- |
+| App Configuration Store                    | App Configuration Data Reader    | Read config           |
+| Container Registry                         | AcrPush                          | Push images           |
+| Azure Container App                        | Azure Container Apps Contributor | Manage Container Apps |
+
+Ensure the deployment identity has these roles at the correct scope (subscription or resource group).
+
+</details>
+
+### Deployment steps
+
+Make sure you're logged in to Azure before anything else:
+
+```bash
+az login
+```
+
+Clone this repository.
+
+#### If you used `azd provision`
+
+Just run:
+
 ```shell
 azd env refresh
 azd deploy 
 ```
 
 > [!IMPORTANT]
-> When running `azd env refresh`, make sure to use the **same subscription**, **resource group**, and **environment name** that you used during the infrastructure deployment. This ensures consistency across components.
+> Make sure you use the **same** subscription, resource group, environment name, and location from `azd provision`.
 
+#### If you did **not** use `azd provision`
 
+You need to set the App Configuration endpoint and run the deploy script.
+
+#### Bash (Linux/macOS):
+
+```bash
+export APP_CONFIG_ENDPOINT="https://<your-app-config-name>.azconfig.io"
+./scripts/deploy.sh
+```
+
+#### PowerShell (Windows):
+
+```powershell
+$env:APP_CONFIG_ENDPOINT = "https://<your-app-config-name>.azconfig.io"
+.\scripts\deploy.ps1
+```
 
 ## Previous Releases
 
