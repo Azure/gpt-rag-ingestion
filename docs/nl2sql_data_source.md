@@ -4,6 +4,7 @@ The **NL2SQL ingestion process** loads structured metadata from **blob storage**
 
 Each JSON file defines the metadata for one entity (a table, measure, or query).
 
+> [!NOTE]
 > Unlike Azure AI Search indexers, this system uses a **push model**: embeddings and index updates are performed directly by the ingestion service. The older pull-based approach is not used for NL2SQL metadata ingestion.
 
 ## How It Works
