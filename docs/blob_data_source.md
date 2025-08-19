@@ -1,6 +1,6 @@
-# Blob Connector
+# Blob Data Source
 
-The **Blob connector** ingests documents from Azure Blob Storage into Azure AI Search and keeps the index synchronized when files are updated or removed.
+The **Blob Data Source** ingests documents from Azure Blob Storage into Azure AI Search and keeps the index synchronized when files are updated or removed.
 
 ## How it Works
 
