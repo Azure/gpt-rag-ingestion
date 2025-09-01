@@ -95,8 +95,8 @@ fi
 if ! containerRegistryLoginServer="$(get_config_value "CONTAINER_REGISTRY_LOGIN_SERVER")"; then
   missing_keys+=("CONTAINER_REGISTRY_LOGIN_SERVER")
 fi
-if ! resourceGroupName="$(get_config_value "RESOURCE_GROUP_NAME")"; then
-  missing_keys+=("RESOURCE_GROUP_NAME")
+if ! resourceGroupName="$(get_config_value "AZURE_RESOURCE_GROUP")"; then
+  missing_keys+=("AZURE_RESOURCE_GROUP")
 fi
 if ! dataIngestApp="$(get_config_value "DATA_INGEST_APP_NAME")"; then
   missing_keys+=("DATA_INGEST_APP_NAME")
