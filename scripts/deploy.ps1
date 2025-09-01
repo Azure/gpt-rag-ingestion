@@ -7,7 +7,7 @@
     - Checks for APP_CONFIG_ENDPOINT in environment; if missing, tries to fetch from `azd env get-values`.
     - Parses App Configuration name from endpoint.
     - Checks Azure CLI login.
-    - Fetches required keys (CONTAINER_REGISTRY_NAME, CONTAINER_REGISTRY_LOGIN_SERVER, RESOURCE_GROUP_NAME, DATA_INGEST_APP_NAME) from Azure App Configuration with label "gpt-rag".
+    - Fetches required keys (CONTAINER_REGISTRY_NAME, CONTAINER_REGISTRY_LOGIN_SERVER, AZURE_RESOURCE_GROUP, DATA_INGEST_APP_NAME) from Azure App Configuration with label "gpt-rag".
       If a key is not found with original casing, tries uppercase.
     - Logs into ACR, builds Docker image (tag from git short HEAD unless $env:tag is set). If local Docker is unavailable, uses `az acr build`.
     - Pushes image and updates the Container App.
@@ -164,7 +164,7 @@ function Get-ConfigValue {
 }
 
 # Define required keys
-$keyNames = @('CONTAINER_REGISTRY_NAME', 'CONTAINER_REGISTRY_LOGIN_SERVER', 'SUBSCRIPTION_ID', 'RESOURCE_GROUP_NAME', 'RESOURCE_TOKEN', 'DATA_INGEST_APP_NAME')
+$keyNames = @('CONTAINER_REGISTRY_NAME', 'CONTAINER_REGISTRY_LOGIN_SERVER', 'SUBSCRIPTION_ID', 'AZURE_RESOURCE_GROUP', 'RESOURCE_TOKEN', 'DATA_INGEST_APP_NAME')
 $values = @{}
 $missing = @()
 
@@ -192,16 +192,16 @@ if ($missing.Count -gt 0) {
 Write-Green "✅ All App Configuration values retrieved:"
 Write-Host ("   CONTAINER_REGISTRY_NAME = {0}" -f $values.CONTAINER_REGISTRY_NAME)
 Write-Host ("   CONTAINER_REGISTRY_LOGIN_SERVER = {0}" -f $values.CONTAINER_REGISTRY_LOGIN_SERVER)
-Write-Host ("   RESOURCE_GROUP_NAME = {0}" -f $values.RESOURCE_GROUP_NAME)
+Write-Host ("   AZURE_RESOURCE_GROUP = {0}" -f $values.AZURE_RESOURCE_GROUP)
 Write-Host ("   DATA_INGEST_APP_NAME = {0}" -f $values.DATA_INGEST_APP_NAME)
 Write-Host ""
 #endregion
 
 #region Login to ACR
 
-Write-Green ("🔐 Logging into ACR ({0} in {1})…" -f $values.CONTAINER_REGISTRY_NAME, $values.RESOURCE_GROUP_NAME)
+Write-Green ("🔐 Logging into ACR ({0} in {1})…" -f $values.CONTAINER_REGISTRY_NAME, $values.AZURE_RESOURCE_GROUP)
 try {
-    az acr login --name $values.CONTAINER_REGISTRY_NAME --resource-group $values.RESOURCE_GROUP_NAME
+    az acr login --name $values.CONTAINER_REGISTRY_NAME --resource-group $values.AZURE_RESOURCE_GROUP
     Write-Green "✅ Logged into ACR."
 } catch {
     $errMsg = $_.Exception.Message
@@ -293,21 +293,21 @@ Write-Green "🔄 Updating container app registry…"
 try {
     $ids = $(az containerapp identity show `
         --name $values.DATA_INGEST_APP_NAME `
-        --resource-group $values.RESOURCE_GROUP_NAME `
+        --resource-group $values.AZURE_RESOURCE_GROUP `
         --output json) | ConvertFrom-Json
 
     if ($ids.type.tostring().contains("UserAssigned"))
     {
         az containerapp registry set `
             --name $values.DATA_INGEST_APP_NAME `
-            --resource-group $values.RESOURCE_GROUP_NAME `
+            --resource-group $values.AZURE_RESOURCE_GROUP `
             --server "$($values.CONTAINER_REGISTRY_NAME).azurecr.io" `
-            --identity "/subscriptions/$($values.SUBSCRIPTION_ID)/resourceGroups/$($values.RESOURCE_GROUP_NAME)/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uai-ca-$($values.RESOURCE_TOKEN)-dataingest" `
+            --identity "/subscriptions/$($values.SUBSCRIPTION_ID)/resourceGroups/$($values.AZURE_RESOURCE_GROUP)/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uai-ca-$($values.RESOURCE_TOKEN)-dataingest" `
     }
     else {
         az containerapp registry set `
         --name $values.DATA_INGEST_APP_NAME `
-        --resource-group $values.RESOURCE_GROUP_NAME `
+        --resource-group $values.AZURE_RESOURCE_GROUP `
         --server "$($values.CONTAINER_REGISTRY_NAME).azurecr.io" `
         --identity "system"
     }
@@ -325,7 +325,7 @@ Write-Green "🔄 Updating container app…"
 try {
     az containerapp update `
         --name $values.DATA_INGEST_APP_NAME `
-        --resource-group $values.RESOURCE_GROUP_NAME `
+        --resource-group $values.AZURE_RESOURCE_GROUP `
         --image $fullImageName
     Write-Green "✅ Container app updated."
 } catch {
@@ -338,7 +338,7 @@ try {
 Write-Blue "🔍 Fetching current revision…"
 $currentRevision = az containerapp revision list `
     --name $values.DATA_INGEST_APP_NAME `
-    --resource-group $values.RESOURCE_GROUP_NAME `
+    --resource-group $values.AZURE_RESOURCE_GROUP `
     --query "[0].name" -o tsv
 
 #region Restart Container App
@@ -346,7 +346,7 @@ Write-Green "🔄 Restarting container app revision : $currentRevision…"
 try {
     az containerapp revision restart `
         --name $values.DATA_INGEST_APP_NAME `
-        --resource-group $values.RESOURCE_GROUP_NAME `
+        --resource-group $values.AZURE_RESOURCE_GROUP `
         --revision $currentRevision
 
     Write-Green "✅ Container app revision restarted."
