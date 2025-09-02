@@ -31,14 +31,12 @@ class AzureOpenAIClient:
         self.openai_api_base = f"https://{self.openai_service_name}.openai.azure.com"
         self.openai_api_version = os.getenv('AZURE_OPENAI_API_VERSION')
         self.openai_embeddings_deployment = os.getenv('AZURE_OPENAI_EMBEDDING_DEPLOYMENT')
-        self.openai_gpt_deployment = os.getenv('AZURE_OPENAI_CHATGPT_DEPLOYMENT')
         
         # Log a warning if any environment variable is empty
         env_vars = {
             'AZURE_OPENAI_SERVICE_NAME': self.openai_service_name,
             'AZURE_OPENAI_API_VERSION': self.openai_api_version,
             'AZURE_OPENAI_EMBEDDING_DEPLOYMENT': self.openai_embeddings_deployment,
-            'AZURE_OPENAI_CHATGPT_DEPLOYMENT': self.openai_gpt_deployment
         }
         
         for var_name, var_value in env_vars.items():
@@ -83,64 +81,6 @@ class AzureOpenAIClient:
             logging.error(f"[aoai]{self.document_filename} Failed to initialize AzureOpenAI client: {e}")
             raise
 
-    def get_completion(self, prompt, max_tokens=800, retry_after=True):
-        """
-        Generates a completion for the given prompt using the Azure OpenAI service.
-
-        Args:
-            prompt (str): The input prompt for the model.
-            max_tokens (int, optional): The maximum number of tokens to generate. Defaults to 800.
-            retry_after (bool, optional): Flag to determine if the method should retry after rate limiting. Defaults to True.
-
-        Returns:
-            str: The generated completion.
-        """
-        one_liner_prompt = prompt.replace('\n', ' ')
-        logging.debug(f"[aoai]{self.document_filename} Getting completion for prompt: {one_liner_prompt[:100]}")
-
-        # Truncate prompt if needed
-        prompt = self._truncate_input(prompt, self.max_gpt_model_input_tokens)
-
-        try:
-            input_messages = [
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": f"{prompt}"}
-            ]
-
-            response = self.client.chat.completions.create(
-                messages=input_messages,
-                model=self.openai_gpt_deployment,
-                temperature=0.7,
-                top_p=0.95,
-                max_tokens=max_tokens
-            )
-
-            completion = response.choices[0].message.content
-            logging.debug(f"[aoai]{self.document_filename} Completion received successfully.")
-            return completion
-
-        except RateLimitError as e:
-            if not retry_after:
-                logging.error(f"[aoai]{self.document_filename} get_completion: Rate limit error occurred after retries: {e}")
-                raise
-
-            retry_after_ms = e.response.headers.get('retry-after-ms')
-            if retry_after_ms:
-                retry_after_ms = int(retry_after_ms)
-                logging.info(f"[aoai]{self.document_filename} get_completion: Reached rate limit, retrying after {retry_after_ms} ms")
-                time.sleep(retry_after_ms / 1000)
-                return self.get_completion(prompt, max_tokens=max_tokens, retry_after=False)
-            else:
-                logging.error(f"[aoai]{self.document_filename} get_completion: Rate limit error occurred, no 'retry-after-ms' provided: {e}")
-                raise
-
-        except ClientAuthenticationError as e:
-            logging.error(f"[aoai]{self.document_filename} get_completion: Authentication failed: {e}")
-            raise
-
-        except Exception as e:
-            logging.error(f"[aoai]{self.document_filename} get_completion: An unexpected error occurred: {e}")
-            raise
 
     def get_embeddings(self, text, retry_after=True):
         """
