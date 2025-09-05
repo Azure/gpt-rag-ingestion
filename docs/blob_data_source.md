@@ -1,6 +1,6 @@
 # Blob Data Source
 
-The **Blob Data Source** ingests documents from Azure Blob Storage into Azure AI Search and keeps the index synchronized when files are updated or removed.
+The data ingestion service imports documents from the Blob Data Source, synchronizing content from Azure Blob Storage into Azure AI Search and keeping the index up to date when files are added, updated, or removed.
 
 ## How it Works
 
