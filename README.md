@@ -19,7 +19,7 @@ Part of the [GPT-RAG](https://github.com/Azure/gpt-rag) solution.
 
 The **GPT-RAG Data Ingestion** service automates the processing of diverse document types—such as PDFs, images, spreadsheets, transcripts, and SharePoint files—preparing them for indexing in Azure AI Search. It uses intelligent chunking strategies tailored to each format, generates text and image embeddings, and enables rich, multimodal retrieval experies for agent-based RAG applications.
 
-## How Data Ingestion Works
+## How data ingestion works
 
 The service performs the following steps:
 
@@ -33,6 +33,21 @@ The service performs the following steps:
 - [Blob Storage](docs/blob_data_source.md)
 - [NL2SQL Metadata](docs/nl2sql_data_source.md)
 - SharePoint
+
+## Supported formats and chunkers
+
+The ingestion service selects a chunker based on the file extension, ensuring each document is processed with the most suitable method.
+
+* **`.pdf` files** — Processed by the [DocAnalysisChunker](chunking/chunkers/doc_analysis_chunker.py) using the Document Intelligence API. Structured elements such as tables and sections are extracted and converted into Markdown, then segmented with LangChain splitters. When Document Intelligence API 4.0 is enabled, `.docx` and `.pptx` files are handled the same way.
+
+* **Image files** (`.bmp`, `.png`, `.jpeg`, `.tiff`) — The [DocAnalysisChunker](chunking/chunkers/doc_analysis_chunker.py) applies OCR to extract text before chunking.
+  
+* **Text-based files** (`.txt`, `.md`, `.json`, `.csv`) — Processed by the [LangChainChunker](chunking/chunkers/langchain_chunker.py), which splits content into paragraphs or sections.
+
+* **Specialized formats**:
+
+  * `.vtt` (video transcripts) — Handled by the [TranscriptionChunker](chunking/chunkers/transcription_chunker.py), which splits content by time codes.
+  * `.xlsx` (spreadsheets) — Processed by the [SpreadsheetChunker](chunking/chunkers/spreadsheet_chunker.py), chunked by rows or sheets.
 
 ## How to deploy the data ingestion service
 
