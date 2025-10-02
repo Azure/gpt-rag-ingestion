@@ -53,7 +53,7 @@ The ingestion service selects a chunker based on the file extension, ensuring ea
 
 ### Prerequisites
 
-Provision the infrastructure first by following the GPT-RAG repository instructions [GPT-RAG](https://github.com/azure/gpt-rag/tree/feature/vnext-architecture). This ensures all required Azure resources (e.g., Container App, Storage, AI Search) are in place before deploying the web application.
+Before deploying the application, you must provision the infrastructure as described in the [GPT-RAG](https://github.com/azure/gpt-rag) repo. This includes creating all necessary Azure resources required to support the application runtime.
 
 <details markdown="block">
 <summary>Click to view <strong>software</strong> prerequisites</summary>
@@ -94,7 +94,7 @@ Ensure the deployment identity has these roles at the correct scope (subscriptio
 
 </details>
 
-### Deployment steps
+## Deployment steps
 
 Make sure you're logged in to Azure before anything else:
 
@@ -102,37 +102,43 @@ Make sure you're logged in to Azure before anything else:
 az login
 ```
 
-Clone this repository.
+### Deploying the app with azd (recommended)
 
-#### If you used `azd provision`
+Initialize the template:
+```shell
+azd init -t azure/gpt-rag-ingestion 
+```
+> [!IMPORTANT]
+> Use the **same environment name** with `azd init` as in the infrastructure deployment to keep components consistent.
 
-Just run:
-
+Update env variables then deploy:
 ```shell
 azd env refresh
 azd deploy 
 ```
-
 > [!IMPORTANT]
-> Make sure you use the **same** subscription, resource group, environment name, and location from `azd provision`.
+> Run `azd env refresh` with the **same subscription** and **resource group** used in the infrastructure deployment.
 
-#### If you did **not** use `azd provision`
+### Deploying the app with a shell script
 
-You need to set the App Configuration endpoint and run the deploy script.
+To deploy using a script, first clone the repository, set the App Configuration endpoint, and then run the deployment script.
 
-#### Bash (Linux/macOS):
-
-```bash
-export APP_CONFIG_ENDPOINT="https://<your-app-config-name>.azconfig.io"
-./scripts/deploy.sh
-```
-
-#### PowerShell (Windows):
+##### PowerShell (Windows)
 
 ```powershell
+git clone https://github.com/Azure/gpt-rag-ingestion.git
 $env:APP_CONFIG_ENDPOINT = "https://<your-app-config-name>.azconfig.io"
+cd gpt-rag-ingestion
 .\scripts\deploy.ps1
 ```
+
+##### Bash (Linux/macOS)
+```bash
+git clone https://github.com/Azure/gpt-rag-ingestion.git
+export APP_CONFIG_ENDPOINT="https://<your-app-config-name>.azconfig.io"
+cd gpt-rag-ingestion
+./scripts/deploy.sh
+````
 
 ## Previous Releases
 
@@ -142,7 +148,7 @@ $env:APP_CONFIG_ENDPOINT = "https://<your-app-config-name>.azconfig.io"
 
 ## 🤝 Contributing
 
-We appreciate contributions! See [CONTRIBUTING.md](https://github.com/Azure/GPT-RAG/blob/main/CONTRIBUTING.md) for guidelines on the Contributor License Agreement (CLA), code of conduct, and submitting pull requests.
+We appreciate contributions! See [CONTRIBUTING](https://github.com/Azure/gpt-rag/blob/main/CONTRIBUTING.md) for guidelines on submitting pull requests.
 
 ## Trademarks
 
