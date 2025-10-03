@@ -30,31 +30,30 @@ class SharePointDocumentIngestor:
     """
     def __init__(self):
         # Connector settings
-        self.connector_enabled = app_config_client.get("SHAREPOINT_CONNECTOR_ENABLED", "false").lower() == "true"
+        self.connector_enabled = app_config_client.get("SHAREPOINT_CONNECTOR_ENABLED", default="false").lower() == "true"
         self.tenant_id = app_config_client.get("SHAREPOINT_TENANT_ID")
         self.client_id = app_config_client.get("SHAREPOINT_CLIENT_ID")
         self.site_domain = app_config_client.get("SHAREPOINT_SITE_DOMAIN")
         self.site_name = app_config_client.get("SHAREPOINT_SITE_NAME")
-        self.sub_site_name = app_config_client.get("SHAREPOINT_SUB_SITE_NAME")
-        #self.drive_id = app_config_client.get("SHAREPOINT_DRIVE_ID")
+        self.sub_site_name = app_config_client.get("SHAREPOINT_SUB_SITE_NAME", default=None, allow_none=True)
         self.drive_name = app_config_client.get("SHAREPOINT_DRIVE_NAME")
 
-        paths_to_traverse = app_config_client.get("SHAREPOINT_SUBFOLDERS_NAMES")
+        paths_to_traverse = app_config_client.get("SHAREPOINT_SUBFOLDERS_NAMES", default=None, allow_none=True)
         if paths_to_traverse:
             self.paths_to_traverse = [name.strip() for name in paths_to_traverse.split(",")]
         else:
             self.paths_to_traverse = []
 
-        folder_regex = app_config_client.get("SHAREPOINT_SUBFOLDERS_REGEX")
+        folder_regex = app_config_client.get("SHAREPOINT_SUBFOLDERS_REGEX", default=None, allow_none=True)
         if folder_regex:
             self.folder_regex = folder_regex.strip()
         else:
             self.folder_regex = ".*"
 
-        self.sharepoint_client_secret_name = app_config_client.get("SHAREPOINT_CLIENT_SECRET_NAME", "sharepointClientSecret")
-        self.index_name = app_config_client.get("AZURE_SEARCH_SHAREPOINT_INDEX_NAME", "ragindex")
+        self.sharepoint_client_secret_name = app_config_client.get("SHAREPOINT_CLIENT_SECRET_NAME", default="sharepointClientSecret")
+        self.index_name = app_config_client.get("SEARCH_RAG_INDEX_NAME", default="ragindex")
 
-        env_formats = app_config_client.get("SHAREPOINT_FILES_FORMAT")
+        env_formats = app_config_client.get("SHAREPOINT_FILES_FORMAT", default=None, allow_none=True)
         if env_formats:
             self.file_formats = [fmt.strip() for fmt in env_formats.split(",")]
         else:
@@ -82,12 +81,13 @@ class SharePointDocumentIngestor:
         self.progress_interval = 20
 
     async def initialize_clients(self) -> bool:
+        logging.info("[sharepoint_files_indexer] Initializing clients...")
         try:
             self.keyvault_client = KeyVaultClient()
             self.client_secret = await self.keyvault_client.get_secret(self.sharepoint_client_secret_name)
-            logging.debug("[sharepoint_files_indexer] Retrieved SharePoint client secret from Key Vault.")
+            logging.info("[sharepoint_files_indexer] Retrieved SharePoint client secret from Key Vault.")
         except Exception as e:
-            logging.error(f"[sharepoint_files_indexer] Failed to retrieve secret: {e}")
+            logging.error(f"[sharepoint_files_indexer] Failed to retrieve secret: {e}", exc_info=True)
             return False
         finally:
             if self.keyvault_client:
@@ -102,10 +102,13 @@ class SharePointDocumentIngestor:
         }.items() if not val]
 
         if missing:
-            logging.error(f"[indexer] Missing environment variables: {', '.join(missing)}")
+            logging.error(f"[sharepoint_files_indexer] Missing environment variables: {', '.join(missing)}")
             return False
 
+        logging.info("[sharepoint_files_indexer] All required environment variables present.")
+
         # Initialize metadata streamer
+        logging.info("[sharepoint_files_indexer] Initializing SharePointMetadataStreamer...")
         self.sharepoint_data_reader = SharePointMetadataStreamer(
             tenant_id=self.tenant_id,
             client_id=self.client_id,
@@ -113,23 +116,27 @@ class SharePointDocumentIngestor:
         )
         try:
             # Authenticate and get site ID for reader
+            logging.info("[sharepoint_files_indexer] Authenticating with Microsoft Graph...")
             self.sharepoint_data_reader._msgraph_auth()
+            logging.info("[sharepoint_files_indexer] Getting site and drive IDs...")
             self.site_id, self.drive_id = self.sharepoint_data_reader._get_site_and_drive_ids(
                 self.site_domain, self.site_name, self.sub_site_name, self.drive_name
                 )
-            logging.debug("[indexer] Authenticated with Microsoft Graph and obtained site ID.")
+            logging.info(f"[sharepoint_files_indexer] Authenticated with Microsoft Graph. Site ID: {self.site_id}, Drive ID: {self.drive_id}")
         except Exception as e:
-            logging.error(f"[indexer] Graph authentication or site lookup failed: {e}")
+            logging.error(f"[sharepoint_files_indexer] Graph authentication or site lookup failed: {e}", exc_info=True)
             return False
 
         # Initialize Azure Search client
         try:
+            logging.info("[sharepoint_files_indexer] Initializing Azure Search client...")
             self.search_client = AISearchClient()
-            logging.debug("[indexer] Initialized Azure Search client.")
+            logging.info("[sharepoint_files_indexer] Initialized Azure Search client successfully.")
         except Exception as e:
-            logging.error(f"[indexer] Failed to initialize Azure Search client: {e}")
+            logging.error(f"[sharepoint_files_indexer] Failed to initialize Azure Search client: {e}", exc_info=True)
             return False
 
+        logging.info("[sharepoint_files_indexer] All clients initialized successfully.")
         return True
 
     async def delete_existing_chunks(self, existing_chunks: Dict[str, Any], file_name: str) -> None:
@@ -190,7 +197,7 @@ class SharePointDocumentIngestor:
                         search_text="*",
                         filter_str=f"parent_id eq '{sp_id}' and source eq 'sharepoint'",
                         select_fields=["id", "metadata_storage_last_modified"],
-                        top=0,
+                        top=1,
                     )
                 except Exception as e:
                     raise RuntimeError(f"Failed to search existing chunks: {e}")

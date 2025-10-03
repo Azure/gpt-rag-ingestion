@@ -4,7 +4,7 @@ import asyncio
 import aiohttp
 from collections import defaultdict
 from typing import Any, Dict, List, Optional
-from tools import KeyVaultClient, AISearchClient
+from tools import KeyVaultClient, AISearchClient, SharePointMetadataStreamer
 from dependencies import get_config
 
 app_config_client = get_config()
@@ -19,19 +19,22 @@ RESET_COLOR   = "\033[0m"
 class SharePointDeletedItemsCleaner:
     def __init__(self):
         # Load environment
-        self.connector_enabled = app_config_client.get("SHAREPOINT_CONNECTOR_ENABLED", "false").lower() == "true"
+        self.connector_enabled = app_config_client.get("SHAREPOINT_CONNECTOR_ENABLED", default="false").lower() == "true"
         self.tenant_id = app_config_client.get("SHAREPOINT_TENANT_ID")
         self.client_id = app_config_client.get("SHAREPOINT_CLIENT_ID")
-        self.client_secret_name = app_config_client.get("SHAREPOINT_CLIENT_SECRET_NAME", "sharepointClientSecret")
-        self.index_name = app_config_client.get("AZURE_SEARCH_SHAREPOINT_INDEX_NAME", "ragindex")
+        self.client_secret_name = app_config_client.get("SHAREPOINT_CLIENT_SECRET_NAME", default="sharepointClientSecret")
+        self.index_name = app_config_client.get("SEARCH_RAG_INDEX_NAME", default="ragindex")
         self.site_domain = app_config_client.get("SHAREPOINT_SITE_DOMAIN")
         self.site_name = app_config_client.get("SHAREPOINT_SITE_NAME")
-        self.drive_id = app_config_client.get("SHAREPOINT_DRIVE_ID")
+        self.sub_site_name = app_config_client.get("SHAREPOINT_SUB_SITE_NAME", default=None, allow_none=True)
+        self.drive_name = app_config_client.get("SHAREPOINT_DRIVE_NAME")
 
         self.keyvault_client: Optional[KeyVaultClient] = None
         self.client_secret: Optional[str] = None
         self.search_client: Optional[AISearchClient] = None
+        self.sharepoint_data_reader: Optional[SharePointMetadataStreamer] = None
         self.site_id: Optional[str] = None      # Graph site ID
+        self.drive_id: Optional[str] = None     # Will be resolved from drive_name
         self.access_token: Optional[str] = None # Graph access token
 
     async def initialize_clients(self, session: aiohttp.ClientSession) -> bool:
@@ -54,7 +57,8 @@ class SharePointDeletedItemsCleaner:
             "SHAREPOINT_CLIENT_ID": self.client_id,
             "SHAREPOINT_SITE_DOMAIN": self.site_domain,
             "SHAREPOINT_SITE_NAME": self.site_name,
-            "AZURE_SEARCH_SHAREPOINT_INDEX_NAME": self.index_name,
+            "SHAREPOINT_DRIVE_NAME": self.drive_name,
+            "SEARCH_RAG_INDEX_NAME": self.index_name,
         }
         missing = [k for k, v in required.items() if not v]
         if missing:
@@ -69,12 +73,21 @@ class SharePointDeletedItemsCleaner:
             logging.error(ERROR_COLOR + f"[sharepoint_purge] AISearchClient init failed: {e}" + RESET_COLOR)
             return False
 
-        # If no drive_id and we already have site_id, fetch default drive
-        if not self.drive_id and self.site_id:
-            fetched = await self._fetch_default_drive_id(session)
-            if not fetched:
-                logging.error(ERROR_COLOR + "[sharepoint_purge] Could not determine drive ID." + RESET_COLOR)
-                return False
+        # Initialize SharePointMetadataStreamer to resolve drive_id from drive_name
+        try:
+            self.sharepoint_data_reader = SharePointMetadataStreamer(
+                tenant_id=self.tenant_id,
+                client_id=self.client_id,
+                client_secret=self.client_secret,
+            )
+            self.sharepoint_data_reader._msgraph_auth()
+            self.site_id, self.drive_id = self.sharepoint_data_reader._get_site_and_drive_ids(
+                self.site_domain, self.site_name, self.sub_site_name, self.drive_name
+            )
+            logging.info(INFO_COLOR + f"[sharepoint_purge] Resolved site_id: {self.site_id}, drive_id: {self.drive_id}" + RESET_COLOR)
+        except Exception as e:
+            logging.error(ERROR_COLOR + f"[sharepoint_purge] Failed to resolve site and drive IDs: {e}" + RESET_COLOR)
+            return False
 
         return True
 
@@ -101,45 +114,6 @@ class SharePointDeletedItemsCleaner:
         except Exception as e:
             logging.error(ERROR_COLOR + f"[sharepoint_purge] Exception requesting token: {e}" + RESET_COLOR)
             return None
-
-    async def get_site_id(self, session: aiohttp.ClientSession) -> Optional[str]:
-        logging.debug(DEBUG_COLOR + "[sharepoint_purge] Fetching site ID..." + RESET_COLOR)
-        url = f"https://graph.microsoft.com/v1.0/sites/{self.site_domain}:/sites/{self.site_name}?$select=id"
-        headers = {"Authorization": f"Bearer {self.access_token}"}
-
-        try:
-            async with session.get(url, headers=headers) as resp:
-                if resp.status == 200:
-                    json_resp = await resp.json()
-                    site_id = json_resp.get("id")
-                    logging.info(INFO_COLOR + f"[sharepoint_purge] Retrieved site ID: {site_id}" + RESET_COLOR)
-                    return site_id
-                text = await resp.text()
-                logging.error(ERROR_COLOR + f"[sharepoint_purge] Site ID request failed {resp.status}: {text}" + RESET_COLOR)
-                return None
-        except Exception as e:
-            logging.error(ERROR_COLOR + f"[sharepoint_purge] Exception fetching site ID: {e}" + RESET_COLOR)
-            return None
-
-    async def _fetch_default_drive_id(self, session: aiohttp.ClientSession) -> bool:
-        logging.debug(DEBUG_COLOR + "[sharepoint_purge] Fetching default drive ID..." + RESET_COLOR)
-        url = f"https://graph.microsoft.com/v1.0/sites/{self.site_id}/drive?$select=id"
-        headers = {"Authorization": f"Bearer {self.access_token}"}
-        try:
-            async with session.get(url, headers=headers) as resp:
-                if resp.status == 200:
-                    json_resp = await resp.json()
-                    drive_id = json_resp.get("id")
-                    if drive_id:
-                        self.drive_id = drive_id
-                        logging.info(INFO_COLOR + f"[sharepoint_purge] Using default drive ID: {self.drive_id}" + RESET_COLOR)
-                        return True
-                text = await resp.text()
-                logging.error(ERROR_COLOR + f"[sharepoint_purge] Default drive ID request failed {resp.status}: {text}" + RESET_COLOR)
-                return False
-        except Exception as e:
-            logging.error(ERROR_COLOR + f"[sharepoint_purge] Exception fetching default drive ID: {e}" + RESET_COLOR)
-            return False
 
     async def _fetch_all_indexed_docs(self) -> List[Dict[str, Any]]:
         logging.info(WARNING_COLOR + "[sharepoint_purge] Fetching indexed documents..." + RESET_COLOR)
@@ -174,7 +148,7 @@ class SharePointDeletedItemsCleaner:
         retries: int = 3
     ) -> bool:
         if not self.drive_id:
-            logging.error(f"[sharepoint_purge] SHAREPOINT_DRIVE_ID not set; cannot check item existence.")
+            logging.error(ERROR_COLOR + f"[sharepoint_purge] SHAREPOINT_DRIVE_NAME could not be resolved to drive_id; cannot check item existence." + RESET_COLOR)
             return False
 
         url = f"https://graph.microsoft.com/v1.0/sites/{self.site_id}/drives/{self.drive_id}/items/{sharepoint_item_id}"
@@ -211,21 +185,15 @@ class SharePointDeletedItemsCleaner:
 
         session = aiohttp.ClientSession()
         try:
+            # Initialize clients (which now resolves drive_id from drive_name)
             if not await self.initialize_clients(session):
                 return
 
+            # Get access token for Graph API calls
             token = await self.get_graph_access_token(session)
             if not token:
                 return
             self.access_token = token
-
-            site_id = await self.get_site_id(session)
-            if not site_id:
-                return
-            self.site_id = site_id
-
-            if not await self.initialize_clients(session):
-                return
 
             docs = await self._fetch_all_indexed_docs()
             if not docs:
@@ -274,8 +242,3 @@ class SharePointDeletedItemsCleaner:
 
     async def run(self) -> None:
         await self.purge_deleted_files()
-
-# Example usage:
-# if __name__ == "__main__":
-#     cleaner = SharePointDeletedItemsCleaner()
-#     asyncio.run(cleaner.run())
