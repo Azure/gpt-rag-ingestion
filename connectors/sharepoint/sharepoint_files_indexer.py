@@ -145,7 +145,7 @@ class SharepointFilesIndexer:
                     search_text="*",
                     filter_str=f"parent_id eq '{sharepoint_id}' and source eq 'sharepoint'",
                     select_fields=['id', 'metadata_storage_last_modified', 'metadata_storage_name'],
-                    top=0
+                    top=1
                 )
             except Exception as e:
                 logging.error(f"[sharepoint_files_indexer] Failed to search existing chunks for '{file_name}': {e}")
