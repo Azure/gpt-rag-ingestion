@@ -3,6 +3,10 @@
 All notable changes to this project will be documented in this file.  
 This format follows [Keep a Changelog](https://keepachangelog.com/) and adheres to [Semantic Versioning](https://semver.org/).
 
+## [TBD] – TBD
+### Added
+- Support to Sharepoint Lists
+
 ## [v2.0.4] – 2025-08-31
 ### Changed
 - Standardized resource group variable as `AZURE_RESOURCE_GROUP`. [#365](https://github.com/Azure/GPT-RAG/issues/365)
