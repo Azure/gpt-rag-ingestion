@@ -10,6 +10,7 @@ import os
 import re
 import ast
 import hashlib
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
@@ -114,16 +115,39 @@ class BlobStorageDocumentIndexer:
         self._credential: Optional[ChainedTokenCredential] = None
         self._blob_service: Optional[BlobServiceClient] = None
         self._search_client: Optional[AsyncSearchClient] = None
+        self._storage_writable: Optional[bool] = None
+
+        # Logging + blob operation tuning (mirrors SharePoint indexer defaults)
+        self._blob_op_timeout_s = float(self._app.get("BLOB_OP_TIMEOUT_SECONDS", 20.0))
+        self._run_summary_timeout_s = float(self._app.get("RUN_SUMMARY_TIMEOUT_SECONDS", 30.0))
+        self._run_summary_total_timeout_s = float(self._app.get("RUN_SUMMARY_TOTAL_TIMEOUT_SECONDS", 45.0))
+
+    def _log_event(self, level: int, event: str, **fields: Any) -> None:
+        """Emit structured logs that match the SharePoint indexer format."""
+        payload: Dict[str, Any] = {"event": event}
+        for key, value in fields.items():
+            if value is None:
+                continue
+            if isinstance(value, datetime):
+                payload[key] = value.isoformat()
+            else:
+                payload[key] = value
+        try:
+            message = json.dumps(payload, ensure_ascii=False)
+        except TypeError:
+            safe_payload = {k: str(v) for k, v in payload.items()}
+            message = json.dumps(safe_payload, ensure_ascii=False)
+        logging.log(level, f"[{self.cfg.indexer_name}] {message}")
 
     # ---------- Clients ----------
     async def _ensure_clients(self):
         if not self._credential:
-            client_id = os.environ.get("AZURE_CLIENT_ID", None)
+            client_id = self._app.get("AZURE_CLIENT_ID", None, allow_none=True)
             self._credential = ChainedTokenCredential(
                 AzureCliCredential(),
                 ManagedIdentityCredential(client_id=client_id)
             )
-        if not self._blob_service:
+        if not self._blob_service and self.cfg.storage_account_name:
             acc = self.cfg.storage_account_name
             self._blob_service = BlobServiceClient(
                 f"https://{acc}.blob.core.windows.net", credential=self._credential
@@ -134,30 +158,61 @@ class BlobStorageDocumentIndexer:
                 index_name=self.cfg.search_index_name,
                 credential=self._credential,
             )
+        if self._storage_writable is None:
+            await self._init_storage_logging_guard()
 
     # ---------- Public entrypoint ----------
     async def run(self) -> None:
         await self._ensure_clients()
         # create a runId that matches the run summary filename and capture start time (ISO)
-        run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        start_iso = _utc_now()
+        run_started_at = datetime.now(timezone.utc)
+        run_id = run_started_at.strftime("%Y%m%dT%H%M%SZ")
+        start_iso = run_started_at.isoformat()
         logging.info(f"[{self.cfg.indexer_name}] Starting @ {run_id}")
+        self._log_event(
+            logging.INFO,
+            "RUN-START",
+            runId=run_id,
+            sourceContainer=self.cfg.source_container,
+            blobPrefix=self.cfg.blob_prefix,
+            maxConcurrency=self.cfg.max_concurrency,
+            batchSize=self.cfg.batch_size,
+        )
+        to_process: List[Tuple[str, datetime, str]] = []
+        source_files: int = 0
+        success = 0
+        failed = 0
+        total_chunks = 0
+
+        summary: Dict[str, Any] = {
+            "indexerType": self.cfg.indexer_name,
+            "runId": run_id,
+            "runStartedAt": start_iso,
+            "runFinishedAt": None,
+            "sourceContainer": self.cfg.source_container,
+            "sourceFiles": 0,
+            "candidates": 0,
+            "itemsDiscovered": 0,
+            "candidateItems": 0,
+            "itemsProcessed": 0,
+            "indexedItems": 0,
+            "skippedNoChange": 0,
+            "success": 0,
+            "failed": 0,
+            "totalChunksUploaded": 0,
+            "status": "started",
+        }
+        await self._write_run_summary_safely(run_id, summary)
 
         try:
-            # ensure log containers exist (best-effort)
-            await self._ensure_container(self.cfg.jobs_log_container)
+            await self._ensure_log_container()
 
-            # Load current index snapshot for dedup/TS comparisons
             latest_map = await self._load_latest_index_state()
             logging.info(
                 f"[{self.cfg.indexer_name}] Loaded index state for {len(latest_map)} parent_id keys"
             )
 
-            # Enumerate blobs to consider
             container = self._blob_service.get_container_client(self.cfg.source_container)
-            to_process: List[Tuple[str, datetime, str]] = []
-            source_files: int = 0
-
             async for b in container.list_blobs(name_starts_with=self.cfg.blob_prefix):
                 if getattr(b, "size", None) == 0 and b.name.endswith("/"):
                     continue
@@ -174,33 +229,79 @@ class BlobStorageDocumentIndexer:
                     ))
 
             logging.info(f"[{self.cfg.indexer_name}] Candidates: {len(to_process)}")
+            summary.update({
+                "sourceFiles": source_files,
+                "candidates": len(to_process),
+                "itemsDiscovered": source_files,
+                "candidateItems": len(to_process),
+                "skippedNoChange": max(source_files - len(to_process), 0),
+            })
+            await self._write_run_summary_safely(run_id, summary)
 
-            # Process in parallel, pass run_id down
             results = await _gather_limited(
                 (self._process_one(name, lm, ctype, run_id) for (name, lm, ctype) in to_process),
                 self.cfg.max_concurrency,
             )
 
-            # Summarize
             success = sum(1 for r in results if not isinstance(r, Exception) and r.get("status") == "success")
             failed = sum(1 for r in results if isinstance(r, Exception) or (r and r.get("status") == "error"))
             total_chunks = sum(r.get("chunks", 0) for r in results if isinstance(r, dict))
 
-            summary = {
-                "indexerType": self.cfg.indexer_name,
-                "runId": run_id,  # include runId in summary too
-                "runStartedAt": start_iso,
-                "runFinishedAt": _utc_now(),
-                "sourceContainer": self.cfg.source_container,
-                "sourceFiles": source_files,
-                "candidates": len(to_process),
+            summary.update({
+                "itemsProcessed": len(to_process),
+                "indexedItems": success,
                 "success": success,
                 "failed": failed,
                 "totalChunksUploaded": total_chunks,
-            }
-            await self._write_run_summary(self.cfg.jobs_log_container, summary, run_id)
-            logging.info(f"[{self.cfg.indexer_name}] Summary: {json.dumps(summary)}")
+                "status": "finishing",
+            })
+            await self._write_run_summary_safely(run_id, summary)
+
+        except asyncio.CancelledError:
+            summary["status"] = "cancelled"
+            summary["runFinishedAt"] = _utc_now()
+            await self._write_run_summary_safely(run_id, summary)
+            logging.info(f"[{self.cfg.indexer_name}] Run cancelled: runId={run_id}")
+            self._log_event(logging.WARNING, "RUN-CANCELLED", runId=run_id)
+            raise
+        except Exception as exc:
+            logging.exception(f"[{self.cfg.indexer_name}] run() failed")
+            summary["error"] = "see function logs for traceback"
+            summary["status"] = "failed"
+            self._log_event(logging.ERROR, "RUN-ERROR", runId=run_id, error=str(exc))
         finally:
+            summary.update({
+                "sourceFiles": max(summary.get("sourceFiles", 0), source_files),
+                "candidates": max(summary.get("candidates", 0), len(to_process)),
+                "itemsDiscovered": max(summary.get("itemsDiscovered", 0), source_files),
+                "candidateItems": max(summary.get("candidateItems", 0), len(to_process)),
+                "itemsProcessed": max(summary.get("itemsProcessed", 0), len(to_process)),
+                "indexedItems": max(summary.get("indexedItems", 0), success),
+                "skippedNoChange": max(summary.get("skippedNoChange", 0), max(source_files - len(to_process), 0)),
+                "success": max(summary.get("success", 0), success),
+                "failed": max(summary.get("failed", 0), failed),
+                "totalChunksUploaded": max(summary.get("totalChunksUploaded", 0), total_chunks),
+                "runFinishedAt": _utc_now(),
+            })
+            if summary.get("status") not in {"failed", "cancelled"}:
+                summary["status"] = "finished"
+
+            await self._write_run_summary_safely(run_id, summary)
+            logging.info(f"[{self.cfg.indexer_name}] Summary(final): {json.dumps(summary)}")
+            duration_seconds = max((datetime.now(timezone.utc) - run_started_at).total_seconds(), 0.0)
+            self._log_event(
+                logging.INFO,
+                "RUN-COMPLETE",
+                runId=run_id,
+                status=summary.get("status"),
+                sourceFiles=summary.get("sourceFiles"),
+                itemsDiscovered=summary.get("itemsDiscovered"),
+                indexedItems=summary.get("indexedItems"),
+                skippedNoChange=summary.get("skippedNoChange"),
+                failed=summary.get("failed"),
+                totalChunksUploaded=summary.get("totalChunksUploaded"),
+                durationSeconds=duration_seconds,
+            )
             await self._close_clients_safely()
 
     async def _close_clients_safely(self):
@@ -236,7 +337,7 @@ class BlobStorageDocumentIndexer:
         container_client = self._blob_service.get_container_client(self.cfg.source_container)
         blob_client = container_client.get_blob_client(blob_name)
         file_url = f"https://{self.cfg.storage_account_name}.blob.core.windows.net/{self.cfg.source_container}/{blob_name}"
-        file_log_key = parent_id.replace("/", "-")
+        file_log_key = self._sanitize_key_part(parent_id.lstrip("/")) or "doc"
 
         per_file_log = {
             "indexerType": self.cfg.indexer_name,
@@ -294,7 +395,19 @@ class BlobStorageDocumentIndexer:
                 "chunks": len(docs),
                 "finishedAt": _utc_now(),
             })
-            await self._write_file_log(self.cfg.jobs_log_container, f"{file_log_key}.json", per_file_log)
+            await self._write_file_log(f"{file_log_key}.json", per_file_log)
+            self._log_event(
+                logging.INFO,
+                "ITEM-COMPLETE",
+                runId=run_id,
+                blobName=blob_name,
+                parentId=parent_id,
+                status="uploaded",
+                totalChunks=len(docs),
+                fileUrl=file_url,
+                contentType=content_type,
+                lastModified=last_modified,
+            )
             return {"status": "success", "chunks": len(docs)}
 
         except Exception as e:
@@ -304,7 +417,18 @@ class BlobStorageDocumentIndexer:
                 "error": str(e),
                 "finishedAt": _utc_now(),
             })
-            await self._write_file_log(self.cfg.jobs_log_container, f"{file_log_key}.json", per_file_log)
+            await self._write_file_log(f"{file_log_key}.json", per_file_log)
+            self._log_event(
+                logging.ERROR,
+                "ITEM-ERROR",
+                runId=run_id,
+                blobName=blob_name,
+                parentId=parent_id,
+                status="error",
+                fileUrl=file_url,
+                contentType=content_type,
+                error=str(e),
+            )
             return {"status": "error", "error": str(e)}
 
     def _to_search_doc(
@@ -423,6 +547,50 @@ class BlobStorageDocumentIndexer:
                 delay = min(delay * 2, 30)
 
     # ---------- Logging helpers ----------
+    async def _init_storage_logging_guard(self) -> None:
+        """Check once whether we can write to the jobs log container."""
+        if self._storage_writable is not None:
+            return
+
+        disable_logs = str(self._app.get("DISABLE_STORAGE_LOGS", "", allow_none=True) or "").strip().lower()
+        if disable_logs in {"1", "true", "yes"}:
+            self._storage_writable = False
+            logging.info(f"[{self.cfg.indexer_name}] storage logs disabled by env (DISABLE_STORAGE_LOGS)")
+            return
+
+        if not self.cfg.storage_account_name or not self._blob_service:
+            self._storage_writable = False
+            logging.info(f"[{self.cfg.indexer_name}] storage logs disabled (no storage account/client)")
+            return
+
+        cc = self._blob_service.get_container_client(self.cfg.jobs_log_container)
+        try:
+            exists = await cc.exists()
+            if not exists:
+                await cc.create_container()
+
+            probe_name = f"{self.cfg.indexer_name}/_probe_{uuid.uuid4().hex}.tmp"
+            await cc.upload_blob(name=probe_name, data=b"", overwrite=True)
+            try:
+                await cc.delete_blob(probe_name)
+            except Exception:
+                logging.debug(f"[{self.cfg.indexer_name}] probe blob delete failed (ignored)", exc_info=True)
+
+            self._storage_writable = True
+            logging.info(f"[{self.cfg.indexer_name}] storage logs enabled")
+        except Exception as exc:
+            self._storage_writable = False
+            logging.warning(f"[{self.cfg.indexer_name}] storage logs disabled (probe failed): {exc}")
+
+    async def _ensure_log_container(self):
+        if not self._storage_writable:
+            return
+        try:
+            cc = self._blob_service.get_container_client(self.cfg.jobs_log_container)
+            await cc.create_container()
+        except Exception:
+            pass
+
     async def _ensure_container(self, name: str):
         try:
             cc = self._blob_service.get_container_client(name)
@@ -431,32 +599,157 @@ class BlobStorageDocumentIndexer:
             # likely already exists
             pass
 
-    async def _write_file_log(self, container: str, blob_name: str, payload: Dict[str, Any]):
+    async def _write_file_log(self, blob_name: str, payload: Dict[str, Any]):
+        if self._storage_writable is False:
+            return
         await self._ensure_clients()
-        cc = self._blob_service.get_container_client(container)
+        await self._ensure_log_container()
+        if not self._blob_service:
+            return
+        cc = self._blob_service.get_container_client(self.cfg.jobs_log_container)
         try:
-            await cc.upload_blob(
-                name=f"{self.cfg.indexer_name}/files/{blob_name}",
-                data=json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"),
-                overwrite=True,
-                content_settings=ContentSettings(content_type="application/json"),
+            await asyncio.wait_for(
+                cc.upload_blob(
+                    name=f"{self.cfg.indexer_name}/files/{blob_name}",
+                    data=json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"),
+                    overwrite=True,
+                    content_settings=ContentSettings(content_type="application/json"),
+                ),
+                timeout=self._blob_op_timeout_s,
             )
         except Exception:
             logging.exception(f"[{self.cfg.indexer_name}] failed to write file log {blob_name}")
 
-    async def _write_run_summary(self, container: str, summary: Dict[str, Any], run_id: str):
+    async def _write_run_summary(self, run_id: str, summary: Dict[str, Any]):
+        if self._storage_writable is False:
+            logging.warning(f"[{self.cfg.indexer_name}] run summary skipped (storage not writable)")
+            return
+
         await self._ensure_clients()
-        cc = self._blob_service.get_container_client(container)
-        name = f"{self.cfg.indexer_name}/runs/{run_id}.json"
+        await self._ensure_log_container()
+        if not self._blob_service:
+            return
+
+        cc = self._blob_service.get_container_client(self.cfg.jobs_log_container)
+        stage = (summary.get("status") or "").strip().lower()
+        base = f"{self.cfg.indexer_name}/runs/{run_id}"
+        canonical_name = f"{base}.json"
+        stage_name = f"{base}.{stage}.json" if stage else f"{base}.snapshot.json"
+        latest_name = f"{self.cfg.indexer_name}/runs/latest.json"
+
+        payload = json.dumps(summary, ensure_ascii=False, indent=2).encode("utf-8")
+
+        async def _put_and_verify(blob_name: str, overwrite: bool) -> bool:
+            bclient = cc.get_blob_client(blob_name)
+            backoff = 1.0
+            for attempt in range(8):
+                try:
+                    await asyncio.wait_for(
+                        bclient.upload_blob(
+                            data=payload,
+                            overwrite=overwrite,
+                            content_settings=ContentSettings(content_type="application/json"),
+                        ),
+                        timeout=self._blob_op_timeout_s,
+                    )
+                    dl = await asyncio.wait_for(bclient.download_blob(), timeout=self._blob_op_timeout_s)
+                    txt = (await asyncio.wait_for(dl.readall(), timeout=self._blob_op_timeout_s)).decode("utf-8", "ignore")
+                    try:
+                        on_blob = json.loads(txt)
+                    except Exception:
+                        on_blob = {}
+
+                    ok = (
+                        on_blob.get("runId") == summary.get("runId")
+                        and on_blob.get("status") == summary.get("status")
+                        and on_blob.get("itemsProcessed") == summary.get("itemsProcessed")
+                        and on_blob.get("success") == summary.get("success")
+                        and on_blob.get("failed") == summary.get("failed")
+                        and on_blob.get("totalChunksUploaded") == summary.get("totalChunksUploaded")
+                    )
+                    if ok:
+                        logging.info(f"[{self.cfg.indexer_name}] run summary verified: {blob_name}")
+                        return True
+
+                    logging.warning(
+                        f"[{self.cfg.indexer_name}] run summary mismatch on {blob_name} "
+                        f"(attempt {attempt+1}); retrying in {backoff:.1f}s"
+                    )
+                except Exception as e:
+                    logging.warning(
+                        f"[{self.cfg.indexer_name}] run summary write failed for {blob_name} "
+                        f"(attempt {attempt+1}): {e}; retry in {backoff:.1f}s"
+                    )
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 30)
+            return False
+
+        logging.info(
+            f"[{self.cfg.indexer_name}] write_run_summary: status={stage or 'n/a'} "
+            f"stage_name={stage_name} canonical={canonical_name} latest={latest_name}"
+        )
+
+        wrote_stage = await _put_and_verify(stage_name, overwrite=True)
+        if not wrote_stage:
+            logging.error(f"[{self.cfg.indexer_name}] failed to write stage run summary: {stage_name}")
+
+        ok_canonical = await _put_and_verify(canonical_name, overwrite=True)
+        ok_latest = await _put_and_verify(latest_name, overwrite=True)
+
         try:
-            await cc.upload_blob(
-                name=name,
-                data=json.dumps(summary, ensure_ascii=False, indent=2).encode("utf-8"),
-                overwrite=True,
-                content_settings=ContentSettings(content_type="application/json"),
+            pointer = {
+                "runId": summary.get("runId"),
+                "status": summary.get("status"),
+                "blobName": stage_name,
+                "note": "Authoritative snapshot for this stage. Canonical and latest are best-effort."
+            }
+            pointer_payload = json.dumps(pointer, ensure_ascii=False, indent=2).encode("utf-8")
+            pointer_name = f"{base}.pointer.json"
+            await asyncio.wait_for(
+                cc.upload_blob(
+                    name=pointer_name,
+                    data=pointer_payload,
+                    overwrite=True,
+                    content_settings=ContentSettings(content_type="application/json"),
+                ),
+                timeout=self._blob_op_timeout_s,
             )
-        except Exception:
-            logging.exception(f"[{self.cfg.indexer_name}] failed to write run summary {name}")
+            logging.info(f"[{self.cfg.indexer_name}] pointer updated -> {pointer_name} -> {stage_name}")
+        except Exception as e:
+            try:
+                stage_suffix = (stage or "snapshot")
+                fallback_pointer = f"{base}.pointer.{stage_suffix}.json"
+                await asyncio.wait_for(
+                    cc.upload_blob(
+                        name=fallback_pointer,
+                        data=pointer_payload,
+                        overwrite=True,
+                        content_settings=ContentSettings(content_type="application/json"),
+                    ),
+                    timeout=self._blob_op_timeout_s,
+                )
+                logging.info(f"[{self.cfg.indexer_name}] pointer fallback -> {fallback_pointer}")
+            except Exception:
+                logging.debug(f"[{self.cfg.indexer_name}] pointer write skipped: {e}", exc_info=True)
+
+        if not wrote_stage or not ok_latest:
+            logging.error(
+                f"[{self.cfg.indexer_name}] RUN-SUMMARY-FALLBACK: "
+                f"wrote_stage={wrote_stage}, ok_canonical={ok_canonical}, ok_latest={ok_latest}"
+            )
+
+    async def _write_run_summary_safely(self, run_id: str, summary: Dict[str, Any]) -> None:
+        if self._storage_writable is False:
+            return
+        try:
+            await asyncio.wait_for(
+                self._write_run_summary(run_id, summary),
+                timeout=self._run_summary_total_timeout_s,
+            )
+        except Exception as exc:
+            logging.warning(
+                f"[{self.cfg.indexer_name}] run summary write skipped: {exc}"
+            )
 
     # ---------- Utilities ----------
     def _make_parent_id(self, blob_name: str) -> str:
@@ -550,10 +843,11 @@ class BlobStorageDeletedItemsCleaner:
         self._credential: Optional[ChainedTokenCredential] = None
         self._blob_service: Optional[BlobServiceClient] = None
         self._search_client: Optional[AsyncSearchClient] = None
+        self._app = get_config()
 
     async def _ensure_clients(self):
         if not self._credential:
-            client_id = os.environ.get("AZURE_CLIENT_ID", None)
+            client_id = self._app.get("AZURE_CLIENT_ID", None, allow_none=True)
             self._credential = ChainedTokenCredential(
                 AzureCliCredential(),
                 ManagedIdentityCredential(client_id=client_id)

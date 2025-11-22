@@ -3,8 +3,11 @@ from azure.identity import ManagedIdentityCredential, AzureCliCredential, Chaine
 from azure.core.exceptions import ResourceNotFoundError, AzureError
 from urllib.parse import urlparse, unquote
 import logging
-import os
 import time
+
+from dependencies import get_config
+
+app_config_client = get_config()
 
 class BlobClient:
     def __init__(self, blob_url, credential=None):
@@ -49,7 +52,7 @@ class BlobClient:
         :param credential: Credential for authentication (optional)
         :return: Credential object
         """
-        client_id = os.environ.get('AZURE_CLIENT_ID', None)
+        client_id = app_config_client.get('AZURE_CLIENT_ID', None, allow_none=True) or None
         
         if credential is None:
             try:

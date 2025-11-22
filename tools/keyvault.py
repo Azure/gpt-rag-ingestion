@@ -1,4 +1,3 @@
-import os
 import logging
 from azure.identity.aio import ManagedIdentityCredential, AzureCliCredential, ChainedTokenCredential
 from azure.keyvault.secrets.aio import SecretClient as AsyncSecretClient
@@ -20,7 +19,7 @@ class KeyVaultClient:
         
         # Initialize the ChainedTokenCredential with ManagedIdentityCredential and AzureCliCredential
         try:
-            client_id = os.environ.get('AZURE_CLIENT_ID', None)
+            client_id = app_config_client.get('AZURE_CLIENT_ID', None, allow_none=True) or None
 
             self.credential = ChainedTokenCredential(
                 ManagedIdentityCredential(client_id=client_id),

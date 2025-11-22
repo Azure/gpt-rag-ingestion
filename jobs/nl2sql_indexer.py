@@ -73,7 +73,7 @@ class NL2SQLIndexer:
 
     async def _ensure_clients(self):
         if not self._credential:
-            client_id = os.environ.get("AZURE_CLIENT_ID", None)
+            client_id = self._app.get("AZURE_CLIENT_ID", None, allow_none=True)
             self._credential = ChainedTokenCredential(
                 AzureCliCredential(),
                 ManagedIdentityCredential(client_id=client_id),

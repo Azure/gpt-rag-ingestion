@@ -16,6 +16,7 @@ azure-search-documents==11.5.2
 azure-storage-blob==12.24.1
 msgraph-sdk==1.5.4
 azure-ai-projects==1.0.0b10
+azure-cosmos==4.5.1
 
 # Data handling and validation dependencies
 jsonschema

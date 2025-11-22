@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional, Set, List
@@ -49,13 +48,14 @@ class NL2SQLPurger:
         self._credential: Optional[ChainedTokenCredential] = None
         self._blob_service: Optional[BlobServiceClient] = None
         self._ai_search = AISearchClient()
+        self._app = get_config()
 
         if not self.cfg.storage_account_name:
             raise ValueError("STORAGE_ACCOUNT_NAME must be set in configuration")
 
     async def _ensure_clients(self):
         if not self._credential:
-            client_id = os.environ.get("AZURE_CLIENT_ID", None)
+            client_id = self._app.get("AZURE_CLIENT_ID", None, allow_none=True)
             self._credential = ChainedTokenCredential(
                 AzureCliCredential(),
                 ManagedIdentityCredential(client_id=client_id),

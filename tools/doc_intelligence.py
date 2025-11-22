@@ -54,7 +54,7 @@ class DocumentIntelligenceClient:
 
         # Credential
         try:
-            client_id = os.environ.get('AZURE_CLIENT_ID', None)
+            client_id = app_config_client.get('AZURE_CLIENT_ID', None, allow_none=True) or None
 
             # Prefer Azure CLI locally to avoid IMDS probes; fall back to MI when available
             self.credential = ChainedTokenCredential(

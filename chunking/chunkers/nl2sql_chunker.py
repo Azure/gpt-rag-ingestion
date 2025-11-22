@@ -59,7 +59,6 @@ class NL2SQLChunker(BaseChunker):
 
         chunk_id = 0
         for query_id, data in json_data.items():
-            chunk_id += 1
             content = json.dumps(data, indent=4, ensure_ascii=False)
             chunk_size = self.token_estimator.estimate_tokens(content)
             if chunk_size > self.max_chunk_size:
@@ -74,5 +73,6 @@ class NL2SQLChunker(BaseChunker):
                 summary=None
             )
             chunks.append(chunk_dict)
+            chunk_id += 1
 
         return chunks
