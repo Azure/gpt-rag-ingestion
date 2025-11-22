@@ -16,10 +16,9 @@ from azure.storage.blob.aio import BlobServiceClient
 from .sharepoint_graph_client import SharePointGraphClient
 from .sharepoint_ingestion_config import (
 	SharePointConfig,
+	_as_dt,
 	_chunk,
 	_get_setting_float,
-	_make_parent_key,
-	_sanitize_key_part,
 	_utc_now,
 )
 from dependencies import get_config
@@ -62,6 +61,23 @@ class SharePointPurger:
 
 		self._collection_items_cache: Dict[str, Optional[Set[str]]] = {}
 		self._allowed_collection_keys: Optional[Set[str]] = None
+
+	def _log_event(self, level: int, event: str, **fields: Any) -> None:
+		"""Emit structured log lines for App Insights queries."""
+		payload: Dict[str, Any] = {"event": event}
+		for key, value in fields.items():
+			if value is None:
+				continue
+			if isinstance(value, datetime):
+				payload[key] = value.isoformat()
+			else:
+				payload[key] = value
+		try:
+			message = json.dumps(payload, ensure_ascii=False)
+		except TypeError:
+			safe_payload = {k: str(v) for k, v in payload.items()}
+			message = json.dumps(safe_payload, ensure_ascii=False)
+		logging.log(level, f"[{self.cfg.indexer_name}] {message}")
 
 	# ---------- lifecycle ----------
 	async def _ensure_clients(self) -> None:
@@ -179,20 +195,73 @@ class SharePointPurger:
 				await asyncio.sleep(delay)
 				delay = min(delay * 2, 30)
 
-	async def _delete_docs_by_id(self, ids: List[str]) -> Tuple[int, int]:
+	async def _delete_docs_by_id(self, run_id: str, docs: List[Dict[str, Any]]) -> Tuple[int, int]:
 		deleted = 0
 		failed = 0
-		if not ids or not self._search_client:
+		if not docs or not self._search_client:
 			return deleted, failed
 
-		docs = [{"id": doc_id} for doc_id in ids]
 		for batch in _chunk(docs, self.cfg.batch_size):
 			try:
-				await self._with_backoff(self._search_client.delete_documents, documents=batch)
-				deleted += len(batch)
-			except Exception:
+				payload = [{"id": item["id"]} for item in batch]
+				results = await self._with_backoff(self._search_client.delete_documents, documents=payload)
+				result_map: Dict[str, Any] = {}
+				if isinstance(results, list):
+					for res in results:
+						key = getattr(res, "key", None)
+						if key is None and isinstance(res, dict):
+							key = res.get("key")
+						result_map[key] = res
+				for item in batch:
+					key = item.get("id")
+					res = result_map.get(key)
+					if res is not None and isinstance(res, dict):
+						succeeded = res.get("succeeded", True)
+						status_code = res.get("status_code")
+						error_message = res.get("error_message")
+					else:
+						succeeded = getattr(res, "succeeded", True) if res is not None else True
+						status_code = getattr(res, "status_code", None) if res is not None else None
+						error_message = getattr(res, "error_message", None) if res is not None else None
+					if succeeded:
+						deleted += 1
+						status = "deleted"
+						log_level = logging.INFO
+					else:
+						failed += 1
+						status = "delete-failed"
+						log_level = logging.ERROR
+					self._log_event(
+						log_level,
+						"ITEM-COMPLETE",
+						runId=run_id,
+						collection=item.get("collection"),
+						site=item.get("site"),
+						itemId=item.get("itemId"),
+						parentId=item.get("parentId"),
+						docId=key,
+						status=status,
+						reason="missing-sharepoint-item",
+						deleteStatusCode=status_code,
+						errorMessage=error_message,
+					)
+			except Exception as exc:  # noqa: BLE001
 				failed += len(batch)
 				logging.exception(f"{PURGE_SCOPE} delete_documents failed for batch")
+				for item in batch:
+					self._log_event(
+						logging.ERROR,
+						"ITEM-COMPLETE",
+						runId=run_id,
+						collection=item.get("collection"),
+						site=item.get("site"),
+						itemId=item.get("itemId"),
+						parentId=item.get("parentId"),
+						docId=item.get("id"),
+						status="delete-failed",
+						reason="missing-sharepoint-item",
+						errorMessage=str(exc),
+					)
 		return deleted, failed
 
 	# ---------- graph helpers ----------
@@ -347,10 +416,10 @@ class SharePointPurger:
 			return None
 		domain, site, collection, item_id = parts[:4]
 		collection_key = f"{domain}/{site}/{collection}"
-		item_base = "/" + "/".join(parts[:4])
-		return collection_key, item_id, item_base
+		parent_path = "/" + "/".join(parts)
+		return collection_key, item_id, parent_path
 
-	async def _scan_and_purge(self, stats: PurgeRunStats) -> None:
+	async def _scan_and_purge(self, stats: PurgeRunStats, run_id: str) -> None:
 		if not self._search_client:
 			raise RuntimeError("Search client not initialized")
 		if not self._graph_client:
@@ -385,7 +454,7 @@ class SharePointPurger:
 			except Exception:
 				pass
 
-			pending_delete_ids: List[str] = []
+			pending_delete_docs: List[Dict[str, Any]] = []
 			seen_collections: Set[str] = set()
 
 			async for page in results.by_page():
@@ -397,7 +466,7 @@ class SharePointPurger:
 					if not parsed:
 						continue
 
-					collection_key, item_id, _ = parsed
+					collection_key, item_id, parent_path = parsed
 
 					if self._allowed_collection_keys and collection_key not in self._allowed_collection_keys:
 						continue
@@ -420,16 +489,26 @@ class SharePointPurger:
 					if item_id not in existing_ids:
 						did = doc.get("id")
 						if did:
-							pending_delete_ids.append(did)
+							key_parts = collection_key.split("/")
+							site_value = "/".join(key_parts[:2]) if len(key_parts) >= 2 else collection_key
+							pending_delete_docs.append(
+								{
+									"id": did,
+									"collection": collection_key,
+									"site": site_value,
+									"itemId": item_id,
+									"parentId": parent_path or path,
+								}
+							)
 
-				if pending_delete_ids:
-					deleted, failed = await self._delete_docs_by_id(pending_delete_ids)
+				if pending_delete_docs:
+					deleted, failed = await self._delete_docs_by_id(run_id, pending_delete_docs)
 					stats.docs_deleted += deleted
 					stats.docs_failed_delete += failed
-					pending_delete_ids.clear()
+					pending_delete_docs.clear()
 
-			if pending_delete_ids:
-				deleted, failed = await self._delete_docs_by_id(pending_delete_ids)
+			if pending_delete_docs:
+				deleted, failed = await self._delete_docs_by_id(run_id, pending_delete_docs)
 				stats.docs_deleted += deleted
 				stats.docs_failed_delete += failed
 
@@ -454,9 +533,20 @@ class SharePointPurger:
 			"pagesScanned": 0,
 		}
 		await self._write_run_summary_safely(run_id, summary)
+		self._log_event(
+			logging.INFO,
+			"RUN-START",
+			runId=run_id,
+			collectionsSeen=0,
+			itemsChecked=0,
+			docsScanned=0,
+			docsDeleted=0,
+			docsFailedDelete=0,
+			pagesScanned=0,
+		)
 
 		try:
-			await self._scan_and_purge(stats)
+			await self._scan_and_purge(stats, run_id)
 			summary.update(
 				{
 					"collectionsSeen": stats.collections_seen,
@@ -474,12 +564,14 @@ class SharePointPurger:
 			summary["status"] = "cancelled"
 			summary["runFinishedAt"] = _utc_now()
 			await self._write_run_summary_safely(run_id, summary)
+			self._log_event(logging.WARNING, "RUN-CANCELLED", runId=run_id)
 			logging.info("[%s] Run cancelled: runId=%s", self.cfg.indexer_name, run_id)
 			raise
-		except Exception:
+		except Exception as exc:
 			logging.exception("[%s] purger run() failed", self.cfg.indexer_name)
 			summary["error"] = "see function logs for traceback"
 			summary["status"] = "failed"
+			self._log_event(logging.ERROR, "RUN-ERROR", runId=run_id, error=str(exc))
 		finally:
 			summary.update(
 				{
@@ -496,6 +588,27 @@ class SharePointPurger:
 				summary["status"] = "finished"
 
 			await self._write_run_summary_safely(run_id, summary)
+			duration_seconds = None
+			try:
+				start_dt = _as_dt(summary.get("runStartedAt")) if summary.get("runStartedAt") else None
+				finish_dt = _as_dt(summary.get("runFinishedAt")) if summary.get("runFinishedAt") else None
+				if start_dt and finish_dt:
+					duration_seconds = max((finish_dt - start_dt).total_seconds(), 0.0)
+			except Exception:
+				duration_seconds = None
+			self._log_event(
+				logging.INFO,
+				"RUN-COMPLETE",
+				runId=run_id,
+				status=summary.get("status"),
+				collectionsSeen=stats.collections_seen,
+				itemsChecked=stats.items_checked,
+				docsScanned=stats.docs_scanned,
+				docsDeleted=stats.docs_deleted,
+				docsFailedDelete=stats.docs_failed_delete,
+				pagesScanned=stats.pages_scanned,
+				durationSeconds=duration_seconds,
+			)
 			logging.info(
 				"[%s] Purge complete: runId=%s collections=%s itemsChecked=%s scanned=%s deleted=%s failedDeletes=%s pages=%s",
 				self.cfg.indexer_name,
