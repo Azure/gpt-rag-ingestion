@@ -602,11 +602,11 @@ class SharePointPurger:
 				runId=run_id,
 				status=summary.get("status"),
 				collectionsSeen=stats.collections_seen,
-				itemsChecked=stats.items_checked,
-				docsScanned=stats.docs_scanned,
-				docsDeleted=stats.docs_deleted,
-				docsFailedDelete=stats.docs_failed_delete,
-				pagesScanned=stats.pages_scanned,
+				chunksChecked=stats.items_checked,
+				chunksScanned=stats.docs_scanned,
+				chunksDeleted=stats.docs_deleted,
+				chunksFailedDelete=stats.docs_failed_delete,
+				searchPages=stats.pages_scanned,
 				durationSeconds=duration_seconds,
 			)
 			logging.info(

@@ -71,6 +71,23 @@ class NL2SQLIndexer:
             if not val:
                 logging.warning(f"[nl2sql-indexer] {name} is not configured; corresponding content will fail to index")
 
+    def _log_event(self, level: int, event: str, **fields) -> None:
+        """Emit structured logs matching indexer format."""
+        payload: Dict = {"event": event}
+        for key, value in fields.items():
+            if value is None:
+                continue
+            if isinstance(value, datetime):
+                payload[key] = value.isoformat()
+            else:
+                payload[key] = value
+        try:
+            message = json.dumps(payload, ensure_ascii=False)
+        except TypeError:
+            safe_payload = {k: str(v) for k, v in payload.items()}
+            message = json.dumps(safe_payload, ensure_ascii=False)
+        logging.log(level, f"[nl2sql-indexer] {message}")
+
     async def _ensure_clients(self):
         if not self._credential:
             client_id = self._app.get("AZURE_CLIENT_ID", None, allow_none=True)
@@ -86,9 +103,16 @@ class NL2SQLIndexer:
 
     async def run(self) -> None:
         await self._ensure_clients()
-        run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        start_iso = datetime.now(timezone.utc).isoformat()
+        run_started_at = datetime.now(timezone.utc)
+        run_id = run_started_at.strftime("%Y%m%dT%H%M%SZ")
+        start_iso = run_started_at.isoformat()
         logging.info(f"[nl2sql-indexer] Starting @ {run_id}")
+        self._log_event(
+            logging.INFO,
+            "RUN-START",
+            runId=run_id,
+            sourceContainer=self.cfg.container_name,
+        )
 
         total_ok = 0
         total_err = 0
@@ -163,6 +187,19 @@ class NL2SQLIndexer:
                 "byKind": per_kind_counts,
                 "skipped": total_skipped,
             }
+            duration_seconds = max((datetime.now(timezone.utc) - run_started_at).total_seconds(), 0.0)
+            self._log_event(
+                logging.INFO,
+                "RUN-COMPLETE",
+                runId=run_id,
+                status="finished",
+                collectionsSeen=3,
+                itemsDiscovered=total_candidates + total_skipped,
+                itemsIndexed=total_ok,
+                itemsFailed=total_err,
+                skippedNoChange=total_skipped,
+                durationSeconds=duration_seconds,
+            )
             await self._write_run_summary(self.cfg.jobs_log_container, summary, run_id)
             logging.info(f"[nl2sql-indexer] Summary: {json.dumps(summary)}")
         finally:

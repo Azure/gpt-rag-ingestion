@@ -1289,7 +1289,7 @@ class SharePointIndexer:
                 "RUN-COMPLETE",
                 runId=run_id,
                 status=summary.get("status"),
-                collections=summary.get("collections", 0),
+                collectionsSeen=summary.get("collections", 0),
                 itemsDiscovered=stats.items_discovered,
                 itemsIndexed=stats.items_indexed,
                 itemsFailed=stats.items_failed,

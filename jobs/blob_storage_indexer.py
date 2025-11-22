@@ -294,11 +294,12 @@ class BlobStorageDocumentIndexer:
                 "RUN-COMPLETE",
                 runId=run_id,
                 status=summary.get("status"),
+                collectionsSeen=1,
                 sourceFiles=summary.get("sourceFiles"),
                 itemsDiscovered=summary.get("itemsDiscovered"),
-                indexedItems=summary.get("indexedItems"),
+                itemsIndexed=summary.get("indexedItems"),
+                itemsFailed=summary.get("failed"),
                 skippedNoChange=summary.get("skippedNoChange"),
-                failed=summary.get("failed"),
                 totalChunksUploaded=summary.get("totalChunksUploaded"),
                 durationSeconds=duration_seconds,
             )
@@ -845,6 +846,23 @@ class BlobStorageDeletedItemsCleaner:
         self._search_client: Optional[AsyncSearchClient] = None
         self._app = get_config()
 
+    def _log_event(self, level: int, event: str, **fields: Any) -> None:
+        """Emit structured logs matching indexer format."""
+        payload: Dict[str, Any] = {"event": event}
+        for key, value in fields.items():
+            if value is None:
+                continue
+            if isinstance(value, datetime):
+                payload[key] = value.isoformat()
+            else:
+                payload[key] = value
+        try:
+            message = json.dumps(payload, ensure_ascii=False)
+        except TypeError:
+            safe_payload = {k: str(v) for k, v in payload.items()}
+            message = json.dumps(safe_payload, ensure_ascii=False)
+        logging.log(level, f"[blob-storage-purger] {message}")
+
     async def _ensure_clients(self):
         if not self._credential:
             client_id = self._app.get("AZURE_CLIENT_ID", None, allow_none=True)
@@ -866,8 +884,16 @@ class BlobStorageDeletedItemsCleaner:
 
     async def run(self) -> None:
         await self._ensure_clients()
-        start_iso = _utc_now()
+        run_started_at = datetime.now(timezone.utc)
+        run_id = run_started_at.strftime("%Y%m%dT%H%M%SZ")
+        start_iso = run_started_at.isoformat()
         logging.info(f"[blob-storage-purger] Starting @ {start_iso}")
+        self._log_event(
+            logging.INFO,
+            "RUN-START",
+            runId=run_id,
+            sourceContainer=self.cfg.source_container,
+        )
 
         try:
             # Ensure jobs log container exists
@@ -971,15 +997,28 @@ class BlobStorageDeletedItemsCleaner:
             # summary
             summary = {
                 "indexerType": "blob-storage-purger",
+                "runId": run_id,
                 "runStartedAt": start_iso,
                 "runFinishedAt": _utc_now(),
+                "status": "finished",
                 "blobDocumentsCount": source_parent_count,
-                "indexParentsCountBefore": indexed_parent_count_before,
-                "indexChunkDocumentsBefore": chunk_docs_before,
-                "indexParentsPurged": len(to_purge),
-                "indexChunkDocumentsDeleted": total_deleted_docs,                
-                "indexParentsCountAfter": index_parents_after,
+                "itemsChecked": indexed_parent_count_before,
+                "docsScanned": chunk_docs_before,
+                "docsDeleted": total_deleted_docs,
+                "itemsAfter": index_parents_after,
             }
+            duration_seconds = max((datetime.now(timezone.utc) - run_started_at).total_seconds(), 0.0)
+            self._log_event(
+                logging.INFO,
+                "RUN-COMPLETE",
+                runId=run_id,
+                status="finished",
+                collectionsSeen=1,
+                chunksChecked=indexed_parent_count_before,
+                chunksScanned=chunk_docs_before,
+                chunksDeleted=total_deleted_docs,
+                durationSeconds=duration_seconds,
+            )
             await self._write_run_summary(self.cfg.jobs_log_container, summary)
             logging.info(f"[blob-storage-purger] Summary: {json.dumps(summary)}")
         finally:

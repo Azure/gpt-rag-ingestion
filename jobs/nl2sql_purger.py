@@ -3,7 +3,7 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Optional, Set, List
+from typing import Optional, Set, List, Dict
 
 from azure.identity.aio import AzureCliCredential, ManagedIdentityCredential, ChainedTokenCredential
 from azure.storage.blob.aio import BlobServiceClient
@@ -53,6 +53,23 @@ class NL2SQLPurger:
         if not self.cfg.storage_account_name:
             raise ValueError("STORAGE_ACCOUNT_NAME must be set in configuration")
 
+    def _log_event(self, level: int, event: str, **fields) -> None:
+        """Emit structured logs matching purger format."""
+        payload: Dict = {"event": event}
+        for key, value in fields.items():
+            if value is None:
+                continue
+            if isinstance(value, datetime):
+                payload[key] = value.isoformat()
+            else:
+                payload[key] = value
+        try:
+            message = json.dumps(payload, ensure_ascii=False)
+        except TypeError:
+            safe_payload = {k: str(v) for k, v in payload.items()}
+            message = json.dumps(safe_payload, ensure_ascii=False)
+        logging.log(level, f"[nl2sql-purger] {message}")
+
     async def _ensure_clients(self):
         if not self._credential:
             client_id = self._app.get("AZURE_CLIENT_ID", None, allow_none=True)
@@ -68,8 +85,16 @@ class NL2SQLPurger:
 
     async def run(self) -> None:
         await self._ensure_clients()
-        start_iso = datetime.now(timezone.utc).isoformat()
+        run_started_at = datetime.now(timezone.utc)
+        run_id = run_started_at.strftime("%Y%m%dT%H%M%SZ")
+        start_iso = run_started_at.isoformat()
         logging.info("[nl2sql-purger] Starting")
+        self._log_event(
+            logging.INFO,
+            "RUN-START",
+            runId=run_id,
+            sourceContainer=self.cfg.container_name,
+        )
 
         try:
             await self._ensure_container(self.cfg.jobs_log_container)
@@ -99,12 +124,27 @@ class NL2SQLPurger:
                 logging.info(f"[nl2sql-purger] {kind}: before={before}, deleted={deleted}, after={after}")
                 totals.append((kind, deleted, before, after))
 
+            total_deleted = sum(d for (_, d, _, _) in totals)
+            total_checked = sum(b for (_, _, b, _) in totals)
             summary = {
                 "indexerType": "nl2sql-purger",
+                "runId": run_id,
                 "runStartedAt": start_iso,
                 "runFinishedAt": datetime.now(timezone.utc).isoformat(),
+                "status": "finished",
                 "results": [{"kind": k, "deleted": d, "before": b, "after": a} for (k, d, b, a) in totals],
             }
+            duration_seconds = max((datetime.now(timezone.utc) - run_started_at).total_seconds(), 0.0)
+            self._log_event(
+                logging.INFO,
+                "RUN-COMPLETE",
+                runId=run_id,
+                status="finished",
+                collectionsSeen=3,
+                chunksChecked=total_checked,
+                chunksDeleted=total_deleted,
+                durationSeconds=duration_seconds,
+            )
             await self._write_run_summary(self.cfg.jobs_log_container, summary)
             logging.info(f"[nl2sql-purger] Summary: {json.dumps(summary)}")
         finally:
