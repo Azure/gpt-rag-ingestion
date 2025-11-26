@@ -43,7 +43,7 @@ class SharePointConfig:
     search_index_name: str = ""
     files_format: str = "pdf,docx,pptx"
     batch_size: int = 500
-    max_concurrency: int = 8
+    max_concurrency: int = 4
     storage_account_name: str = ""
     tenant_id: str = ""
     client_id: str = ""
@@ -59,7 +59,7 @@ class SharePointConfig:
             search_index_name=app.get("SEARCH_RAG_INDEX_NAME", app.get("AI_SEARCH_INDEX_NAME", "")),
             files_format=app.get("SHAREPOINT_FILES_FORMAT", "pdf,docx,pptx"),
             batch_size=int(app.get("INDEXER_BATCH_SIZE", 500)),
-            max_concurrency=int(app.get("INDEXER_MAX_CONCURRENCY", 8)),
+            max_concurrency=int(app.get("INDEXER_MAX_CONCURRENCY", 4)),
             storage_account_name=app.get("STORAGE_ACCOUNT_NAME", ""),
             tenant_id=app.get("SHAREPOINT_TENANT_ID", ""),
             client_id=app.get("SHAREPOINT_CLIENT_ID", ""),

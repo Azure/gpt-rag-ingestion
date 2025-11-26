@@ -88,6 +88,7 @@ class SharePointIndexer:
         self._aoai_sem = asyncio.Semaphore(aoai_max_concurrency)
         self._aoai_backoff_cap = float(self._app.get("AOAI_BACKOFF_MAX_SECONDS", 60, type=float))
         self._aoai_transient_tries = int(self._app.get("AOAI_MAX_TRANSIENT_ATTEMPTS", 8, type=int))
+        self._aoai_rate_limit_tries = int(self._app.get("AOAI_MAX_RATE_LIMIT_ATTEMPTS", 8, type=int))
 
         # Storage logging gate (decided lazily)
         self._storage_writable = None
@@ -776,7 +777,7 @@ class SharePointIndexer:
         """
         Generate embeddings with:
         - a shared concurrency gate (self._aoai_sem) to reduce rate-limit pressure
-        - infinite retries for RateLimitError (429), honoring Retry-After headers
+        - bounded retries for RateLimitError (429), honoring Retry-After headers
         - bounded retries for other transient errors (network, 5xx)
         """
         text_preview = text[:100] if text else ""
@@ -785,17 +786,17 @@ class SharePointIndexer:
         async with self._aoai_sem:
             backoff = 1.0
             transient_tries = 0
-            rate_limit_count = 0
+            rate_limit_tries = 0
 
             while True:
                 try:
                     # Let THIS loop handle all backoff logic, so disable the wrapper's extra retry
                     result = await asyncio.to_thread(self._aoai.get_embeddings, text, False)
-                    logging.debug(f"[{self.cfg.indexer_name}][EMBEDDING] Success | textLength={len(text)} vectorDimensions={len(result)} rateLimitRetries={rate_limit_count} transientRetries={transient_tries}")
+                    logging.debug(f"[{self.cfg.indexer_name}][EMBEDDING] Success | textLength={len(text)} vectorDimensions={len(result)} rateLimitRetries={rate_limit_tries} transientRetries={transient_tries}")
                     return result
 
                 except RateLimitError as e:
-                    rate_limit_count += 1
+                    rate_limit_tries += 1
                     # Honor headers if present; fall back to exponential backoff + jitter
                     wait_s = None
                     try:
@@ -813,10 +814,19 @@ class SharePointIndexer:
 
                     jitter = random.uniform(0, max(0.25 * wait_s, 0.1))
                     sleep_s = min(wait_s + jitter, self._aoai_backoff_cap)
-                    logging.warning(f"[{self.cfg.indexer_name}][EMBEDDING] Rate limit (429) | attempt={rate_limit_count} retryAfterSeconds={sleep_s:.2f} backoffCap={self._aoai_backoff_cap} textLength={len(text)}")
+                    logging.warning(
+                        f"[{self.cfg.indexer_name}][EMBEDDING] Rate limit (429) | "
+                        f"attempt={rate_limit_tries}/{self._aoai_rate_limit_tries} "
+                        f"retryAfterSeconds={sleep_s:.2f} backoffCap={self._aoai_backoff_cap} textLength={len(text)}"
+                    )
+                    if rate_limit_tries >= self._aoai_rate_limit_tries:
+                        logging.error(
+                            f"[{self.cfg.indexer_name}][EMBEDDING] Max rate limit retries exhausted | "
+                            f"attempts={rate_limit_tries} textLength={len(text)}"
+                        )
+                        raise
                     await asyncio.sleep(sleep_s)
                     backoff = min(backoff * 2, self._aoai_backoff_cap)
-                    # loop forever on 429
 
                 except (ServiceRequestError, TimeoutError, OSError) as e:
                     transient_tries += 1
@@ -828,7 +838,10 @@ class SharePointIndexer:
                         f"retryAfterSeconds={sleep_s:.2f} textLength={len(text)} error={str(e)}"
                     )
                     if transient_tries >= self._aoai_transient_tries:
-                        logging.error(f"[{self.cfg.indexer_name}][EMBEDDING] Failed after max transient retries | maxAttempts={self._aoai_transient_tries} textLength={len(text)}")
+                        logging.error(
+                            f"[{self.cfg.indexer_name}][EMBEDDING] Max transient retries exhausted | "
+                            f"errorType={type(e).__name__} attempts={transient_tries} textLength={len(text)}"
+                        )
                         raise
                     await asyncio.sleep(sleep_s)
                     backoff = min(backoff * 2, self._aoai_backoff_cap)

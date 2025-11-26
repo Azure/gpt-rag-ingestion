@@ -20,7 +20,7 @@ class NL2SQLIndexerConfig:
     storage_account_name: str
     container_name: str = "nl2sql"
     jobs_log_container: str = "jobs"
-    max_concurrency: int = 8
+    max_concurrency: int = 4
 
     # AI Search index names
     queries_index_name: str = ""
@@ -34,7 +34,7 @@ class NL2SQLIndexerConfig:
             storage_account_name=app.get("STORAGE_ACCOUNT_NAME", ""),
             container_name=app.get("NL2SQL_STORAGE_CONTAINER", "nl2sql"),
             jobs_log_container=app.get("JOBS_LOG_CONTAINER", "jobs"),
-            max_concurrency=int(app.get("INDEXER_MAX_CONCURRENCY", 8)),
+            max_concurrency=int(app.get("INDEXER_MAX_CONCURRENCY", 4)),
             queries_index_name=app.get("SEARCH_QUERIES_INDEX_NAME", ""),
             tables_index_name=app.get("SEARCH_TABLES_INDEX_NAME", ""),
             measures_index_name=app.get("SEARCH_MEASURES_INDEX_NAME", ""),
