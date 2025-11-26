@@ -345,19 +345,57 @@ class BlobStorageDocumentIndexer:
         }
 
     # ---------- Index state & (re)write ----------
-    async def _load_latest_index_state(self) -> Dict[str, datetime]:
-        """Return map parent_id -> latest metadata_storage_last_modified from index."""
+    async def _load_latest_index_state(self, max_seconds: float = 300.0) -> Dict[str, datetime]:
+        """
+        Return map parent_id -> latest metadata_storage_last_modified from index.
+        """
         await self._ensure_clients()
+
         latest: Dict[str, datetime] = {}
-        # Fetch only fields we need; page through results (do not close shared client here)
-        results = await self._search_client.search(
-            search_text="*",
-            select=["parent_id", "metadata_storage_last_modified"],
-            include_total_count=True,
-            top=1000,
+        page_size = 1000
+        skip = 0
+        total_docs_seen = 0
+        start = time.monotonic()
+
+        logging.info(
+            f"[{self.cfg.indexer_name}] _load_latest_index_state starting pagination "
+            f"(page_size={page_size}, max_seconds={max_seconds})"
         )
-        async for page in results.by_page():
-            async for doc in page:
+
+        while True:
+            elapsed = time.monotonic() - start
+            if elapsed > max_seconds:
+                logging.warning(
+                    f"[{self.cfg.indexer_name}] _load_latest_index_state TIMEOUT after "
+                    f"{elapsed:.1f}s (skip={skip}, total_docs_seen={total_docs_seen})"
+                )
+                break
+
+            if skip >= 100_000:
+                logging.warning(
+                    f"[{self.cfg.indexer_name}] _load_latest_index_state reached skip limit "
+                    f"(skip={skip}, total_docs_seen={total_docs_seen}). Stopping scan."
+                )
+                break
+
+            logging.info(
+                f"[{self.cfg.indexer_name}] _load_latest_index_state fetching page: "
+                f"skip={skip}, top={page_size}, elapsed={elapsed:.1f}s, "
+                f"total_docs_seen={total_docs_seen}"
+            )
+
+            results = await self._search_client.search(
+                search_text="*",
+                select=["parent_id", "metadata_storage_last_modified"],
+                top=page_size,
+                skip=skip,
+            )
+
+            batch_count = 0
+            async for doc in results:
+                batch_count += 1
+                total_docs_seen += 1
+
                 pid = doc.get("parent_id")
                 lm_raw = doc.get("metadata_storage_last_modified")
                 lm = _as_datetime(lm_raw)
@@ -365,7 +403,29 @@ class BlobStorageDocumentIndexer:
                     prev = latest.get(pid)
                     if not prev or lm > prev:
                         latest[pid] = lm
+
+            logging.info(
+                f"[{self.cfg.indexer_name}] _load_latest_index_state page processed: "
+                f"skip={skip}, batch_count={batch_count}, total_docs_seen={total_docs_seen}"
+            )
+
+            if batch_count == 0:
+                elapsed = time.monotonic() - start
+                logging.info(
+                    f"[{self.cfg.indexer_name}] _load_latest_index_state reached end of results "
+                    f"at skip={skip} (total_docs_seen={total_docs_seen}, elapsed={elapsed:.1f}s)"
+                )
+                break
+
+            skip += page_size
+
+        logging.info(
+            f"[{self.cfg.indexer_name}] _load_latest_index_state finished with "
+            f"{len(latest)} parent_id keys (total_docs_seen={total_docs_seen})"
+        )
+
         return latest
+
 
     async def _replace_parent_docs(self, parent_id: str, docs: List[Dict[str, Any]]):
         # Delete existing docs for parent_id then upload fresh docs in batches
@@ -374,23 +434,74 @@ class BlobStorageDocumentIndexer:
 
     async def _delete_parent_docs(self, parent_id: str):
         await self._ensure_clients()
-        # We need the IDs; pull in pages
-        ids: List[Dict[str, str]] = []
+
+        page_size = 1000
+        skip = 0
+        total_ids = 0
+        max_seconds = 300.0
+        start = time.monotonic()
         sanitized = parent_id.replace("'", "''")
-        results = await self._search_client.search(
-            search_text="*",
-            filter=f"parent_id eq '{sanitized}'",
-            select=["id"],
-            top=1000,
+
+        logging.info(
+            f"[{self.cfg.indexer_name}] _delete_parent_docs starting for parent_id={parent_id} "
+            f"(page_size={page_size}, max_seconds={max_seconds})"
         )
-        async for page in results.by_page():
-            async for doc in page:
-                if doc.get("id"):
-                    ids.append({"id": doc["id"]})
-        if not ids:
-            return
-        for chunk in _chunk(ids, self.cfg.batch_size):
-            await self._with_backoff(self._search_client.delete_documents, documents=chunk)
+
+        while True:
+            elapsed = time.monotonic() - start
+            if elapsed > max_seconds:
+                logging.warning(
+                    f"[{self.cfg.indexer_name}] _delete_parent_docs TIMEOUT for parent_id={parent_id} "
+                    f"after {elapsed:.1f}s (skip={skip}, total_ids={total_ids})"
+                )
+                break
+
+            if skip >= 100_000:
+                logging.warning(
+                    f"[{self.cfg.indexer_name}] _delete_parent_docs reached skip limit for parent_id={parent_id} "
+                    f"(skip={skip}, total_ids={total_ids}). Stopping delete."
+                )
+                break
+
+            logging.info(
+                f"[{self.cfg.indexer_name}] _delete_parent_docs fetching page for parent_id={parent_id}: "
+                f"skip={skip}, top={page_size}, elapsed={elapsed:.1f}s, total_ids={total_ids}"
+            )
+
+            results = await self._search_client.search(
+                search_text="*",
+                filter=f"parent_id eq '{sanitized}'",
+                select=["id"],
+                top=page_size,
+                skip=skip,
+            )
+
+            batch_ids: List[Dict[str, str]] = []
+            async for doc in results:
+                doc_id = doc.get("id")
+                if doc_id:
+                    batch_ids.append({"id": doc_id})
+
+            batch_count = len(batch_ids)
+            logging.info(
+                f"[{self.cfg.indexer_name}] _delete_parent_docs page collected "
+                f"{batch_count} ids for parent_id={parent_id} (skip={skip})"
+            )
+
+            if batch_ids:
+                await self._with_backoff(self._search_client.delete_documents, documents=batch_ids)
+                total_ids += batch_count
+
+            if batch_count == 0:
+                elapsed = time.monotonic() - start
+                logging.info(
+                    f"[{self.cfg.indexer_name}] _delete_parent_docs finished for parent_id={parent_id} "
+                    f"(total_ids_deleted={total_ids}, elapsed={elapsed:.1f}s)"
+                )
+                break
+
+            skip += page_size
+
     async def _upload_in_batches(self, docs: List[Dict[str, Any]]):
         if not docs:
             return
@@ -587,51 +698,156 @@ class BlobStorageDeletedItemsCleaner:
                     continue
                 existing.add(f"/{self.cfg.source_container}/{b.name}")
 
+            logging.info(
+                f"[blob-storage-purger] Found {len(existing)} parent_ids in blob container "
+                f"'{self.cfg.source_container}'"
+            )
+
             # All parent_ids present in index and total chunk documents before
             in_index: Set[str] = set()
             chunk_docs_before: int = 0
-            results = await self._search_client.search(
-                search_text="*",
-                filter="source eq 'blob'",
-                select=["parent_id"],
-                include_total_count=True,
-                top=1000,
+            page_size = 1000
+            skip = 0
+            max_seconds_index_scan = 600.0
+            scan_start = time.monotonic()
+
+            logging.info(
+                f"[blob-storage-purger] Scanning index for blob documents "
+                f"(page_size={page_size}, max_seconds={max_seconds_index_scan})"
             )
-            async for page in results.by_page():
-                async for doc in page:
+
+            while True:
+                elapsed = time.monotonic() - scan_start
+                if elapsed > max_seconds_index_scan:
+                    logging.warning(
+                        f"[blob-storage-purger] Index scan TIMEOUT after {elapsed:.1f}s "
+                        f"(skip={skip}, chunk_docs_before={chunk_docs_before})"
+                    )
+                    break
+
+                if skip >= 100_000:
+                    logging.warning(
+                        f"[blob-storage-purger] Index scan reached skip limit "
+                        f"(skip={skip}, chunk_docs_before={chunk_docs_before}). Stopping scan."
+                    )
+                    break
+
+                logging.info(
+                    f"[blob-storage-purger] Fetching index page: skip={skip}, top={page_size}, "
+                    f"elapsed={elapsed:.1f}s, docs_so_far={chunk_docs_before}"
+                )
+
+                results = await self._search_client.search(
+                    search_text="*",
+                    filter="source eq 'blob'",
+                    select=["parent_id"],
+                    top=page_size,
+                    skip=skip,
+                )
+
+                batch_count = 0
+                async for doc in results:
+                    batch_count += 1
+                    chunk_docs_before += 1
                     pid = doc.get("parent_id")
                     if pid:
                         in_index.add(pid)
-                    # Each document in the index is a chunk-level doc, so count it
-                    chunk_docs_before += 1
+
+                logging.info(
+                    f"[blob-storage-purger] Index page processed: skip={skip}, "
+                    f"batch_count={batch_count}, docs_so_far={chunk_docs_before}"
+                )
+
+                if batch_count == 0:
+                    elapsed = time.monotonic() - scan_start
+                    logging.info(
+                        f"[blob-storage-purger] Reached end of index results at skip={skip} "
+                        f"(total_chunk_docs={chunk_docs_before}, elapsed={elapsed:.1f}s)"
+                    )
+                    break
+
+                skip += page_size
 
             # Compute counts at the beginning
             source_parent_count = len(existing)
             indexed_parent_count_before = len(in_index)
 
             to_purge = sorted(in_index - existing)
-            logging.info(f"[blob-storage-purger] Will purge {len(to_purge)} parent_id sets")
+            logging.info(
+                f"[blob-storage-purger] Will purge {len(to_purge)} parent_id sets "
+                f"(source_parent_count={source_parent_count}, index_parent_count_before={indexed_parent_count_before})"
+            )
 
             total_deleted_docs = 0
+            max_seconds_per_parent = 300.0
+
             for parent_id in to_purge:
-                # Delete docs by parent_id (page and delete)
                 sanitized_parent = parent_id.replace("'", "''")
                 per_parent_deleted = 0
-                result = await self._search_client.search(
-                    search_text="*",
-                    filter=f"parent_id eq '{sanitized_parent}' and source eq 'blob'",
-                    select=["id"],
-                    top=1000,
+                skip = 0
+                parent_start = time.monotonic()
+
+                logging.info(
+                    f"[blob-storage-purger] Deleting documents for parent_id={parent_id} "
+                    f"(page_size={page_size}, max_seconds={max_seconds_per_parent})"
                 )
-                async for page in result.by_page():
+
+                while True:
+                    elapsed_parent = time.monotonic() - parent_start
+                    if elapsed_parent > max_seconds_per_parent:
+                        logging.warning(
+                            f"[blob-storage-purger] TIMEOUT deleting docs for parent_id={parent_id} "
+                            f"after {elapsed_parent:.1f}s (skip={skip}, per_parent_deleted={per_parent_deleted})"
+                        )
+                        break
+
+                    if skip >= 100_000:
+                        logging.warning(
+                            f"[blob-storage-purger] Reached skip limit while deleting for parent_id={parent_id} "
+                            f"(skip={skip}, per_parent_deleted={per_parent_deleted}). Stopping deletes for this parent."
+                        )
+                        break
+
+                    logging.info(
+                        f"[blob-storage-purger] Fetching delete page for parent_id={parent_id}: "
+                        f"skip={skip}, top={page_size}, elapsed={elapsed_parent:.1f}s, "
+                        f"per_parent_deleted={per_parent_deleted}"
+                    )
+
+                    result = await self._search_client.search(
+                        search_text="*",
+                        filter=f"parent_id eq '{sanitized_parent}' and source eq 'blob'",
+                        select=["id"],
+                        top=page_size,
+                        skip=skip,
+                    )
+
                     page_ids: List[Dict[str, str]] = []
-                    async for doc in page:
-                        if doc.get("id"):
-                            page_ids.append({"id": doc["id"]})
+                    async for doc in result:
+                        doc_id = doc.get("id")
+                        if doc_id:
+                            page_ids.append({"id": doc_id})
+
+                    batch_count = len(page_ids)
+                    logging.info(
+                        f"[blob-storage-purger] Collected {batch_count} ids to delete for parent_id={parent_id} "
+                        f"(skip={skip})"
+                    )
+
                     if page_ids:
                         await self._with_backoff(self._search_client.delete_documents, documents=page_ids)
-                        per_parent_deleted += len(page_ids)
-                        total_deleted_docs += len(page_ids)
+                        per_parent_deleted += batch_count
+                        total_deleted_docs += batch_count
+
+                    if batch_count == 0:
+                        elapsed_parent = time.monotonic() - parent_start
+                        logging.info(
+                            f"[blob-storage-purger] Finished deleting docs for parent_id={parent_id} "
+                            f"(deleted={per_parent_deleted}, elapsed={elapsed_parent:.1f}s)"
+                        )
+                        break
+
+                    skip += page_size
 
                 # write per-parent log
                 await self._write_file_log(
@@ -650,27 +866,71 @@ class BlobStorageDeletedItemsCleaner:
             attempts = 3
             delays = [0.75, 1.5, 3.0]
             index_parents_after = None
+            max_seconds_check = 120.0
+
             for i in range(attempts):
                 in_index_after: Set[str] = set()
-                results_after = await self._search_client.search(
-                    search_text="*",
-                    filter="source eq 'blob'",
-                    select=["parent_id"],
-                    include_total_count=True,
-                    top=1000,
+                skip = 0
+                check_start = time.monotonic()
+                logging.info(
+                    f"[blob-storage-purger] Consistency check attempt {i + 1}/{attempts} "
+                    f"(page_size={page_size}, max_seconds={max_seconds_check})"
                 )
-                async for page in results_after.by_page():
-                    async for doc in page:
+
+                while True:
+                    elapsed_check = time.monotonic() - check_start
+                    if elapsed_check > max_seconds_check:
+                        logging.warning(
+                            f"[blob-storage-purger] Consistency check TIMEOUT on attempt {i + 1} "
+                            f"after {elapsed_check:.1f}s (skip={skip}, parents_seen={len(in_index_after)})"
+                        )
+                        break
+
+                    if skip >= 100_000:
+                        logging.warning(
+                            f"[blob-storage-purger] Consistency check reached skip limit on attempt {i + 1} "
+                            f"(skip={skip}, parents_seen={len(in_index_after)})."
+                        )
+                        break
+
+                    results_after = await self._search_client.search(
+                        search_text="*",
+                        filter="source eq 'blob'",
+                        select=["parent_id"],
+                        top=page_size,
+                        skip=skip,
+                    )
+
+                    batch_count = 0
+                    async for doc in results_after:
+                        batch_count += 1
                         pid = doc.get("parent_id")
                         if pid:
                             in_index_after.add(pid)
+
+                    if batch_count == 0:
+                        break
+
+                    skip += page_size
+
                 index_parents_after = len(in_index_after)
+                logging.info(
+                    f"[blob-storage-purger] Consistency check attempt {i + 1} result: "
+                    f"index_parents_after={index_parents_after}, expected_after={expected_after}"
+                )
+
                 # Condition 1: observed <= expected_after (index settled enough)
                 # Condition 2: none of the purged parents remain
                 if index_parents_after <= expected_after and not any(p in in_index_after for p in to_purge):
+                    logging.info(
+                        "[blob-storage-purger] Consistency check satisfied: purged parents are gone "
+                        "and parent count is at or below expected."
+                    )
                     break
+
                 if i < len(delays):
                     await asyncio.sleep(delays[i])
+
             if index_parents_after is None:
                 index_parents_after = 0
 
@@ -683,7 +943,7 @@ class BlobStorageDeletedItemsCleaner:
                 "indexParentsCountBefore": indexed_parent_count_before,
                 "indexChunkDocumentsBefore": chunk_docs_before,
                 "indexParentsPurged": len(to_purge),
-                "indexChunkDocumentsDeleted": total_deleted_docs,                
+                "indexChunkDocumentsDeleted": total_deleted_docs,
                 "indexParentsCountAfter": index_parents_after,
             }
             await self._write_run_summary(self.cfg.jobs_log_container, summary)
