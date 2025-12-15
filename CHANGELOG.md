@@ -3,9 +3,12 @@
 All notable changes to this project will be documented in this file.  
 This format follows [Keep a Changelog](https://keepachangelog.com/) and adheres to [Semantic Versioning](https://semver.org/).
 
-## [TBD] – TBD
+## [v2.1.0] – 2025-12-15
 ### Added
-- Support to Sharepoint Lists
+- Support for SharePoint Lists
+### Changed
+- Improved robustness of Blob Storage indexing
+- Enhanced data ingestion logging
 
 ## [v2.0.5] – 2025-10-02
 ### Fixed
