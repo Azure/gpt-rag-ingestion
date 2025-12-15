@@ -20,6 +20,7 @@ __all__ = [
 	"AISearchClient",
 	"DocumentIntelligenceClient",
 	"SharePointMetadataStreamer",
+	"CosmosDBClient",
 ]
 
 
@@ -60,7 +61,10 @@ def __getattr__(name: str) -> Any:  # PEP 562 lazy attribute access
 		from .sharepoint import (
 			SharePointMetadataStreamer as _SharePointMetadataStreamer,
 		)
-		return _SharePointMetadataStreamer	
+		return _SharePointMetadataStreamer
+	if name == "CosmosDBClient":
+		from .cosmosdb import CosmosDBClient as _CosmosDBClient
+		return _CosmosDBClient
 	raise AttributeError(name)
 
 

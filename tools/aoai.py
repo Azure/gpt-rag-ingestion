@@ -1,6 +1,5 @@
 # tools/aoai.py
 
-import os
 import time
 import logging
 
@@ -37,7 +36,7 @@ class AzureOpenAIClient:
         self.max_embed_tokens     =   8_192
 
         # Build token provider with preferred order: Azure CLI first, then Managed Identity (optional client_id)
-        client_id = os.environ.get("AZURE_CLIENT_ID", None)
+        client_id = app_config_client.get("AZURE_CLIENT_ID", None, allow_none=True) or None
         token_provider = get_bearer_token_provider(
             ChainedTokenCredential(
                 AzureCliCredential(),

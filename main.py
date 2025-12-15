@@ -66,12 +66,12 @@ async def lifespan(app: FastAPI):
                     id=job_id,
                     replace_existing=True,
                 )
-                logging.info(f"Scheduled {human_name} @ {cron_expr}")
+                logging.info(f"[{human_name}] Scheduled @ {cron_expr}")
                 return True
             except ValueError:
                 raise RuntimeError(f"Invalid {env_key}: {cron_expr!r}")
         else:
-            logging.warning(f"{env_key} not set — skipping {human_name}")
+            logging.warning(f"[{human_name}] {env_key} not set — skipping job")
             return False
 
     # Compact authentication check: require MI or SP in Azure; locally accept SP env or `az login`.
@@ -128,38 +128,38 @@ async def lifespan(app: FastAPI):
     logging.info(f"Scheduler timezone: {local_tz}")
 
     now = datetime.datetime.now(tz=local_tz)
-    s_sharepoint_index = _schedule("CRON_RUN_SHAREPOINT_INDEX", run_sharepoint_index, "sharepoint_index_files", "sharepoint_index_files")
-    s_sharepoint_purge = _schedule("CRON_RUN_SHAREPOINT_PURGE", run_sharepoint_purge, "sharepoint_purge_deleted_files", "sharepoint_purge_deleted_files")
-    s_images_purge = _schedule("CRON_RUN_IMAGES_PURGE", run_images_purge, "multimodality_images_purger", "multimodality_images_purger")
-    s_blob_index = _schedule("CRON_RUN_BLOB_INDEX", run_blob_index, "blob_index_files", "blob_index_files")
-    s_blob_purge = _schedule("CRON_RUN_BLOB_PURGE", run_blob_purge, "blob_purge_deleted_files", "blob_purge_deleted_files")
-    s_nl2sql_index = _schedule("CRON_RUN_NL2SQL_INDEX", run_nl2sql_index, "nl2sql_index_files", "nl2sql_index_files")
-    s_nl2sql_purge = _schedule("CRON_RUN_NL2SQL_PURGE", run_nl2sql_purge, "nl2sql_purge_deleted_files", "nl2sql_purge_deleted_files")
+    s_sharepoint_index = _schedule("CRON_RUN_SHAREPOINT_INDEX", run_sharepoint_index, "sharepoint_index", "sharepoint-indexer")
+    s_sharepoint_purge = _schedule("CRON_RUN_SHAREPOINT_PURGE", run_sharepoint_purge, "sharepoint_purge", "sharepoint-purger")
+    s_images_purge = _schedule("CRON_RUN_IMAGES_PURGE", run_images_purge, "multimodality_images_purge", "multimodality-images-purger")
+    s_blob_index = _schedule("CRON_RUN_BLOB_INDEX", run_blob_index, "blob_index", "blob-storage-indexer")
+    s_blob_purge = _schedule("CRON_RUN_BLOB_PURGE", run_blob_purge, "blob_purge", "blob-storage-indexer-purger")
+    s_nl2sql_index = _schedule("CRON_RUN_NL2SQL_INDEX", run_nl2sql_index, "nl2sql_index", "nl2sql-indexer")
+    s_nl2sql_purge = _schedule("CRON_RUN_NL2SQL_PURGE", run_nl2sql_purge, "nl2sql_purge", "nl2sql-indexer-purger")
 
     # If a CRON variable was defined for a job, run it once now sequentially to
     # provide a deterministic startup run without APScheduler race/missed logs.
     # Only run jobs whose CRON env var existed (the `_schedule` helper returned True).
     try:
         if s_blob_index:
-            logging.info("[startup] Running blob_index_files immediately")
+            logging.info("[startup] Running blob-storage-indexer immediately")
             await run_blob_index()
         if s_blob_purge:
-            logging.info("[startup] Running blob_purge_deleted_files immediately")
+            logging.info("[startup] Running blob-purge immediately")
             await run_blob_purge()        
         if s_nl2sql_index:
-            logging.info("[startup] Running nl2sql_index_files immediately")
+            logging.info("[startup] Running nl2sql-indexer immediately")
             await run_nl2sql_index()
         if s_nl2sql_purge:
-            logging.info("[startup] Running nl2sql_purge_deleted_files immediately")
+            logging.info("[startup] Running nl2sql-purge immediately")
             await run_nl2sql_purge()            
         if s_sharepoint_index:
-            logging.info("[startup] Running sharepoint_index_files immediately")
+            logging.info("[startup] Running sharepoint-indexer immediately")
             await run_sharepoint_index()
         if s_sharepoint_purge:
-            logging.info("[startup] Running sharepoint_purge_deleted_files immediately")
+            logging.info("[startup] Running sharepoint-purger immediately")
             await run_sharepoint_purge()
         if s_images_purge:
-            logging.info("[startup] Running multimodality_images_purger immediately")
+            logging.info("[startup] Running multimodality-images-purger immediately")
             await run_images_purge()
     except Exception:
         logging.exception("[startup] Error while running immediate scheduled jobs")
@@ -186,20 +186,20 @@ app = FastAPI(
 # Timer job wrappers
 # -------------------------------
 async def run_sharepoint_index():
-    logging.debug("[sharepoint_index_files] Starting")
+    logging.debug("[sharepoint-indexer] Starting")
     try:
-        from jobs.sharepoint_files_indexer import SharePointDocumentIngestor
-        await SharePointDocumentIngestor().run()
+        from jobs.sharepoint_indexer import SharePointIndexer
+        await SharePointIndexer().run()
     except Exception:
-        logging.exception("[sharepoint_index_files] Unexpected error")
+        logging.exception("[sharepoint-indexer] Unexpected error")
 
 async def run_sharepoint_purge():
-    logging.debug("[sharepoint_purge_deleted_files] Starting")
+    logging.debug("[sharepoint-purger] Starting")
     try:
-        from jobs.sharepoint_files_purger import SharePointDeletedItemsCleaner
-        await SharePointDeletedItemsCleaner().run()
+        from jobs.sharepoint_purger import SharepointPurger
+        await SharepointPurger().run()
     except Exception:
-        logging.exception("[sharepoint_purge_deleted_files] Unexpected error")
+        logging.exception("[sharepoint-purger] Unexpected error")
 
 async def run_images_purge():
     logging.info("[multimodality_images_purger] Starting")
@@ -214,36 +214,52 @@ async def run_images_purge():
         logging.exception("[multimodality_images_purger] Error")
 
 async def run_blob_index():
-    logging.debug("[blob_index_files] Starting")
+    logging.debug("[blob-storage-indexer] Starting")
     try:
         from jobs.blob_storage_indexer import BlobStorageDocumentIndexer
         await BlobStorageDocumentIndexer().run()
     except Exception:
-        logging.exception("[blob_index_files] Unexpected error")
+        logging.exception("[blob-storage-indexer] Unexpected error")
 
 async def run_blob_purge():
-    logging.debug("[blob_purge_deleted_files] Starting")
+    logging.debug("[blob-storage-indexer-purger] Starting")
     try:
         from jobs.blob_storage_indexer import BlobStorageDeletedItemsCleaner
         await BlobStorageDeletedItemsCleaner().run()
     except Exception:
-        logging.exception("[blob_purge_deleted_files] Unexpected error")
+        logging.exception("[blob-storage-indexer-purger] Unexpected error")
+
+async def run_sharepoint_index():
+    logging.debug("[sharepoint-indexer] Starting")
+    try:
+        from jobs.sharepoint_indexer import SharePointIndexer
+        await SharePointIndexer().run()
+    except Exception:
+        logging.exception("[sharepoint-indexer] Unexpected error")
+
+async def run_sharepoint_purge():
+    logging.debug("[sharepoint-purger] Starting")
+    try:
+        from jobs.sharepoint_purger import SharePointPurger
+        await SharePointPurger().run()
+    except Exception:
+        logging.exception("[sharepoint-purger] Unexpected error")        
 
 async def run_nl2sql_index():
-    logging.debug("[nl2sql_index_files] Starting")
+    logging.debug("[nl2sql-indexer] Starting")
     try:
         from jobs.nl2sql_indexer import NL2SQLIndexer
         await NL2SQLIndexer().run()
     except Exception:
-        logging.exception("[nl2sql_index_files] Unexpected error")
+        logging.exception("[nl2sql-indexer] Unexpected error")
 
 async def run_nl2sql_purge():
-    logging.debug("[nl2sql_purge_deleted_files] Starting")
+    logging.debug("[nl2sql-indexer-purger] Starting")
     try:
         from jobs.nl2sql_purger import NL2SQLPurger
         await NL2SQLPurger().run()
     except Exception:
-        logging.exception("[nl2sql_purge_deleted_files] Unexpected error")
+        logging.exception("[nl2sql-indexer-purger] Unexpected error")
 
 # -------------------------------
 # HTTP-triggered document-chunking

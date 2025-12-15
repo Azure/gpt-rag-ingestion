@@ -21,43 +21,58 @@ class AppConfigClient:
 
     def __init__(self):
         """
-        Bulk-loads all keys labeled 'gpt-rag-orchestrator' and 'gpt-rag' into an in-memory dict,
-        giving precedence to 'gpt-rag-orchestrator' where a key exists in both.
+        Initializes the App Configuration client with multi-layer authentication fallback.
+        
+        Authentication Strategy:
+        1. Reads AZURE_CLIENT_ID from environment (if present) to specify a User-Assigned Managed Identity
+        2. Creates ChainedTokenCredential with fallback order:
+           a) ManagedIdentityCredential - for production (VMs, Container Apps, App Services)
+              - Uses client_id if provided (User-Assigned MI)
+              - Uses default system identity if client_id is empty (System-Assigned MI)
+           b) AzureCliCredential - for local development (uses 'az login' credentials)
+        
+        Configuration Loading Priority:
+        1. Connects to Azure App Configuration using the credential chain
+        2. Loads keys with labels in order: 'gpt-rag-ingestion', 'gpt-rag', no-label
+        3. Falls back to connection string if credential auth fails
+        4. Falls back to direct os.environ reads if all Azure connections fail
+        
+        Environment Variables Required for Bootstrap:
+        - APP_CONFIG_ENDPOINT: Azure App Configuration endpoint (required)
+        - AZURE_CLIENT_ID: Client ID for User-Assigned Managed Identity (optional)
+        - AZURE_APPCONFIG_CONNECTION_STRING: Fallback connection string (optional)
         """
-        # ==== Load all config parameters in one place ====
-        try:
-            self.tenant_id = os.environ.get('AZURE_TENANT_ID', "")
-        except Exception as e:
-            raise e
+        # Read client_id for Managed Identity authentication (optional - empty string is valid)
+        # Azure automatically injects this for User-Assigned MI; remains empty for System-Assigned MI
+        self.client_id = os.environ.get('AZURE_CLIENT_ID', "")
         
-        try:
-            self.client_id = os.environ.get('AZURE_CLIENT_ID', "")
-        except Exception as e:
-            raise e
-        
+        # Control flag for allowing direct environment variable fallback in get_value()
         self.allow_env_vars = False
-
         if "allow_environment_variables" in os.environ:
             self.allow_env_vars = bool(os.environ["allow_environment_variables"])
 
+        # Required: Azure App Configuration endpoint for remote configuration
         endpoint = os.getenv("APP_CONFIG_ENDPOINT")
-
         if not endpoint:
             raise EnvironmentError("APP_CONFIG_ENDPOINT must be set")
 
+        # Build credential chain: prefer Managed Identity (production), fallback to CLI (dev)
         self.credential = ChainedTokenCredential(
-            ManagedIdentityCredential(client_id=self.client_id),
-            AzureCliCredential()
+            ManagedIdentityCredential(client_id=self.client_id),  # Production auth
+            AzureCliCredential()  # Local development auth
         )
+        # Async version for async Azure SDK clients
         self.aiocredential = AsyncChainedTokenCredential(
             AsyncManagedIdentityCredential(client_id=self.client_id),
             AsyncAzureCliCredential()
         )
 
+        # Define label selectors for configuration priority (most specific to least specific)
         app_label_selector = SettingSelector(label_filter='gpt-rag-ingestion', key_filter='*')
         base_label_selector = SettingSelector(label_filter='gpt-rag', key_filter='*')
         no_label_selector = SettingSelector(label_filter=None, key_filter='*')
 
+        # Attempt 1: Connect to App Configuration using credential-based auth (Managed Identity or CLI)
         try:
             self.client = load(
                 selects=[app_label_selector, base_label_selector, no_label_selector],
@@ -71,7 +86,7 @@ class AppConfigClient:
                 e,
                 exc_info=True,
             )
-            # Fallback to connection string if provided
+            # Attempt 2: Fallback to connection string-based auth (less secure, for legacy scenarios)
             connection_string = os.environ.get("AZURE_APPCONFIG_CONNECTION_STRING")
             if connection_string:
                 try:
@@ -87,11 +102,11 @@ class AppConfigClient:
                     )
                     raise
             else:
-                # As a last resort, allow an empty client-like dict so the app can run with env vars
+                # Attempt 3: Last resort fallback - direct environment variable reads (no Azure dependency)
                 logging.warning(
                     "AZURE_APPCONFIG_CONNECTION_STRING not set; AppConfig lookups will rely on environment variables only."
                 )
-                # Fallback: minimal shim that reads from os.environ
+                # Create a minimal shim that mimics the App Config client interface but reads from os.environ
                 class _EnvOnly:
                     def __getitem__(self, key):
                         val = os.environ.get(key)

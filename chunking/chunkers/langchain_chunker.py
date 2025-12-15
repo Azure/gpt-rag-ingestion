@@ -81,13 +81,13 @@ class LangChainChunker(BaseChunker):
         chunk_id = 0
         for text_chunk, num_tokens in text_chunks:
             if num_tokens >= self.minimum_chunk_size:
-                chunk_id += 1
                 chunk_size = self.token_estimator.estimate_tokens(text_chunk)
                 if chunk_size > self.max_chunk_size:
                     logging.info(f"[langchain_chunker][{self.filename}] truncating {chunk_size} size chunk to fit within {self.max_chunk_size} tokens")
                     text_chunk = self._truncate_chunk(text_chunk)
                 chunk_dict = self._create_chunk(chunk_id, text_chunk)
                 chunks.append(chunk_dict)
+                chunk_id += 1
             else:
                 skipped_chunks += 1
         logging.debug(f"[langchain_chunker][{self.filename}] {len(chunks)} chunk(s) created")    

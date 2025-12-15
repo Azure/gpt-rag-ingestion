@@ -64,9 +64,9 @@ class JSONChunker(BaseChunker):
                 )
                 # Optionally, you might decide to leave such chunks as is,
                 # or further process them with a string splitter.
-            chunk_id += 1
             chunk_dict = self._create_chunk(chunk_id, chunk_text)
             chunk_dicts.append(chunk_dict)
+            chunk_id += 1
 
         logging.info(f"[json_chunker][{self.filename}] Created {len(chunk_dicts)} chunk(s).")
         return chunk_dicts
