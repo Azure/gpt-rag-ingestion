@@ -143,7 +143,6 @@ class MultimodalChunker(DocAnalysisChunker):
             chunk_page = self._determine_chunk_page(text_chunk, current_page)
 
             if num_tokens >= self.minimum_chunk_size:
-                chunk_id += 1
                 chunk = self._create_chunk(
                     chunk_id=chunk_id,
                     content=text_chunk,
@@ -151,6 +150,7 @@ class MultimodalChunker(DocAnalysisChunker):
                     offset=chunk_offset,
                 )
                 chunks.append(chunk)
+                chunk_id += 1
             else:
                 skipped_chunks += 1
         

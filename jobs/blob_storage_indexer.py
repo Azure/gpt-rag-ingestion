@@ -23,6 +23,14 @@ from dependencies import get_config
 from chunking import DocumentChunker
 
 # -----------------------------------------------------------------------------
+# Custom Exception
+# -----------------------------------------------------------------------------
+class IndexStateScanLimitExceeded(Exception):
+    """Raised when index state scan hits the skip=100k limit, indicating incomplete snapshot."""
+    pass
+
+
+# -----------------------------------------------------------------------------
 # Configuration wrapper
 # -----------------------------------------------------------------------------
 @dataclasses.dataclass
@@ -115,6 +123,20 @@ class BlobStorageDocumentIndexer:
         self._blob_service: Optional[BlobServiceClient] = None
         self._search_client: Optional[AsyncSearchClient] = None
 
+    def _log_event(self, level: int, event: str, **fields: Any) -> None:
+        """Emit structured JSON logs for KQL queries."""
+        payload: Dict[str, Any] = {"event": event}
+        for key, value in fields.items():
+            if value is None:
+                continue
+            payload[key] = value.isoformat() if isinstance(value, datetime) else value
+        try:
+            message = json.dumps(payload, ensure_ascii=False)
+        except TypeError:
+            safe_payload = {k: str(v) for k, v in payload.items()}
+            message = json.dumps(safe_payload, ensure_ascii=False)
+        logging.log(level, f"[{self.cfg.indexer_name}] {message}")
+
     # ---------- Clients ----------
     async def _ensure_clients(self):
         if not self._credential:
@@ -142,6 +164,38 @@ class BlobStorageDocumentIndexer:
         run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         start_iso = _utc_now()
         logging.info(f"[{self.cfg.indexer_name}] Starting @ {run_id}")
+        summary = {
+            "indexerType": self.cfg.indexer_name,
+            "runId": run_id,
+            "runStartedAt": start_iso,
+            "runFinishedAt": None,
+            "sourceContainer": self.cfg.source_container,
+            "sourceFiles": 0,
+            "candidates": 0,
+            "itemsDiscovered": 0,
+            "indexedItems": 0,
+            "skippedNoChange": 0,
+            "success": 0,
+            "failed": 0,
+            "totalChunksUploaded": 0,
+            "status": "started",
+        }
+        await self._write_run_summary(self.cfg.jobs_log_container, summary, run_id)
+        self._log_event(
+            logging.INFO,
+            "RUN-START",
+            runId=run_id,
+            sourceContainer=self.cfg.source_container,
+            blobPrefix=self.cfg.blob_prefix,
+            maxConcurrency=self.cfg.max_concurrency,
+        )
+
+        source_files = 0
+        items_discovered = 0
+        success = 0
+        failed = 0
+        total_chunks = 0
+        skipped_no_change = 0
 
         try:
             # ensure log containers exist (best-effort)
@@ -156,7 +210,6 @@ class BlobStorageDocumentIndexer:
             # Enumerate blobs to consider
             container = self._blob_service.get_container_client(self.cfg.source_container)
             to_process: List[Tuple[str, datetime, str]] = []
-            source_files: int = 0
 
             async for b in container.list_blobs(name_starts_with=self.cfg.blob_prefix):
                 if getattr(b, "size", None) == 0 and b.name.endswith("/"):
@@ -173,7 +226,19 @@ class BlobStorageDocumentIndexer:
                         else "application/octet-stream"
                     ))
 
-            logging.info(f"[{self.cfg.indexer_name}] Candidates: {len(to_process)}")
+            items_discovered = len(to_process)
+            skipped_no_change = max(source_files - items_discovered, 0)
+
+            summary.update({
+                "sourceFiles": source_files,
+                "candidates": items_discovered,
+                "itemsDiscovered": items_discovered,
+                "skippedNoChange": skipped_no_change,
+                "status": "running",
+            })
+            await self._write_run_summary(self.cfg.jobs_log_container, summary, run_id)
+
+            logging.info(f"[{self.cfg.indexer_name}] Candidates: {items_discovered}")
 
             # Process in parallel, pass run_id down
             results = await _gather_limited(
@@ -182,25 +247,71 @@ class BlobStorageDocumentIndexer:
             )
 
             # Summarize
-            success = sum(1 for r in results if not isinstance(r, Exception) and r.get("status") == "success")
-            failed = sum(1 for r in results if isinstance(r, Exception) or (r and r.get("status") == "error"))
+            success = sum(1 for r in results if isinstance(r, dict) and r.get("status") == "success")
+            failed = sum(1 for r in results if not isinstance(r, dict) or r.get("status") == "error")
             total_chunks = sum(r.get("chunks", 0) for r in results if isinstance(r, dict))
 
-            summary = {
-                "indexerType": self.cfg.indexer_name,
-                "runId": run_id,  # include runId in summary too
-                "runStartedAt": start_iso,
-                "runFinishedAt": _utc_now(),
-                "sourceContainer": self.cfg.source_container,
-                "sourceFiles": source_files,
-                "candidates": len(to_process),
+            summary.update({
                 "success": success,
+                "indexedItems": success,
                 "failed": failed,
                 "totalChunksUploaded": total_chunks,
-            }
+                "status": "finishing",
+            })
             await self._write_run_summary(self.cfg.jobs_log_container, summary, run_id)
-            logging.info(f"[{self.cfg.indexer_name}] Summary: {json.dumps(summary)}")
+
+        except asyncio.CancelledError:
+            summary["status"] = "cancelled"
+            summary["runFinishedAt"] = _utc_now()
+            await self._write_run_summary(self.cfg.jobs_log_container, summary, run_id)
+            self._log_event(logging.WARNING, "RUN-CANCELLED", runId=run_id)
+            logging.info(f"[{self.cfg.indexer_name}] Run cancelled: runId={run_id}")
+            raise
+        except Exception as exc:
+            logging.exception(f"[{self.cfg.indexer_name}] run() failed")
+            summary["error"] = str(exc)
+            summary["status"] = "failed"
+            await self._write_run_summary(self.cfg.jobs_log_container, summary, run_id)
+            self._log_event(logging.ERROR, "RUN-ERROR", runId=run_id, error=str(exc))
         finally:
+            summary.update({
+                "runFinishedAt": summary.get("runFinishedAt") or _utc_now(),
+                "sourceFiles": source_files,
+                "candidates": items_discovered,
+                "itemsDiscovered": items_discovered,
+                "indexedItems": success,
+                "success": success,
+                "failed": failed,
+                "skippedNoChange": skipped_no_change,
+                "totalChunksUploaded": total_chunks,
+            })
+            if summary.get("status") not in {"failed", "cancelled"}:
+                summary["status"] = "finished"
+
+            await self._write_run_summary(self.cfg.jobs_log_container, summary, run_id)
+            duration_seconds: Optional[float] = None
+            try:
+                start_dt = _as_datetime(summary.get("runStartedAt"))
+                finish_dt = _as_datetime(summary.get("runFinishedAt"))
+                if start_dt and finish_dt:
+                    duration_seconds = max((finish_dt - start_dt).total_seconds(), 0.0)
+            except Exception:
+                duration_seconds = None
+
+            self._log_event(
+                logging.INFO,
+                "RUN-COMPLETE",
+                runId=run_id,
+                status=summary.get("status"),
+                sourceFiles=source_files,
+                itemsDiscovered=items_discovered,
+                indexedItems=success,
+                skippedNoChange=skipped_no_change,
+                failed=failed,
+                totalChunksUploaded=total_chunks,
+                durationSeconds=duration_seconds,
+            )
+            logging.info(f"[{self.cfg.indexer_name}] Summary: {json.dumps(summary)}")
             await self._close_clients_safely()
 
     async def _close_clients_safely(self):
@@ -295,6 +406,18 @@ class BlobStorageDocumentIndexer:
                 "finishedAt": _utc_now(),
             })
             await self._write_file_log(self.cfg.jobs_log_container, f"{file_log_key}.json", per_file_log)
+            self._log_event(
+                logging.INFO,
+                "ITEM-COMPLETE",
+                runId=run_id,
+                blobName=blob_name,
+                parentId=parent_id,
+                status="success",
+                totalChunks=len(docs),
+                contentType=content_type or "application/octet-stream",
+                fileUrl=file_url,
+                lastModified=last_modified,
+            )
             return {"status": "success", "chunks": len(docs)}
 
         except Exception as e:
@@ -305,6 +428,17 @@ class BlobStorageDocumentIndexer:
                 "finishedAt": _utc_now(),
             })
             await self._write_file_log(self.cfg.jobs_log_container, f"{file_log_key}.json", per_file_log)
+            self._log_event(
+                logging.ERROR,
+                "ITEM-ERROR",
+                runId=run_id,
+                blobName=blob_name,
+                parentId=parent_id,
+                status="error",
+                contentType=content_type or "application/octet-stream",
+                fileUrl=file_url,
+                error=str(e),
+            )
             return {"status": "error", "error": str(e)}
 
     def _to_search_doc(
@@ -348,6 +482,7 @@ class BlobStorageDocumentIndexer:
     async def _load_latest_index_state(self, max_seconds: float = 300.0) -> Dict[str, datetime]:
         """
         Return map parent_id -> latest metadata_storage_last_modified from index.
+        Raises IndexStateScanLimitExceeded if skip limit is hit (incomplete snapshot).
         """
         await self._ensure_clients()
 
@@ -358,30 +493,28 @@ class BlobStorageDocumentIndexer:
         start = time.monotonic()
 
         logging.info(
-            f"[{self.cfg.indexer_name}] _load_latest_index_state starting pagination "
-            f"(page_size={page_size}, max_seconds={max_seconds})"
+            f"[{self.cfg.indexer_name}] load-state/start page_size={page_size} max_seconds={max_seconds:.1f}"
         )
 
         while True:
             elapsed = time.monotonic() - start
             if elapsed > max_seconds:
                 logging.warning(
-                    f"[{self.cfg.indexer_name}] _load_latest_index_state TIMEOUT after "
-                    f"{elapsed:.1f}s (skip={skip}, total_docs_seen={total_docs_seen})"
+                    f"[{self.cfg.indexer_name}] load-state/timeout elapsed={elapsed:.1f}s skip={skip} seen={total_docs_seen}"
                 )
                 break
 
             if skip >= 100_000:
-                logging.warning(
-                    f"[{self.cfg.indexer_name}] _load_latest_index_state reached skip limit "
-                    f"(skip={skip}, total_docs_seen={total_docs_seen}). Stopping scan."
+                error_msg = (
+                    f"Index state scan hit skip limit (skip={skip}, seen={total_docs_seen}). "
+                    f"Index has >100k documents. Cannot build complete state snapshot. "
+                    f"Please clean up the index or partition the ingestion before retrying."
                 )
-                break
+                logging.error(f"[{self.cfg.indexer_name}] {error_msg}")
+                raise IndexStateScanLimitExceeded(error_msg)
 
             logging.info(
-                f"[{self.cfg.indexer_name}] _load_latest_index_state fetching page: "
-                f"skip={skip}, top={page_size}, elapsed={elapsed:.1f}s, "
-                f"total_docs_seen={total_docs_seen}"
+                f"[{self.cfg.indexer_name}] load-state/fetch skip={skip} top={page_size} elapsed={elapsed:.1f}s seen={total_docs_seen}"
             )
 
             results = await self._search_client.search(
@@ -405,23 +538,20 @@ class BlobStorageDocumentIndexer:
                         latest[pid] = lm
 
             logging.info(
-                f"[{self.cfg.indexer_name}] _load_latest_index_state page processed: "
-                f"skip={skip}, batch_count={batch_count}, total_docs_seen={total_docs_seen}"
+                f"[{self.cfg.indexer_name}] load-state/page-done skip={skip} batch={batch_count} seen={total_docs_seen}"
             )
 
             if batch_count == 0:
                 elapsed = time.monotonic() - start
                 logging.info(
-                    f"[{self.cfg.indexer_name}] _load_latest_index_state reached end of results "
-                    f"at skip={skip} (total_docs_seen={total_docs_seen}, elapsed={elapsed:.1f}s)"
+                    f"[{self.cfg.indexer_name}] load-state/end skip={skip} seen={total_docs_seen} elapsed={elapsed:.1f}s"
                 )
                 break
 
             skip += page_size
 
         logging.info(
-            f"[{self.cfg.indexer_name}] _load_latest_index_state finished with "
-            f"{len(latest)} parent_id keys (total_docs_seen={total_docs_seen})"
+            f"[{self.cfg.indexer_name}] load-state/complete parent-ids={len(latest)} seen={total_docs_seen}"
         )
 
         return latest

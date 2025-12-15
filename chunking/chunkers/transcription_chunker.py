@@ -71,13 +71,13 @@ class TranscriptionChunker(BaseChunker):
         text_chunks = self._chunk_document_content(text)
         chunk_id = 0
         for text_chunk in text_chunks:
-            chunk_id += 1
             chunk_size = self.token_estimator.estimate_tokens(text_chunk)
             if chunk_size > self.max_chunk_size:
                 logging.debug(f"[transcription_chunker][{self.filename}] truncating {chunk_size} size chunk to fit within {self.max_chunk_size} tokens")
                 text_chunk = self._truncate_chunk(text_chunk)
             chunk_dict = self._create_chunk(chunk_id=chunk_id, content=text_chunk, embedding_text=summary, summary=summary) 
             chunks.append(chunk_dict)      
+            chunk_id += 1
         return chunks
 
     def _vtt_process(self):

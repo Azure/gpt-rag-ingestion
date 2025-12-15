@@ -1,4 +1,3 @@
-import os
 import logging
 from azure.search.documents.aio import SearchClient
 from azure.search.documents.models import SearchMode
@@ -25,7 +24,7 @@ class AISearchClient:
 
         # Initialize the ChainedTokenCredential
         try:
-            client_id = os.environ.get('AZURE_CLIENT_ID', None)
+            client_id = app_config_client.get('AZURE_CLIENT_ID', None, allow_none=True) or None
 
             self.credential = ChainedTokenCredential(
                 ManagedIdentityCredential(client_id=client_id),
