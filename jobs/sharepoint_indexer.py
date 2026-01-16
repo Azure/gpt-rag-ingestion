@@ -729,34 +729,63 @@ class SharePointIndexer:
 
 
     # ---------- content builders ----------
-    async def _get_security_ids_for_item(
+    async def _get_security_principals_for_item(
         self,
         *,
         session: aiohttp.ClientSession,
         site_id: str,
         collection_id: str,
         item_id: str,
-    ) -> List[str]:
+    ) -> tuple[List[str], List[str]]:
         if not self._graph_client:
-            return []
+            return ([], [])
 
         try:
-            ids = await self._graph_client.get_item_permission_object_ids(
+            user_ids, group_ids = await self._graph_client.get_item_permission_principal_ids(
                 session=session,
                 site_id=site_id,
                 collection_id=collection_id,
                 item_id=item_id,
             )
-            if ids:
-                logging.debug(
-                    f"[{self.cfg.indexer_name}][SECURITY] Resolved {len(ids)} permissions | itemId={item_id}"
+
+            before_users = len(user_ids)
+            before_groups = len(group_ids)
+            user_ids = self._normalize_acl_ids(user_ids, max_values=32)
+            group_ids = self._normalize_acl_ids(group_ids, max_values=32)
+            if len(user_ids) != before_users or len(group_ids) != before_groups:
+                logging.warning(
+                    f"[{self.cfg.indexer_name}][SECURITY] Truncated/deduped ACLs | itemId={item_id} "
+                    f"users={before_users}->{len(user_ids)} groups={before_groups}->{len(group_ids)}"
                 )
-            return ids
+
+            if user_ids or group_ids:
+                logging.debug(
+                    f"[{self.cfg.indexer_name}][SECURITY] Resolved permissions | itemId={item_id} users={len(user_ids)} groups={len(group_ids)}"
+                )
+            return (user_ids, group_ids)
         except Exception as exc:  # noqa: BLE001
             logging.warning(
                 f"[{self.cfg.indexer_name}][SECURITY] Failed to resolve permissions | itemId={item_id} error={exc}"
             )
-            return []
+            return ([], [])
+
+    @staticmethod
+    def _normalize_acl_ids(values: List[str], *, max_values: int = 32) -> List[str]:
+        """Normalize ACL ID lists for Azure AI Search permission trimming.
+
+        - Removes empty values
+        - De-duplicates while preserving order
+        - Truncates to `max_values` (Azure AI Search limitation)
+        """
+        normalized: List[str] = []
+        seen: set[str] = set()
+        for value in values or []:
+            s = str(value).strip()
+            if not s or s in seen:
+                continue
+            seen.add(s)
+            normalized.append(s)
+        return normalized[:max_values]
 
     def _fields_to_text(self, fields: Dict[str, Any], exclude: Optional[Iterable[str]] = None) -> str:
         exclude_set = set(exclude or [])
@@ -861,7 +890,8 @@ class SharePointIndexer:
         content: str,
         content_vec: List[float],
         category: str = "",
-        security_ids: Optional[List[str]] = None,
+        security_user_ids: Optional[List[str]] = None,
+        security_group_ids: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         chunk_id = 0
         doc_id = _make_chunk_key(parent_id, chunk_id)
@@ -871,7 +901,8 @@ class SharePointIndexer:
             "metadata_storage_path": parent_id,
             "metadata_storage_name": key_id,
             "metadata_storage_last_modified": last_mod,
-            "metadata_security_id": list(security_ids or []),
+            "metadata_security_user_ids": list(security_user_ids or []),
+            "metadata_security_group_ids": list(security_group_ids or []),
             "chunk_id": chunk_id,
             "page": 0,
             "offset": 0,
@@ -898,7 +929,8 @@ class SharePointIndexer:
         web_url: str,
         last_mod: datetime,
         category: str = "",
-        security_ids: Optional[List[str]] = None,
+        security_user_ids: Optional[List[str]] = None,
+        security_group_ids: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         cid = int(chunk.get("chunk_id", 0))
         return {
@@ -907,7 +939,8 @@ class SharePointIndexer:
             "metadata_storage_path": parent_id,
             "metadata_storage_name": file_name,
             "metadata_storage_last_modified": last_mod,
-            "metadata_security_id": list(security_ids or []),
+            "metadata_security_user_ids": list(security_user_ids or []),
+            "metadata_security_group_ids": list(security_group_ids or []),
             "chunk_id": cid,
             "page": int(chunk.get("page", 0)),
             "offset": int(chunk.get("offset", 0)),
@@ -938,7 +971,8 @@ class SharePointIndexer:
         item: Dict[str, Any],
         item_id: str,
         category: str,
-        security_ids: Optional[List[str]],
+        security_user_ids: Optional[List[str]],
+        security_group_ids: Optional[List[str]],
         stats: RunStats,
         stats_lock: asyncio.Lock,
     ) -> Dict[str, Any]:
@@ -1014,7 +1048,8 @@ class SharePointIndexer:
                 file_web_url,
                 file_last_mod,
                 category=category,
-                security_ids=security_ids,
+                security_user_ids=security_user_ids,
+                security_group_ids=security_group_ids,
             )
             for chunk in chunks
         ]
@@ -1428,7 +1463,7 @@ class SharePointIndexer:
                 web_url = self._build_item_web_url(list_nav_base_url, item_id, fallback_web_url)
                 last_mod = _as_dt(item.get("lastModifiedDateTime") or fields.get("Modified"))
                 parent_item_id = _make_parent_key(site_domain, site_name, collection_id, item_id)
-                security_ids = await self._get_security_ids_for_item(
+                security_user_ids, security_group_ids = await self._get_security_principals_for_item(
                     session=session,
                     site_id=site_id,
                     collection_id=collection_id,
@@ -1490,7 +1525,8 @@ class SharePointIndexer:
                                 content=content,
                                 content_vec=emb,
                                 category=category_from_spec,
-                                security_ids=security_ids,
+                                security_user_ids=security_user_ids,
+                                security_group_ids=security_group_ids,
                             )
 
                             # Only delete & re-upload if we actually need to refresh
@@ -1529,7 +1565,8 @@ class SharePointIndexer:
                                 item=item,
                                 item_id=item_id,
                                 category=category_from_spec,
-                                security_ids=security_ids,
+                                security_user_ids=security_user_ids,
+                                security_group_ids=security_group_ids,
                                 stats=stats,
                                 stats_lock=stats_lock,
                             )

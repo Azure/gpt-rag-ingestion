@@ -359,18 +359,48 @@ class BlobStorageDocumentIndexer:
             "chunksIds": self._make_chunk_key_prefix(parent_id),
         }
         try:
-            # Fetch blob metadata to capture security IDs if provided
-            security_ids: List[str] = []
+            # Fetch blob metadata to capture ACL info if provided
+            security_user_ids: List[str] = []
+            security_group_ids: List[str] = []
+            rbac_scope = self._get_container_rbac_scope()
             try:
                 props = await blob_client.get_blob_properties()
                 meta = (getattr(props, "metadata", None) or {})
                 # Azure stores metadata keys as lowercase
-                raw_val = meta.get("metadata_security_id") or meta.get("metadata-security-id")
-                if raw_val:
-                    security_ids = self._parse_security_ids(raw_val)
+                raw_users = (
+                    meta.get("metadata_security_user_ids")
+                    or meta.get("metadata-security-user-ids")
+                    or meta.get("metadata_security_user_ids".lower())
+                )
+                raw_groups = (
+                    meta.get("metadata_security_group_ids")
+                    or meta.get("metadata-security-group-ids")
+                    or meta.get("metadata_security_group_ids".lower())
+                )
+
+                if raw_users:
+                    security_user_ids = self._parse_security_ids(raw_users)
+                if raw_groups:
+                    security_group_ids = self._parse_security_ids(raw_groups)
+
+                # Backward compat: if a blob still has legacy metadata_security_id, treat it as user IDs.
+                if not security_user_ids:
+                    raw_legacy = meta.get("metadata_security_id") or meta.get("metadata-security-id")
+                    if raw_legacy:
+                        security_user_ids = self._parse_security_ids(raw_legacy)
+
+                security_user_ids = self._normalize_acl_ids(
+                    security_user_ids,
+                    field_name="metadata_security_user_ids",
+                )
+                security_group_ids = self._normalize_acl_ids(
+                    security_group_ids,
+                    field_name="metadata_security_group_ids",
+                )
             except Exception as _:
                 # Non-fatal: continue without security IDs
-                security_ids = []
+                security_user_ids = []
+                security_group_ids = []
 
             download = await blob_client.download_blob()
             file_bytes = await download.readall()
@@ -395,7 +425,19 @@ class BlobStorageDocumentIndexer:
                 raise RuntimeError(f"chunker returned errors: {errors}")
 
             # Convert chunks -> search docs
-            docs = [self._to_search_doc(chunk, parent_id, file_url, blob_name, last_modified, security_ids) for chunk in chunks]
+            docs = [
+                self._to_search_doc(
+                    chunk,
+                    parent_id,
+                    file_url,
+                    blob_name,
+                    last_modified,
+                    security_user_ids=security_user_ids,
+                    security_group_ids=security_group_ids,
+                    rbac_scope=rbac_scope,
+                )
+                for chunk in chunks
+            ]
 
             # Replace existing parent's docs with fresh set
             await self._replace_parent_docs(parent_id, docs)
@@ -448,7 +490,9 @@ class BlobStorageDocumentIndexer:
         file_url: str,
         blob_name: str,
         last_modified: datetime,
-        security_ids: Optional[List[str]] = None,
+        security_user_ids: Optional[List[str]] = None,
+        security_group_ids: Optional[List[str]] = None,
+        rbac_scope: str = "",
     ) -> Dict[str, Any]:
         # Azure Search key must be unique & stable per chunk
         chunk_id = int(chunk.get("chunk_id", 0))
@@ -459,7 +503,9 @@ class BlobStorageDocumentIndexer:
             "metadata_storage_path": parent_id,
             "metadata_storage_name": os.path.basename(blob_name),
             "metadata_storage_last_modified": last_modified,
-            "metadata_security_id": security_ids or [],
+            "metadata_security_user_ids": list(security_user_ids or []),
+            "metadata_security_group_ids": list(security_group_ids or []),
+            "metadata_security_rbac_scope": rbac_scope or "",
             "chunk_id": chunk_id,
             "content": chunk.get("content", ""),
             "imageCaptions": chunk.get("imageCaptions", ""),
@@ -746,7 +792,7 @@ class BlobStorageDocumentIndexer:
 
     def _parse_security_ids(self, raw_val: str) -> List[str]:
         """
-        Parse metadata_security_id from blob metadata into a clean list of strings.
+        Parse a blob metadata value into a clean list of strings.
         Supports:
         - JSON arrays: ["a","b"]
         - Python-style lists with single quotes: ['a', 'b']
@@ -780,6 +826,75 @@ class BlobStorageDocumentIndexer:
             if tt:
                 cleaned.append(tt)
         return cleaned
+
+    def _normalize_acl_ids(
+        self,
+        values: List[str],
+        *,
+        field_name: str,
+        max_values: int = 32,
+    ) -> List[str]:
+        """Normalize ACL ID lists for Azure AI Search permission trimming.
+
+        - Removes empty values
+        - De-duplicates while preserving order
+        - Truncates to `max_values` (Azure AI Search limitation)
+        """
+        normalized: List[str] = []
+        seen: set[str] = set()
+
+        for value in values or []:
+            s = str(value).strip()
+            if not s or s in seen:
+                continue
+            seen.add(s)
+            normalized.append(s)
+
+        if len(normalized) > max_values:
+            logging.warning(
+                f"[{self.cfg.indexer_name}] {field_name} has {len(normalized)} values; truncating to {max_values}"
+            )
+            return normalized[:max_values]
+
+        return normalized
+
+    def _get_container_rbac_scope(self) -> str:
+        """Return the storage container resource id to be stored in metadata_security_rbac_scope.
+
+        Preference order:
+        1) A precomputed resource id in configuration
+        2) Construct from subscription id + resource group + storage account + container name
+        """
+        # Prefer an explicit resource id if provided
+        explicit = (
+            self._app.get("DOCUMENTS_STORAGE_CONTAINER_RESOURCE_ID", "")
+            or self._app.get("DOCUMENTS_CONTAINER_RESOURCE_ID", "")
+            or self._app.get("BLOB_CONTAINER_RESOURCE_ID", "")
+        )
+        if explicit:
+            return str(explicit).strip()
+
+        subscription_id = (
+            self._app.get("SUBSCRIPTION_ID", "")
+            or self._app.get("AZURE_SUBSCRIPTION_ID", "")
+        )
+        resource_group = self._app.get("AZURE_RESOURCE_GROUP", "")
+        storage_account = self.cfg.storage_account_name
+        container = self.cfg.source_container
+
+        if subscription_id and resource_group and storage_account and container:
+            return (
+                f"/subscriptions/{subscription_id}/resourceGroups/{resource_group}"
+                f"/providers/Microsoft.Storage/storageAccounts/{storage_account}"
+                f"/blobServices/default/containers/{container}"
+            )
+
+        # Not fatal; the index field can be blank for non-RBAC scenarios
+        logging.debug(
+            f"[{self.cfg.indexer_name}] metadata_security_rbac_scope could not be computed "
+            f"(missing SUBSCRIPTION_ID/AZURE_SUBSCRIPTION_ID or AZURE_RESOURCE_GROUP)."
+        )
+        return ""
 
 
 # -----------------------------------------------------------------------------

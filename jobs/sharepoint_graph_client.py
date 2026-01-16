@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 from urllib.parse import quote, urlencode
 from uuid import UUID
 
@@ -317,7 +317,27 @@ class SharePointGraphClient:
         collection_id: str,
         item_id: str,
     ) -> List[str]:
-        """Return a normalized list of object IDs that have explicit permissions on an item."""
+        """Return a normalized list of object IDs that have explicit permissions on an item.
+
+        This is kept for backward compatibility. Prefer get_item_permission_principal_ids.
+        """
+        user_ids, group_ids = await self.get_item_permission_principal_ids(
+            session=session,
+            site_id=site_id,
+            collection_id=collection_id,
+            item_id=item_id,
+        )
+        # Preserve previous behavior: a single combined list.
+        return list(dict.fromkeys([*user_ids, *group_ids]))
+
+    async def get_item_permission_principal_ids(
+        self,
+        session: aiohttp.ClientSession,
+        site_id: str,
+        collection_id: str,
+        item_id: str,
+    ) -> Tuple[List[str], List[str]]:
+        """Return (user_object_ids, group_object_ids) that have explicit permissions on an item."""
         # The permissions resource for list items currently exists only in the beta Graph surface.
         url = (
             f"{self._graph_beta_base}/sites/{site_id}/lists/{collection_id}/items/{item_id}/permissions"
@@ -330,28 +350,36 @@ class SharePointGraphClient:
                 logging.debug(
                     f"{LOG_SCOPE} permissions lookup failed ({exc.status}) for list {collection_id} item {item_id}"
                 )
-                return []
+                return ([], [])
             raise
 
-        ids: List[str] = []
-        seen: set[str] = set()
+        user_ids: List[str] = []
+        group_ids: List[str] = []
+        seen_users: set[str] = set()
+        seen_groups: set[str] = set()
 
         for perm in data.get("value", []):
             identities = perm.get("grantedToIdentitiesV2") or perm.get("grantedToIdentities") or []
             for identity in identities:
-                candidate = self._extract_identity_id(identity)
-                if candidate and candidate not in seen:
-                    seen.add(candidate)
-                    ids.append(candidate)
+                kind, obj_id = self._extract_identity_principal(identity)
+                if kind == "user" and obj_id and obj_id not in seen_users:
+                    seen_users.add(obj_id)
+                    user_ids.append(obj_id)
+                elif kind == "group" and obj_id and obj_id not in seen_groups:
+                    seen_groups.add(obj_id)
+                    group_ids.append(obj_id)
 
             granted_to = perm.get("grantedToV2") or perm.get("grantedTo")
             if isinstance(granted_to, dict):
-                candidate = self._extract_identity_id(granted_to)
-                if candidate and candidate not in seen:
-                    seen.add(candidate)
-                    ids.append(candidate)
+                kind, obj_id = self._extract_identity_principal(granted_to)
+                if kind == "user" and obj_id and obj_id not in seen_users:
+                    seen_users.add(obj_id)
+                    user_ids.append(obj_id)
+                elif kind == "group" and obj_id and obj_id not in seen_groups:
+                    seen_groups.add(obj_id)
+                    group_ids.append(obj_id)
 
-        return ids
+        return (user_ids, group_ids)
 
     @staticmethod
     def _is_guid(value: str) -> bool:
@@ -375,6 +403,29 @@ class SharePointGraphClient:
         if direct and cls._is_guid(str(direct)):
             return str(direct)
         return None
+
+    @classmethod
+    def _extract_identity_principal(cls, identity: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
+        """Return (kind, object_id) where kind is 'user' or 'group'.
+
+        Graph permission payloads typically provide a nested identity set, e.g.:
+        {"user": {"id": "..."}} or {"group": {"id": "..."}}.
+
+        If the payload does not identify the kind, return (None, None).
+        """
+        user_obj = identity.get("user")
+        if isinstance(user_obj, dict):
+            obj_id = user_obj.get("id")
+            if obj_id and cls._is_guid(str(obj_id)):
+                return ("user", str(obj_id))
+
+        group_obj = identity.get("group")
+        if isinstance(group_obj, dict):
+            obj_id = group_obj.get("id")
+            if obj_id and cls._is_guid(str(obj_id)):
+                return ("group", str(obj_id))
+
+        return (None, None)
 
     def _is_hidden_lookup_list(self, list_id: str) -> bool:
         normalized = (list_id or "").strip().lower()
