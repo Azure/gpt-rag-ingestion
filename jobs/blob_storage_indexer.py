@@ -21,6 +21,7 @@ from azure.search.documents.aio import SearchClient as AsyncSearchClient
 
 from dependencies import get_config
 from chunking import DocumentChunker
+from chunking.chunker_factory import ChunkerFactory
 
 # -----------------------------------------------------------------------------
 # Custom Exception
@@ -45,6 +46,9 @@ class BlobIndexerConfig:
     search_endpoint: str = ""  # e.g., https://<svc>.search.windows.net
     search_index_name: str = ""  # e.g., ragindex-<...>
 
+    # Optional staging (Blob) to reduce memory during large ingestions
+    staging_container: str = "long-files-staging"
+
     # Behavior
     max_concurrency: int = 8
     batch_size: int = 500  # AI Search recommended batch size
@@ -67,6 +71,7 @@ class BlobIndexerConfig:
             batch_size=int(app.get("INDEXER_BATCH_SIZE", 500)),
             indexer_name=app.get("BLOB_INDEXER_NAME", "blob-storage-indexer"),
             input_is_base64=(app.get("CHUNKER_INPUT_IS_BASE64", "false").lower() in ("true", "1", "yes")),
+            staging_container=app.get("STAGING_CONTAINER", "long-files-staging"),
         )
 
 
@@ -419,32 +424,38 @@ class BlobStorageDocumentIndexer:
                 "fileName": os.path.basename(blob_name),
             }
 
-            # Chunk (off-thread to keep event loop snappy if heavy)
-            chunks, errors, warnings = await asyncio.to_thread(DocumentChunker().chunk_documents, data)
-            if errors:
-                raise RuntimeError(f"chunker returned errors: {errors}")
-
-            # Convert chunks -> search docs
-            docs = [
-                self._to_search_doc(
-                    chunk,
-                    parent_id,
-                    file_url,
-                    blob_name,
-                    last_modified,
+            # Excel row-wise: stage docs in Blob to reduce memory pressure (optional design choice).
+            if self._should_stage_excel_rowwise(data):
+                total_chunks_uploaded = await self._replace_parent_docs_via_staging(
+                    data=data,
+                    parent_id=parent_id,
+                    file_url=file_url,
+                    blob_name=blob_name,
+                    last_modified=last_modified,
+                    run_id=run_id,
                     security_user_ids=security_user_ids,
                     security_group_ids=security_group_ids,
                     rbac_scope=rbac_scope,
                 )
-                for chunk in chunks
-            ]
-
-            # Replace existing parent's docs with fresh set
-            await self._replace_parent_docs(parent_id, docs)
+            else:
+                # Default: replace using streaming uploads in batches.
+                total_chunks_uploaded = await self._replace_parent_docs_stream(
+                    parent_id,
+                    self._iter_search_docs_for_blob(
+                        data=data,
+                        parent_id=parent_id,
+                        file_url=file_url,
+                        blob_name=blob_name,
+                        last_modified=last_modified,
+                        security_user_ids=security_user_ids,
+                        security_group_ids=security_group_ids,
+                        rbac_scope=rbac_scope,
+                    ),
+                )
 
             per_file_log.update({
                 "status": "success",
-                "chunks": len(docs),
+                "chunks": total_chunks_uploaded,
                 "finishedAt": _utc_now(),
             })
             await self._write_file_log(self.cfg.jobs_log_container, f"{file_log_key}.json", per_file_log)
@@ -455,12 +466,12 @@ class BlobStorageDocumentIndexer:
                 blobName=blob_name,
                 parentId=parent_id,
                 status="success",
-                totalChunks=len(docs),
+                totalChunks=total_chunks_uploaded,
                 contentType=content_type or "application/octet-stream",
                 fileUrl=file_url,
                 lastModified=last_modified,
             )
-            return {"status": "success", "chunks": len(docs)}
+            return {"status": "success", "chunks": total_chunks_uploaded}
 
         except Exception as e:
             logging.exception(f"[{self.cfg.indexer_name}] Failed processing {blob_name}")
@@ -607,6 +618,333 @@ class BlobStorageDocumentIndexer:
         # Delete existing docs for parent_id then upload fresh docs in batches
         await self._delete_parent_docs(parent_id)
         await self._upload_in_batches(docs)
+
+    def _iter_chunks_for_data(self, data: Dict[str, Any]):
+        """Yield chunk dicts. Uses chunker.iter_chunks() when available to reduce memory usage."""
+        filename = data.get("fileName", "")
+        chunker = ChunkerFactory().get_chunker(data)
+
+        # Prefer streaming if supported.
+        it = getattr(chunker, "iter_chunks", None)
+        if callable(it):
+            return it()
+
+        # Fallback: existing interface materializes a full list.
+        logging.info(
+            f"[{self.cfg.indexer_name}] chunker for {filename} does not support iter_chunks; "
+            "falling back to get_chunks() (may use more memory)."
+        )
+        return iter(chunker.get_chunks())
+
+    def _iter_search_docs_for_blob(
+        self,
+        data: Dict[str, Any],
+        parent_id: str,
+        file_url: str,
+        blob_name: str,
+        last_modified: datetime,
+        security_user_ids: Optional[List[str]] = None,
+        security_group_ids: Optional[List[str]] = None,
+        rbac_scope: str = "",
+    ):
+        """Yield AI Search docs one-by-one (chunk -> doc), avoiding large in-memory lists."""
+        for chunk in self._iter_chunks_for_data(data):
+            yield self._to_search_doc(
+                chunk,
+                parent_id,
+                file_url,
+                blob_name,
+                last_modified,
+                security_user_ids=security_user_ids,
+                security_group_ids=security_group_ids,
+                rbac_scope=rbac_scope,
+            )
+
+    async def _replace_parent_docs_stream(self, parent_id: str, docs_iter):
+        """Delete existing docs for parent_id then upload fresh docs in batches from an iterator."""
+        await self._delete_parent_docs(parent_id)
+        return await self._upload_iter_in_batches(docs_iter)
+
+    def _should_stage_excel_rowwise(self, data: Dict[str, Any]) -> bool:
+        """Enable blob staging only for Excel files when spreadsheet row-wise chunking is enabled."""
+        filename = (data.get("fileName") or "").lower()
+        if not (filename.endswith(".xlsx") or filename.endswith(".xls")):
+            return False
+        # Only stage when row-wise processing is enabled.
+        try:
+            return (self._app.get("SPREADSHEET_CHUNKING_BY_ROW", "false").lower() in ("true", "1", "yes"))
+        except Exception:
+            return False
+
+    def _make_staging_prefix(self, parent_id: str) -> str:
+        """Stable prefix for all staged artifacts of a parent document."""
+        safe_parent = self._sanitize_key_part(parent_id.lstrip("/")) or "doc"
+        return f"{self.cfg.indexer_name}/excel-row/{safe_parent}/"
+
+    async def _replace_parent_docs_via_staging(
+        self,
+        data: Dict[str, Any],
+        parent_id: str,
+        file_url: str,
+        blob_name: str,
+        last_modified: datetime,
+        run_id: str,
+        security_user_ids: Optional[List[str]] = None,
+        security_group_ids: Optional[List[str]] = None,
+        rbac_scope: str = "",
+    ) -> int:
+        """Stage docs in Blob then upload in batches, cleaning staging prefix afterwards.
+
+        This is used for Excel row-wise processing to keep memory bounded.
+        """
+        await self._ensure_clients()
+        await self._ensure_container(self.cfg.staging_container)
+
+        staging_prefix = self._make_staging_prefix(parent_id)
+        run_prefix = f"{staging_prefix}run={run_id}/"
+
+        self._log_event(
+            logging.INFO,
+            "STAGING-START",
+            runId=run_id,
+            parentId=parent_id,
+            blobName=blob_name,
+            stagingContainer=self.cfg.staging_container,
+            stagingPrefix=staging_prefix,
+            stagingRunPrefix=run_prefix,
+        )
+
+        # Clean previous leftovers for this document to avoid runaway container growth.
+        # (Best-effort. If another run is staging the same doc concurrently, this could interfere,
+        # but the indexer typically processes a given blob path serially.)
+        cleaned = await self._delete_blobs_with_prefix(self.cfg.staging_container, staging_prefix)
+        if cleaned:
+            self._log_event(
+                logging.INFO,
+                "STAGING-CLEANUP-PREFIX",
+                runId=run_id,
+                parentId=parent_id,
+                stagingPrefix=staging_prefix,
+                deleted=cleaned,
+            )
+
+        container = self._blob_service.get_container_client(self.cfg.staging_container)
+
+        def _json_default(o: Any):
+            if isinstance(o, datetime):
+                return o.isoformat()
+            raise TypeError(f"Object of type {o.__class__.__name__} is not JSON serializable")
+
+        # Stage chunk docs as individual blobs, using deterministic names per chunk_id.
+        staged_count = 0
+        last_progress = 0
+        for doc in self._iter_search_docs_for_blob(
+            data=data,
+            parent_id=parent_id,
+            file_url=file_url,
+            blob_name=blob_name,
+            last_modified=last_modified,
+            security_user_ids=security_user_ids,
+            security_group_ids=security_group_ids,
+            rbac_scope=rbac_scope,
+        ):
+            chunk_id = int(doc.get("chunk_id", staged_count))
+            name = f"{run_prefix}chunks/chunk_{chunk_id:06d}.json"
+            payload = json.dumps(doc, ensure_ascii=False, default=_json_default).encode("utf-8")
+            await container.upload_blob(
+                name=name,
+                data=payload,
+                overwrite=True,
+                content_settings=ContentSettings(content_type="application/json"),
+            )
+            staged_count += 1
+
+            if staged_count - last_progress >= 100:
+                last_progress = staged_count
+                self._log_event(
+                    logging.INFO,
+                    "STAGING-PROGRESS",
+                    runId=run_id,
+                    parentId=parent_id,
+                    stagedChunks=staged_count,
+                )
+
+        # Write a small manifest for observability/debugging.
+        manifest = {
+            "parentId": parent_id,
+            "blobName": blob_name,
+            "runId": run_id,
+            "stagedChunks": staged_count,
+            "createdAt": _utc_now(),
+        }
+        await container.upload_blob(
+            name=f"{run_prefix}manifest.json",
+            data=json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8"),
+            overwrite=True,
+            content_settings=ContentSettings(content_type="application/json"),
+        )
+
+        self._log_event(
+            logging.INFO,
+            "STAGING-COMPLETE",
+            runId=run_id,
+            parentId=parent_id,
+            stagedChunks=staged_count,
+            manifestBlob=f"{run_prefix}manifest.json",
+        )
+
+        # Replace: delete then upload from staging.
+        await self._delete_parent_docs(parent_id)
+
+        self._log_event(
+            logging.INFO,
+            "STAGING-UPLOAD-START",
+            runId=run_id,
+            parentId=parent_id,
+            stagedPrefix=f"{run_prefix}chunks/",
+            batchSize=self.cfg.batch_size,
+        )
+        uploaded = await self._upload_staged_docs_in_batches(
+            container_name=self.cfg.staging_container,
+            prefix=f"{run_prefix}chunks/",
+            run_id=run_id,
+            parent_id=parent_id,
+        )
+
+        self._log_event(
+            logging.INFO,
+            "STAGING-UPLOAD-COMPLETE",
+            runId=run_id,
+            parentId=parent_id,
+            uploadedChunks=uploaded,
+        )
+
+        # Clean staging run artifacts (best-effort).
+        cleaned_run = await self._delete_blobs_with_prefix(self.cfg.staging_container, run_prefix)
+        self._log_event(
+            logging.INFO,
+            "STAGING-CLEANUP-RUN",
+            runId=run_id,
+            parentId=parent_id,
+            stagingRunPrefix=run_prefix,
+            deleted=cleaned_run,
+        )
+
+        return uploaded
+
+    async def _upload_staged_docs_in_batches(
+        self,
+        container_name: str,
+        prefix: str,
+        run_id: str = "",
+        parent_id: str = "",
+    ) -> int:
+        """Read staged JSON docs from Blob prefix and upload to AI Search in batches."""
+        await self._ensure_clients()
+        container = self._blob_service.get_container_client(container_name)
+        batch: List[Dict[str, Any]] = []
+        total = 0
+        batch_num = 0
+        async for b in container.list_blobs(name_starts_with=prefix):
+            if not b.name.endswith(".json"):
+                continue
+            blob_client = container.get_blob_client(b.name)
+            download = await blob_client.download_blob()
+            raw = await download.readall()
+            try:
+                doc = json.loads(raw)
+            except Exception:
+                logging.warning(
+                    f"[{self.cfg.indexer_name}] failed to parse staged doc {b.name}; skipping"
+                )
+                continue
+
+            # Restore datetime fields that Azure SDK expects as datetime objects.
+            for field in ("metadata_storage_last_modified",):
+                if field in doc:
+                    restored = _as_datetime(doc.get(field))
+                    if restored is not None:
+                        doc[field] = restored
+
+            batch.append(doc)
+            if len(batch) >= self.cfg.batch_size:
+                await self._with_backoff(self._search_client.upload_documents, documents=batch)
+                total += len(batch)
+                batch_num += 1
+                self._log_event(
+                    logging.INFO,
+                    "STAGING-UPLOAD-BATCH",
+                    runId=run_id or None,
+                    parentId=parent_id or None,
+                    batchNumber=batch_num,
+                    batchSize=len(batch),
+                    uploadedSoFar=total,
+                )
+                batch = []
+                await asyncio.sleep(0)
+
+        if batch:
+            await self._with_backoff(self._search_client.upload_documents, documents=batch)
+            total += len(batch)
+            batch_num += 1
+            self._log_event(
+                logging.INFO,
+                "STAGING-UPLOAD-BATCH",
+                runId=run_id or None,
+                parentId=parent_id or None,
+                batchNumber=batch_num,
+                batchSize=len(batch),
+                uploadedSoFar=total,
+            )
+
+        return total
+
+    async def _delete_blobs_with_prefix(
+        self,
+        container_name: str,
+        prefix: str,
+        max_seconds: float = 120.0,
+    ) -> int:
+        """Best-effort cleanup: delete all blobs under prefix."""
+        await self._ensure_clients()
+        start = time.monotonic()
+        container = self._blob_service.get_container_client(container_name)
+        deleted = 0
+
+        async for b in container.list_blobs(name_starts_with=prefix):
+            if time.monotonic() - start > max_seconds:
+                logging.warning(
+                    f"[{self.cfg.indexer_name}] staging cleanup timed out for prefix={prefix}"
+                )
+                break
+            try:
+                await container.delete_blob(b.name)
+                deleted += 1
+            except Exception:
+                logging.debug(
+                    f"[{self.cfg.indexer_name}] ignoring delete error for staging blob {b.name}",
+                    exc_info=True,
+                )
+
+        return deleted
+
+    async def _upload_iter_in_batches(self, docs_iter) -> int:
+        """Upload documents from an iterator in cfg.batch_size chunks. Returns total uploaded count."""
+        await self._ensure_clients()
+        batch: List[Dict[str, Any]] = []
+        total = 0
+        for doc in docs_iter:
+            batch.append(doc)
+            if len(batch) >= self.cfg.batch_size:
+                await self._with_backoff(self._search_client.upload_documents, documents=batch)
+                total += len(batch)
+                batch = []
+                # Give the event loop a chance between heavy batches.
+                await asyncio.sleep(0)
+        if batch:
+            await self._with_backoff(self._search_client.upload_documents, documents=batch)
+            total += len(batch)
+        return total
 
     async def _delete_parent_docs(self, parent_id: str):
         await self._ensure_clients()

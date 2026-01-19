@@ -1,0 +1,2 @@
+# Normalize line endings for scripts to avoid shebang issues in Linux containers
+*.sh text eol=lf

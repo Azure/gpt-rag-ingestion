@@ -8,6 +8,7 @@ RUN pip install --upgrade pip && \
 
 COPY . .
 
-EXPOSE 80
+# Use a non-privileged port by default; the Container App ingress targetPort should match.
+EXPOSE 8080
 
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port 80 || sleep 3600"]
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"]
