@@ -6,7 +6,7 @@ This format follows [Keep a Changelog](https://keepachangelog.com/) and adheres 
 ## [v2.2.1] – 2026-01-19
 ### Fixed
 - Improved reliability of large spreadsheet ingestion (which generate thousands of embedding calls prone to transient rate limits) by adding robust retry with exponential backoff for Azure OpenAI calls (handles 429/Retry-After and is configurable via `OPENAI_RETRY_*` and `OPENAI_SDK_MAX_RETRIES`).
-- Reduced unexpected restarts during long runs by ensuring Azure Container Apps targets port `8080` during deployment (avoids transient probe failures caused by mismatched target port that could interrupt pipeline processing).
+- Standardized on the container best practice of using a non-privileged port (`8080`) instead of a privileged port (`80`), reducing the risk of runtime/permission friction and improving stability of long-running ingestion workloads.
 
 ## [v2.2.0] – 2026-01-15
 ### Added

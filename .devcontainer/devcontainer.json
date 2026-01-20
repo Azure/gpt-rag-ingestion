@@ -7,7 +7,7 @@
     "ghcr.io/devcontainers/features/git:1": {},
     "ghcr.io/devcontainers/features/azure-cli:1.2.9": {}
   },
-  "appPort": [80],
+  "appPort": [8080],
   "customizations": {
     "vscode": {
       "settings": {
