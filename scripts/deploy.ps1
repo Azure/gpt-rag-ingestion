@@ -334,6 +334,19 @@ try {
     exit 1
 }
 
+Write-Green "🌐 Updating container app ingress target port…"
+try {
+    az containerapp ingress update `
+        --name $values.DATA_INGEST_APP_NAME `
+        --resource-group $values.AZURE_RESOURCE_GROUP `
+        --target-port 8080
+    Write-Green "✅ Ingress target port updated."
+} catch {
+    $errMsg = $_.Exception.Message
+    Write-Yellow ("⚠️  Failed to update ingress target port: {0}" -f $errMsg)
+    exit 1
+}
+
 #get the current revision
 Write-Blue "🔍 Fetching current revision…"
 $currentRevision = az containerapp revision list `

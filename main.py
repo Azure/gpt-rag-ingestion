@@ -1,4 +1,5 @@
 import datetime
+import asyncio
 import json
 import logging
 import os
@@ -74,7 +75,10 @@ async def lifespan(app: FastAPI):
             logging.warning(f"[{human_name}] {env_key} not set — skipping job")
             return False
 
-    # Compact authentication check: require MI or SP in Azure; locally accept SP env or `az login`.
+    # Compact authentication check.
+    # NOTE: In Azure Container Apps, Managed Identity works via IMDS and does not necessarily
+    # surface as IDENTITY_ENDPOINT/MSI_* environment variables. Failing fast here can cause
+    # restart loops (and looks like a port/probe issue). Default to non-fatal in Azure.
     def _ensure_auth_or_exit() -> None:
         env = os.environ
         has_mi = any(env.get(k) for k in ("IDENTITY_ENDPOINT", "MSI_ENDPOINT", "MSI_SECRET"))
@@ -85,10 +89,16 @@ async def lifespan(app: FastAPI):
                 has_cli = subprocess.run(["az", "account", "show", "-o", "none"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
             except Exception:
                 has_cli = False
+
+        default_require_auth = "false" if is_azure_environment() else "true"
+        require_auth = (env.get("REQUIRE_AUTH_ON_STARTUP") or default_require_auth).lower() in ("true", "1", "yes")
         if not (has_sp or has_mi or has_cli):
-            logging.warning("The service is not authenticated (run 'az login' locally, or configure Managed Identity / Service Principal in Azure). Exiting...")
-            logging.shutdown()
-            os._exit(1)
+            msg = "The service did not detect authentication env vars (configure Managed Identity / Service Principal in Azure, or run 'az login' locally)."
+            if require_auth:
+                logging.warning(msg + " Exiting...")
+                logging.shutdown()
+                os._exit(1)
+            logging.warning(msg + " Continuing startup (REQUIRE_AUTH_ON_STARTUP!=true).")
 
     _ensure_auth_or_exit()
 
@@ -136,35 +146,70 @@ async def lifespan(app: FastAPI):
     s_nl2sql_index = _schedule("CRON_RUN_NL2SQL_INDEX", run_nl2sql_index, "nl2sql_index", "nl2sql-indexer")
     s_nl2sql_purge = _schedule("CRON_RUN_NL2SQL_PURGE", run_nl2sql_purge, "nl2sql_purge", "nl2sql-indexer-purger")
 
-    # If a CRON variable was defined for a job, run it once now sequentially to
-    # provide a deterministic startup run without APScheduler race/missed logs.
-    # Only run jobs whose CRON env var existed (the `_schedule` helper returned True).
+    # Optional: run scheduled jobs once at startup.
+    # WARNING: In Azure, long-running jobs can block app startup/health probes and
+    # cause the container to restart in a loop. Default to OFF in Azure.
     try:
-        if s_blob_index:
-            logging.info("[startup] Running blob-storage-indexer immediately")
-            await run_blob_index()
-        if s_blob_purge:
-            logging.info("[startup] Running blob-purge immediately")
-            await run_blob_purge()        
-        if s_nl2sql_index:
-            logging.info("[startup] Running nl2sql-indexer immediately")
-            await run_nl2sql_index()
-        if s_nl2sql_purge:
-            logging.info("[startup] Running nl2sql-purge immediately")
-            await run_nl2sql_purge()            
-        if s_sharepoint_index:
-            logging.info("[startup] Running sharepoint-indexer immediately")
-            await run_sharepoint_index()
-        if s_sharepoint_purge:
-            logging.info("[startup] Running sharepoint-purger immediately")
-            await run_sharepoint_purge()
-        if s_images_purge:
-            logging.info("[startup] Running multimodality-images-purger immediately")
-            await run_images_purge()
+        # default_startup_run = "false" if is_azure_environment() else "true"
+        default_startup_run = "true"
+        startup_run = (app_config_client.get("RUN_JOBS_ON_STARTUP", default_startup_run) or "").lower() in (
+            "true",
+            "1",
+            "yes",
+        )
     except Exception:
-        logging.exception("[startup] Error while running immediate scheduled jobs")
+        startup_run = False
+
+    startup_task: asyncio.Task | None = None
+
+    async def _run_startup_jobs() -> None:
+        # If a CRON variable was defined for a job, run it once sequentially.
+        # Only run jobs whose CRON env var existed (the `_schedule` helper returned True).
+        try:
+            if s_blob_index:
+                logging.info("[startup] Running blob-storage-indexer immediately")
+                await run_blob_index()
+            if s_blob_purge:
+                logging.info("[startup] Running blob-purge immediately")
+                await run_blob_purge()
+            if s_nl2sql_index:
+                logging.info("[startup] Running nl2sql-indexer immediately")
+                await run_nl2sql_index()
+            if s_nl2sql_purge:
+                logging.info("[startup] Running nl2sql-purge immediately")
+                await run_nl2sql_purge()
+            if s_sharepoint_index:
+                logging.info("[startup] Running sharepoint-indexer immediately")
+                await run_sharepoint_index()
+            if s_sharepoint_purge:
+                logging.info("[startup] Running sharepoint-purger immediately")
+                await run_sharepoint_purge()
+            if s_images_purge:
+                logging.info("[startup] Running multimodality-images-purger immediately")
+                await run_images_purge()
+        except asyncio.CancelledError:
+            logging.info("[startup] Startup jobs cancelled")
+            raise
+        except Exception:
+            logging.exception("[startup] Error while running immediate scheduled jobs")
+
+    if startup_run:
+        # Critical: do NOT block lifespan startup. Uvicorn binds its listen socket
+        # only after lifespan startup completes; blocking here causes Container Apps
+        # startup/readiness probes to fail and the app to restart in a loop.
+        logging.info("[startup] Scheduling immediate job runs in background")
+        startup_task = asyncio.create_task(_run_startup_jobs())
+    else:
+        logging.info("[startup] Skipping immediate job runs (RUN_JOBS_ON_STARTUP!=true)")
 
     yield
+
+    if startup_task:
+        startup_task.cancel()
+        try:
+            await startup_task
+        except asyncio.CancelledError:
+            pass
 
     scheduler.shutdown(wait=False)
 
@@ -181,6 +226,25 @@ app = FastAPI(
     version=APP_VERSION,
     lifespan=lifespan
 )
+
+
+@app.get("/", include_in_schema=False)
+async def root():
+    return {"status": "ok", "name": APP_NAME, "version": APP_VERSION}
+
+
+@app.get("/healthz", include_in_schema=False)
+async def healthz():
+    # Liveness: keep it fast and dependency-free.
+    return {"status": "ok"}
+
+
+@app.get("/readyz", include_in_schema=False)
+async def readyz():
+    # Readiness: report whether config has been initialized.
+    if app_config_client is None:
+        return Response("not ready", status_code=503)
+    return {"status": "ready"}
 
 # -------------------------------
 # Timer job wrappers

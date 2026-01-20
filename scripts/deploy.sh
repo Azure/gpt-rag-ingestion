@@ -114,56 +114,77 @@ echo "   resourceGroupName = $resourceGroupName"
 echo "   dataIngestApp = $dataIngestApp"
 echo
 
+USE_DOCKER=${USE_DOCKER:-false}
 
-echo -e "${GREEN}🔐 Logging into ACR (${containerRegistryName} in ${resourceGroupName})…${NC}"
-az acr login --name "${containerRegistryName}" --resource-group "${resourceGroupName}"
-echo -e "${GREEN}✅ Logged into ACR.${NC}"
-echo
+if [[ "$USE_DOCKER" == "true" ]]; then
+  echo -e "${GREEN}🔐 Logging into ACR (${containerRegistryName} in ${resourceGroupName})…${NC}"
+  az acr login --name "${containerRegistryName}" --resource-group "${resourceGroupName}"
+  echo -e "${GREEN}✅ Logged into ACR.${NC}"
+  echo
+else
+  echo -e "${YELLOW}⚠️  Using remote build (set USE_DOCKER=true to use local Docker).${NC}"
+  echo
+fi
 
 echo -e "${BLUE}🛢️ Defining tag…${NC}"
 if [[ -n "${tag:-}" ]]; then
-    # Use existing environment variable
-    tag="${tag}"
-    echo -e "${GREEN}Using tag from environment: ${tag}${NC}"
+  tag="${tag}"
+  echo -e "${GREEN}Using tag from environment: ${tag}${NC}"
 else
-    # Try Git short HEAD
-    if gitShort=$(git rev-parse --short HEAD 2>/dev/null); then
-        if [[ -n "$gitShort" ]]; then
-            tag="$gitShort"
-            echo -e "${GREEN}Using Git short HEAD as tag: ${tag}${NC}"
-        else
-            echo -e "${YELLOW}Could not get Git short HEAD. Generating random tag.${NC}"
-            # Generate random 8-digit number between 100000 and 999999
-            rand=$(od -An -N4 -tu4 /dev/urandom | tr -d ' ')
-            rand=$(( rand % 900000 + 100000 ))
-            tag="GPT${rand}"
-            echo -e "${GREEN}Generated random tag: ${tag}${NC}"
-        fi
+  if gitShort=$(git rev-parse --short HEAD 2>/dev/null); then
+    if [[ -n "$gitShort" ]]; then
+      tag="$gitShort"
+      echo -e "${GREEN}Using Git short HEAD as tag: ${tag}${NC}"
     else
-        echo -e "${YELLOW}Git command failed. Generating random tag.${NC}"
-        # Generate random 8-digit number between 100000 and 999999
-        rand=$(od -An -N4 -tu4 /dev/urandom | tr -d ' ')
-        rand=$(( rand % 900000 + 100000 ))
-        tag="GPT${rand}"
-        echo -e "${GREEN}Generated random tag: ${tag}${NC}"
+      echo -e "${YELLOW}Could not get Git short HEAD. Generating random tag.${NC}"
+      rand=$(od -An -N4 -tu4 /dev/urandom | tr -d ' ')
+      rand=$(( rand % 900000 + 100000 ))
+      tag="GPT${rand}"
+      echo -e "${GREEN}Generated random tag: ${tag}${NC}"
     fi
+  else
+    echo -e "${YELLOW}Git command failed. Generating random tag.${NC}"
+    rand=$(od -An -N4 -tu4 /dev/urandom | tr -d ' ')
+    rand=$(( rand % 900000 + 100000 ))
+    tag="GPT${rand}"
+    echo -e "${GREEN}Generated random tag: ${tag}${NC}"
+  fi
 fi
 
-echo -e "${GREEN}🛠️  Building Docker image…${NC}"
-docker build \
-  --platform linux/amd64 \
-  -t "${containerRegistryLoginServer}/azure-gpt-rag/data-ingestion:${tag}" \
-  .
+imageRef="${containerRegistryLoginServer}/azure-gpt-rag/data-ingestion:${tag}"
 
-echo
-echo -e "${GREEN}📤 Pushing image…${NC}"
-docker push "${containerRegistryLoginServer}/azure-gpt-rag/data-ingestion:${tag}"
-echo -e "${GREEN}✅ Image pushed.${NC}"
+if [[ "$USE_DOCKER" == "true" ]]; then
+  echo -e "${GREEN}🛠️  Building Docker image (local docker)…${NC}"
+  docker build \
+    --platform linux/amd64 \
+    -t "$imageRef" \
+    .
+
+  echo
+  echo -e "${GREEN}📤 Pushing image…${NC}"
+  docker push "$imageRef"
+  echo -e "${GREEN}✅ Image pushed.${NC}"
+else
+  echo -e "${GREEN}🛠️  Building image remotely via 'az acr build'…${NC}"
+  az acr build \
+    --registry "${containerRegistryName}" \
+    --image "azure-gpt-rag/data-ingestion:${tag}" \
+    .
+  echo -e "${GREEN}✅ Remote build completed.${NC}"
+fi
 
 echo
 echo -e "${GREEN}🔄 Updating container app…${NC}"
 az containerapp update \
   --name "${dataIngestApp}" \
   --resource-group "${resourceGroupName}" \
-  --image "${containerRegistryLoginServer}/azure-gpt-rag/data-ingestion:${tag}"
+  --image "$imageRef"
 echo -e "${GREEN}✅ Container app updated.${NC}"
+
+echo
+echo -e "${GREEN}🌐 Updating container app ingress target port…${NC}"
+az containerapp ingress update \
+  --name "${dataIngestApp}" \
+  --resource-group "${resourceGroupName}" \
+  --target-port 8080
+echo -e "${GREEN}✅ Ingress target port updated.${NC}"

@@ -77,85 +77,136 @@ class SpreadsheetChunker(BaseChunker):
         Returns:
             List[dict]: A list of dictionaries representing the chunks created from the spreadsheet.
         """
-        chunks = [] 
-        logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks] Running get_chunks.")
+        return list(self.iter_chunks())
+
+    def iter_chunks(self):
+        """Yield chunks one-by-one to avoid buffering all chunks/vectors in memory."""
+        logging.info(f"[spreadsheet_chunker][{self.filename}][iter_chunks] Running iter_chunks.")
         total_start_time = time.time()
 
-        sheets = self._spreadsheet_process()
-        logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks] Workbook has {len(sheets)} sheets")
+        blob_stream = BytesIO(self.document_bytes)
+        workbook = load_workbook(blob_stream, data_only=True)
+        logging.info(
+            f"[spreadsheet_chunker][{self.filename}][iter_chunks] Workbook has {len(workbook.sheetnames)} sheets"
+        )
 
         chunk_id = 0
-        for sheet in sheets:
-            if not self.chunking_by_row:
-                # Original behavior: Chunk per sheet
+        if not self.chunking_by_row:
+            # Original behavior: Chunk per sheet
+            for sheet_name in workbook.sheetnames:
                 start_time = time.time()
                 current_chunk_id = chunk_id
-                logging.debug(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Starting processing chunk {current_chunk_id} (sheet).")
-                table_content = sheet["table"]
+                sheet = workbook[sheet_name]
+                logging.debug(
+                    f"[spreadsheet_chunker][{self.filename}][iter_chunks][{sheet_name}] "
+                    f"Starting processing chunk {current_chunk_id} (sheet)."
+                )
 
+                data, headers = self._get_sheet_data(sheet)
+                table_content = tabulate(data, headers=headers, tablefmt="grid")
                 table_content = self._clean_markdown_table(table_content)
                 table_tokens = self.token_estimator.estimate_tokens(table_content)
-                
+
+                prompt = (
+                    f"Summarize the table with data in it, by understanding the information clearly.\n "
+                    f"table_data:{table_content}"
+                )
+                summary = self.aoai_client.get_completion(prompt, max_tokens=2048)
+
                 if self.max_chunk_size > 0 and table_tokens > self.max_chunk_size:
-                    logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Table has {table_tokens} tokens. Max tokens is {self.max_chunk_size}. Using summary.")
-                    table_content = sheet["summary"]
+                    logging.info(
+                        f"[spreadsheet_chunker][{self.filename}][iter_chunks][{sheet_name}] "
+                        f"Table has {table_tokens} tokens. Max tokens is {self.max_chunk_size}. Using summary."
+                    )
+                    table_content = summary
 
                 chunk_dict = self._create_chunk(
                     chunk_id=current_chunk_id,
                     content=table_content,
-                    summary=sheet["summary"] if not self.chunking_by_row else "",
-                    embedding_text=sheet["summary"] if (sheet["summary"] and not self.chunking_by_row) else table_content,
-                    title=sheet["name"]
-                )            
-                chunks.append(chunk_dict)
+                    summary=summary,
+                    embedding_text=summary if summary else table_content,
+                    title=sheet_name,
+                )
+                yield chunk_dict
                 chunk_id += 1
                 elapsed_time = time.time() - start_time
-                logging.debug(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Processed chunk {current_chunk_id} in {elapsed_time:.2f} seconds.")            
-            else:
-                # New behavior: Chunk per row
-                logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Starting row-wise chunking.")
-                headers = sheet.get("headers", [])
-                rows = sheet.get("data", [])
-                for row_index, row in enumerate(rows, start=1):
+                logging.debug(
+                    f"[spreadsheet_chunker][{self.filename}][iter_chunks][{sheet_name}] "
+                    f"Processed chunk {current_chunk_id} in {elapsed_time:.2f} seconds."
+                )
+        else:
+            # New behavior: Chunk per row (streaming)
+            for sheet_name in workbook.sheetnames:
+                sheet = workbook[sheet_name]
+                logging.info(
+                    f"[spreadsheet_chunker][{self.filename}][iter_chunks][{sheet_name}] "
+                    "Starting row-wise chunking."
+                )
+
+                try:
+                    header_row = next(sheet.iter_rows(min_row=1, max_row=1, values_only=True))
+                except StopIteration:
+                    continue
+                headers = ["" if v is None else str(v) for v in (header_row or [])]
+
+                for row_index, row_values in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=1):
+                    row = ["" if v is None else str(v) for v in (row_values or [])]
                     if not any(cell.strip() for cell in row):
                         continue
+
                     start_time = time.time()
                     current_chunk_id = chunk_id
-                    logging.debug(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Processing chunk {current_chunk_id} for row {row_index}.")
-                    
+                    logging.debug(
+                        f"[spreadsheet_chunker][{self.filename}][iter_chunks][{sheet_name}] "
+                        f"Processing chunk {current_chunk_id} for row {row_index}."
+                    )
+
                     if self.include_header_in_chunks:
                         table = tabulate([headers, row], headers="firstrow", tablefmt="github")
                     else:
                         table = tabulate([row], headers=headers, tablefmt="github")
-                    
+
                     table = self._clean_markdown_table(table)
-                    summary = ""
-                    
-                    table_tokens = self.token_estimator.estimate_tokens(table)
-                    if self.max_chunk_size > 0 and table_tokens > self.max_chunk_size:
-                        logging.info(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Row table has {table_tokens} tokens. Max tokens is {self.max_chunk_size}. Truncating content.")
-                        content = table
-                        embedding_text = table
-                    else:
-                        content = table
-                        embedding_text = table
+                    content = table
+                    embedding_text = self._row_to_embedding_text(
+                        headers=headers,
+                        row=row,
+                        sheet_name=sheet_name,
+                        row_index=row_index,
+                        include_header_in_embedding=self.include_header_in_chunks,
+                    )
+
+                    if self.max_chunk_size and self.max_chunk_size > 0:
+                        content_tokens = self.token_estimator.estimate_tokens(content)
+                        if content_tokens > self.max_chunk_size:
+                            logging.info(
+                                f"[spreadsheet_chunker][{self.filename}][iter_chunks][{sheet_name}] "
+                                f"Row content has {content_tokens} tokens. Max tokens is {self.max_chunk_size}. Truncating."
+                            )
+                            content = self._truncate_chunk(content)
+                        embed_tokens = self.token_estimator.estimate_tokens(embedding_text)
+                        if embed_tokens > self.max_chunk_size:
+                            embedding_text = self._truncate_chunk(embedding_text)
 
                     chunk_dict = self._create_chunk(
                         chunk_id=current_chunk_id,
                         content=content,
-                        summary=summary,
+                        summary="",
                         embedding_text=embedding_text,
-                        title=f"{sheet['name']} - Row {row_index}"
+                        title=f"{sheet_name} - Row {row_index}",
                     )
-                    chunks.append(chunk_dict)
+                    yield chunk_dict
                     chunk_id += 1
                     elapsed_time = time.time() - start_time
-                    logging.debug(f"[spreadsheet_chunker][{self.filename}][get_chunks][{sheet['name']}] Processed chunk {current_chunk_id} in {elapsed_time:.2f} seconds.")
-        
-        total_elapsed_time = time.time() - total_start_time
-        logging.debug(f"[spreadsheet_chunker][{self.filename}][get_chunks] Finished get_chunks. Created {len(chunks)} chunks in {total_elapsed_time:.2f} seconds.")
+                    logging.debug(
+                        f"[spreadsheet_chunker][{self.filename}][iter_chunks][{sheet_name}] "
+                        f"Processed chunk {current_chunk_id} in {elapsed_time:.2f} seconds."
+                    )
 
-        return chunks
+        total_elapsed_time = time.time() - total_start_time
+        logging.debug(
+            f"[spreadsheet_chunker][{self.filename}][iter_chunks] Finished iter_chunks in {total_elapsed_time:.2f} seconds."
+        )
 
     def _spreadsheet_process(self):
         """
@@ -183,18 +234,26 @@ class SpreadsheetChunker(BaseChunker):
             data, headers = self._get_sheet_data(sheet)
             sheet_dict["headers"] = headers
             sheet_dict["data"] = data
-            table = tabulate(data, headers=headers, tablefmt="grid")
-            table = self._clean_markdown_table(table)
-            sheet_dict["table"] = table
-            
+
+            # Only build the full-sheet table/summary when chunking by sheet.
             if not self.chunking_by_row:
+                table = tabulate(data, headers=headers, tablefmt="grid")
+                table = self._clean_markdown_table(table)
+                sheet_dict["table"] = table
+
                 prompt = f"Summarize the table with data in it, by understanding the information clearly.\n table_data:{table}"
                 summary = self.aoai_client.get_completion(prompt, max_tokens=2048)
                 sheet_dict["summary"] = summary
-                logging.debug(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_dict['name']}] Generated summary.")
+                logging.debug(
+                    f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_dict['name']}] Generated summary."
+                )
             else:
+                sheet_dict["table"] = ""
                 sheet_dict["summary"] = ""
-                logging.debug(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_dict['name']}] Skipped summary generation (chunking by row).")
+                logging.debug(
+                    f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_dict['name']}] "
+                    "Skipped table/summary generation (chunking by row)."
+                )
             
             elapsed_time = time.time() - start_time
             logging.debug(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process][{sheet_dict['name']}] Processed in {elapsed_time:.2f} seconds.")
@@ -204,6 +263,68 @@ class SpreadsheetChunker(BaseChunker):
         logging.debug(f"[spreadsheet_chunker][{self.filename}][spreadsheet_process] Total processing time: {total_elapsed_time:.2f} seconds.")
 
         return sheets
+
+    def _row_to_embedding_text(
+        self,
+        headers,
+        row,
+        sheet_name,
+        row_index,
+        include_header_in_embedding,
+    ):
+        """Build a compact per-row text for embeddings.
+
+        Goals:
+        - Dramatically smaller than markdown tables (lower TPM pressure).
+        - If include_header_in_embedding=True, ensure the header schema is present in the embedding.
+
+        Format (when include_header_in_embedding=True):
+            file=<filename>\n
+            sheet=<sheet>\n
+            row=<row_index>\n
+            cols=<h1>|<h2>|...\n
+            vals=<v1>|<v2>|...
+        """
+
+        def _norm(value: object) -> str:
+            if value is None:
+                return ""
+            text = str(value)
+            text = " ".join(text.replace("\r", " ").replace("\n", " ").split())
+            return text.strip()
+
+        safe_headers = [_norm(h) for h in (headers or [])]
+        safe_row = [_norm(v) for v in (row or [])]
+
+        width = max(len(safe_headers), len(safe_row))
+        if len(safe_headers) < width:
+            safe_headers += [""] * (width - len(safe_headers))
+        if len(safe_row) < width:
+            safe_row += [""] * (width - len(safe_row))
+
+        # Keep alignment; but drop trailing fully-empty columns.
+        last_nonempty = -1
+        for i, (h, v) in enumerate(zip(safe_headers, safe_row)):
+            if h or v:
+                last_nonempty = i
+        if last_nonempty >= 0:
+            safe_headers = safe_headers[: last_nonempty + 1]
+            safe_row = safe_row[: last_nonempty + 1]
+
+        # We keep empty values to preserve positional alignment between cols and vals.
+        # To reduce tokens, use tight separators and collapsed whitespace.
+        cols = "|".join(safe_headers)
+        vals = "|".join(safe_row)
+
+        parts = [
+            f"file={_norm(self.filename)}",
+            f"sheet={_norm(sheet_name)}",
+            f"row={row_index}",
+        ]
+        if include_header_in_embedding:
+            parts.append(f"cols={cols}")
+        parts.append(f"vals={vals}")
+        return "\n".join(parts)
 
     def _get_sheet_data(self, sheet):
         """
