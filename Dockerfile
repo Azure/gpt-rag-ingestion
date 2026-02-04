@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/devcontainers/python:dev-3.12
+FROM mcr.microsoft.com/devcontainers/python:3.12-bookworm
 
 WORKDIR /app
 
