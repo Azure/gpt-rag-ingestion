@@ -50,12 +50,16 @@ scheduler = AsyncIOScheduler(timezone=local_tz)
 async def lifespan(app: FastAPI):
 
     # scheduler helper
-    def _schedule(env_key: str, func, job_id: str, human_name: str) -> bool:
+    def _schedule(env_key: str, func, job_id: str, human_name: str, default_cron: str | None = None) -> bool:
         """Schedule a cron job from App Configuration.
 
-        Returns True when the cron environment key is set and the job was added.
+        Returns True when a cron expression is available and the job was added.
         """
         cron_expr = app_config_client.get(env_key, default=None, allow_none=True)
+        if not cron_expr and default_cron:
+            cron_expr = default_cron
+            logging.info(f"[{human_name}] {env_key} not set - using default cron: {default_cron}")
+
         if cron_expr:
             try:
                 trigger = CronTrigger.from_crontab(cron_expr, timezone=local_tz)
@@ -141,8 +145,8 @@ async def lifespan(app: FastAPI):
     s_sharepoint_index = _schedule("CRON_RUN_SHAREPOINT_INDEX", run_sharepoint_index, "sharepoint_index", "sharepoint-indexer")
     s_sharepoint_purge = _schedule("CRON_RUN_SHAREPOINT_PURGE", run_sharepoint_purge, "sharepoint_purge", "sharepoint-purger")
     s_images_purge = _schedule("CRON_RUN_IMAGES_PURGE", run_images_purge, "multimodality_images_purge", "multimodality-images-purger")
-    s_blob_index = _schedule("CRON_RUN_BLOB_INDEX", run_blob_index, "blob_index", "blob-storage-indexer")
-    s_blob_purge = _schedule("CRON_RUN_BLOB_PURGE", run_blob_purge, "blob_purge", "blob-storage-indexer-purger")
+    s_blob_index = _schedule("CRON_RUN_BLOB_INDEX", run_blob_index, "blob_index", "blob-storage-indexer", default_cron="0 * * * *")
+    s_blob_purge = _schedule("CRON_RUN_BLOB_PURGE", run_blob_purge, "blob_purge", "blob-storage-indexer-purger", default_cron="10 * * * *")
     s_nl2sql_index = _schedule("CRON_RUN_NL2SQL_INDEX", run_nl2sql_index, "nl2sql_index", "nl2sql-indexer")
     s_nl2sql_purge = _schedule("CRON_RUN_NL2SQL_PURGE", run_nl2sql_purge, "nl2sql_purge", "nl2sql-indexer-purger")
 
@@ -163,8 +167,8 @@ async def lifespan(app: FastAPI):
     startup_task: asyncio.Task | None = None
 
     async def _run_startup_jobs() -> None:
-        # If a CRON variable was defined for a job, run it once sequentially.
-        # Only run jobs whose CRON env var existed (the `_schedule` helper returned True).
+        # If a job was scheduled (env var provided or default cron fallback), run it once sequentially.
+        # Only run jobs whose `_schedule` helper returned True.
         try:
             if s_blob_index:
                 logging.info("[startup] Running blob-storage-indexer immediately")

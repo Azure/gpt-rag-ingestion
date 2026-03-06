@@ -3,6 +3,10 @@
 All notable changes to this project will be documented in this file.  
 This format follows [Keep a Changelog](https://keepachangelog.com/) and adheres to [Semantic Versioning](https://semver.org/).
 
+## [v2.2.3] – 2026-03-06
+### Changed
+- Added cron fallback defaults for blob ingestion jobs when `CRON_RUN_BLOB_INDEX` and `CRON_RUN_BLOB_PURGE` are not configured: blob indexing now runs hourly (`0 * * * *`) and blob purge runs at 10 minutes past each hour (`10 * * * *`).
+
 ## [v2.2.2] – 2026-02-04
 ### Fixed
 - Fixed Docker builds on ARM-based machines by explicitly setting the target platform to `linux/amd64`, preventing Azure Container Apps deployment failures.
