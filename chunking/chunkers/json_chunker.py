@@ -18,7 +18,7 @@ class JSONChunker(BaseChunker):
         super().__init__(data)
         import os
         self.max_chunk_size = int(max_chunk_size or app_config_client.get("CHUNKING_NUM_TOKENS", 2048))
-        self.token_overlap = int(token_overlap or app_config_client.get("TOKEN_OVERLAP", 100))
+        self.token_overlap = int(token_overlap or app_config_client.get("TOKEN_OVERLAP", 200))
         self.minimum_chunk_size = int(minimum_chunk_size or app_config_client.get("CHUNKING_MIN_CHUNK_SIZE", 100))
 
     def get_chunks(self):

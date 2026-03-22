@@ -20,7 +20,7 @@ class TranscriptionChunker(BaseChunker):
     The TranscriptionChunker is initialized with the following parameters:
     - data (str): The transcription text content to be chunked.
     - max_chunk_size (int, optional): The maximum size of each chunk in tokens. Defaults to 2048 tokens or the value specified in the `CHUNKING_NUM_TOKENS` environment variable.
-    - token_overlap (int, optional): The number of overlapping tokens between consecutive chunks. Defaults to 100 tokens.
+    - token_overlap (int, optional): The number of overlapping tokens between consecutive chunks. Defaults to 200 tokens.
 
     Methods:
     --------
@@ -55,7 +55,7 @@ class TranscriptionChunker(BaseChunker):
         """
         super().__init__(data)       
         self.max_chunk_size = max_chunk_size or int(app_config_client.get("CHUNKING_NUM_TOKENS", "2048"))
-        self.token_overlap = token_overlap or 100
+        self.token_overlap = token_overlap or int(app_config_client.get("TOKEN_OVERLAP", "200"))
 
     def get_chunks(self):           
         chunks = [] 

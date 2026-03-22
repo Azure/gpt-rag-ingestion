@@ -20,7 +20,7 @@ class LangChainChunker(BaseChunker):
     Attributes:
     -----------
     - max_chunk_size (int): The maximum allowed size of each chunk in tokens, derived from the `CHUNKING_NUM_TOKENS` environment variable (default is 2048 tokens).
-    - token_overlap (int): The number of overlapping tokens between consecutive chunks, derived from the `TOKEN_OVERLAP` environment variable (default is 100 tokens).
+    - token_overlap (int): The number of overlapping tokens between consecutive chunks, derived from the `TOKEN_OVERLAP` environment variable (default is 200 tokens).
     - minimum_chunk_size (int): The minimum required size of each chunk in tokens, derived from the `CHUNKING_MIN_CHUNK_SIZE` environment variable (default is 100 tokens).
     - supported_formats (dict): A dictionary mapping file extensions to their corresponding content format, used to select the appropriate text splitter.
 
@@ -49,7 +49,7 @@ class LangChainChunker(BaseChunker):
         super().__init__(data)
         self.max_chunk_size = int(app_config_client.get("CHUNKING_NUM_TOKENS", "2048"))
         self.minimum_chunk_size = int(app_config_client.get("CHUNKING_MIN_CHUNK_SIZE", "100"))
-        self.token_overlap = int(app_config_client.get("TOKEN_OVERLAP", "100"))
+        self.token_overlap = int(app_config_client.get("TOKEN_OVERLAP", "200"))
         self.supported_formats = {
             "md": "markdown",
             "txt": "text",
