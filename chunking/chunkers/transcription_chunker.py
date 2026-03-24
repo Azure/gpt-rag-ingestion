@@ -55,7 +55,7 @@ class TranscriptionChunker(BaseChunker):
         """
         super().__init__(data)       
         self.max_chunk_size = max_chunk_size or int(app_config_client.get("CHUNKING_NUM_TOKENS", "2048"))
-        self.token_overlap = token_overlap or 100
+        self.token_overlap = token_overlap or 200
 
     def get_chunks(self):           
         chunks = [] 
