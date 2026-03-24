@@ -143,9 +143,9 @@ class AzureOpenAIClient:
         while True:
             try:
                 resp = self.client.chat.completions.create(
-                    model      = self.chat_deployment,
-                    messages   = messages,
-                    max_tokens = max_tokens
+                    model                = self.chat_deployment,
+                    messages             = messages,
+                    max_completion_tokens = max_tokens
                 )
                 return resp.choices[0].message.content
 
