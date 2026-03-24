@@ -119,14 +119,24 @@ class AzureOpenAIClient:
         self,
         prompt: str,
         max_tokens: int = 800,
-        retry_after: bool = True
+        retry_after: bool = True,
+        image_base64: str = None
     ) -> str:
         # Truncate prompt if over token limit
         prompt_trunc = self._truncate_input(prompt, self.max_gpt_tokens)
 
+        # Build user message: multimodal (text + image) when image is provided
+        if image_base64:
+            user_content = [
+                {"type": "text", "text": prompt_trunc},
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_base64}"}}
+            ]
+        else:
+            user_content = prompt_trunc
+
         messages = [
             {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user",   "content": prompt_trunc}
+            {"role": "user",   "content": user_content}
         ]
 
         attempt = 0
