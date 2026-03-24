@@ -57,7 +57,7 @@ class DocAnalysisChunker(BaseChunker):
         super().__init__(data)       
         self.max_chunk_size = max_chunk_size or int(app_config_client.get("CHUNKING_NUM_TOKENS", 2048))
         self.minimum_chunk_size = minimum_chunk_size or int(app_config_client.get("CHUNKING_MIN_CHUNK_SIZE", 100))
-        self.token_overlap = token_overlap or int(app_config_client.get("TOKEN_OVERLAP", 100))
+        self.token_overlap = token_overlap or int(app_config_client.get("TOKEN_OVERLAP", 200))
         self.docint_client = DocumentIntelligenceClient()
         self.supported_formats = self.docint_client.file_extensions
 
