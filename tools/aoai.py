@@ -21,6 +21,7 @@ class AzureOpenAIClient:
         self.endpoint             = app_config_client.get("AI_FOUNDRY_ACCOUNT_ENDPOINT")        # e.g. "https://<your-resource>.openai.azure.com/"
         self.api_version          = app_config_client.get("OPENAI_API_VERSION", "2024-10-21")
         self.chat_deployment      = app_config_client.get("CHAT_DEPLOYMENT_NAME")         # deployment name in Azure OpenAI Studio
+        self.vision_deployment    = app_config_client.get("VISION_DEPLOYMENT_NAME", None, allow_none=True) or self.chat_deployment
         self.embedding_deployment = app_config_client.get("EMBEDDING_DEPLOYMENT_NAME")
 
         # Warn if any required var is missing
@@ -139,15 +140,25 @@ class AzureOpenAIClient:
             {"role": "user",   "content": user_content}
         ]
 
+        deployment = self.vision_deployment if image_base64 else self.chat_deployment
+
         attempt = 0
         while True:
             try:
                 resp = self.client.chat.completions.create(
-                    model                = self.chat_deployment,
+                    model                = deployment,
                     messages             = messages,
                     max_completion_tokens = max_tokens
                 )
-                return resp.choices[0].message.content
+                content = resp.choices[0].message.content
+                if not content:
+                    finish_reason = resp.choices[0].finish_reason
+                    logging.warning(
+                        f"[aoai]{self.document_filename} get_completion returned empty content "
+                        f"(finish_reason={finish_reason}, model={deployment}). "
+                        f"The model may not support the requested input format."
+                    )
+                return content
 
             except openai.RateLimitError as e:
                 if not retry_after or attempt >= self.retry_max_attempts:

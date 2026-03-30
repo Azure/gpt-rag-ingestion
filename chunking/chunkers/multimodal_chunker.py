@@ -511,6 +511,9 @@ class MultimodalChunker(DocAnalysisChunker):
                 prompt=caption_prompt, 
                 image_base64=figure["image"]
             )
+            if not caption:
+                logging.warning(f"[multimodal_chunker][{self.filename}] Empty caption returned for figure {figure.get('id', 'unknown')}. Check VISION_DEPLOYMENT_NAME model supports image input.")
+                return "No caption available."
             logging.debug(f"[multimodal_chunker][{self.filename}] Generated caption for figure {figure.get('id', 'unknown')}: {caption}")
             return caption
         except Exception as e:
