@@ -6,6 +6,10 @@ from azure.identity.aio import ManagedIdentityCredential, AzureCliCredential, Ch
 from typing import Any, Dict, List, Optional
 from dependencies import get_config
 
+# Elevated-read header – bypasses permission filtering for service-side queries.
+_ELEVATED_HEADERS = {"x-ms-enable-elevated-read": "true"}
+_ELEVATED_API_VERSION = "2025-11-01-preview"
+
 app_config_client = get_config()
 
 class AISearchClient:
@@ -52,7 +56,8 @@ class AISearchClient:
                 self.clients[index_name] = SearchClient(
                     endpoint=self.endpoint,
                     index_name=index_name,
-                    credential=self.credential
+                    credential=self.credential,
+                    api_version=_ELEVATED_API_VERSION,
                 )
                 logging.debug(f"[aisearch] Initialized SearchClient for index '{index_name}'.")
             except Exception as e:
@@ -179,6 +184,7 @@ class AISearchClient:
 
             search_kwargs = {
                 "search_text": search_text,
+                "headers": _ELEVATED_HEADERS,
                 "filter": filter_str,
                 "order_by": order_by,
                 "search_mode": SearchMode.ALL,

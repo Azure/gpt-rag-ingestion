@@ -27,6 +27,10 @@ from tools import KeyVaultClient
 
 PURGE_SCOPE = "[sp-purge]"
 
+# Elevated-read header – bypasses permission filtering for service-side queries.
+_ELEVATED_HEADERS = {"x-ms-enable-elevated-read": "true"}
+_ELEVATED_API_VERSION = "2025-11-01-preview"
+
 
 @dataclass
 class PurgeRunStats:
@@ -104,6 +108,7 @@ class SharePointPurger:
 				endpoint=self.cfg.search_endpoint,
 				index_name=self.cfg.search_index_name,
 				credential=self._credential,
+				api_version=_ELEVATED_API_VERSION,
 			)
 
 		if not self._kv:
@@ -437,6 +442,7 @@ class SharePointPurger:
 					select=select_fields,
 					include_total_count=True,
 					top=self._search_page_size,
+					headers=_ELEVATED_HEADERS,
 				)
 			except HttpResponseError as exc:
 				logging.warning(f"{PURGE_SCOPE} filter on 'source' failed; retrying without filter: {exc}")
@@ -445,6 +451,7 @@ class SharePointPurger:
 					select=select_fields,
 					include_total_count=True,
 					top=self._search_page_size,
+					headers=_ELEVATED_HEADERS,
 				)
 
 			try:

@@ -23,6 +23,10 @@ from dependencies import get_config
 from chunking import DocumentChunker
 from chunking.chunker_factory import ChunkerFactory
 
+# Elevated-read header – bypasses permission filtering for service-side queries.
+_ELEVATED_HEADERS = {"x-ms-enable-elevated-read": "true"}
+_ELEVATED_API_VERSION = "2025-11-01-preview"
+
 # -----------------------------------------------------------------------------
 # Custom Exception
 # -----------------------------------------------------------------------------
@@ -160,6 +164,7 @@ class BlobStorageDocumentIndexer:
                 endpoint=self.cfg.search_endpoint,
                 index_name=self.cfg.search_index_name,
                 credential=self._credential,
+                api_version=_ELEVATED_API_VERSION,
             )
 
     # ---------- Public entrypoint ----------
@@ -579,6 +584,7 @@ class BlobStorageDocumentIndexer:
                 select=["parent_id", "metadata_storage_last_modified"],
                 top=page_size,
                 skip=skip,
+                headers=_ELEVATED_HEADERS,
             )
 
             batch_count = 0
@@ -988,6 +994,7 @@ class BlobStorageDocumentIndexer:
                 select=["id"],
                 top=page_size,
                 skip=skip,
+                headers=_ELEVATED_HEADERS,
             )
 
             batch_ids: List[Dict[str, str]] = []
@@ -1262,6 +1269,7 @@ class BlobStorageDeletedItemsCleaner:
                 endpoint=self.cfg.search_endpoint,
                 index_name=self.cfg.search_index_name,
                 credential=self._credential,
+                api_version=_ELEVATED_API_VERSION,
             )
 
     async def run(self) -> None:
@@ -1326,6 +1334,7 @@ class BlobStorageDeletedItemsCleaner:
                     select=["parent_id"],
                     top=page_size,
                     skip=skip,
+                    headers=_ELEVATED_HEADERS,
                 )
 
                 batch_count = 0
@@ -1403,6 +1412,7 @@ class BlobStorageDeletedItemsCleaner:
                         select=["id"],
                         top=page_size,
                         skip=skip,
+                        headers=_ELEVATED_HEADERS,
                     )
 
                     page_ids: List[Dict[str, str]] = []
@@ -1482,6 +1492,7 @@ class BlobStorageDeletedItemsCleaner:
                         select=["parent_id"],
                         top=page_size,
                         skip=skip,
+                        headers=_ELEVATED_HEADERS,
                     )
 
                     batch_count = 0
