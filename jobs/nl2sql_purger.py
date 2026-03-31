@@ -12,6 +12,10 @@ from azure.storage.blob import ContentSettings
 from dependencies import get_config
 from tools import AISearchClient
 
+# Elevated-read header – bypasses permission filtering for service-side queries.
+_ELEVATED_HEADERS = {"x-ms-enable-elevated-read": "true"}
+_ELEVATED_API_VERSION = "2025-11-01-preview"
+
 
 @dataclass
 class NL2SQLPurgerConfig:
@@ -158,7 +162,7 @@ class NL2SQLPurger:
         try:
             client = await self._ai_search.get_search_client(index_name)
             # iterate pages selecting only 'id'
-            results = await client.search(search_text="*", select=["id"], include_total_count=True, top=1000)
+            results = await client.search(search_text="*", select=["id"], include_total_count=True, top=1000, headers=_ELEVATED_HEADERS)
             async for page in results.by_page():
                 page_ids: List[str] = []
                 async for doc in page:
@@ -179,7 +183,7 @@ class NL2SQLPurger:
         """Count documents in an index (all docs)."""
         try:
             client = await self._ai_search.get_search_client(index_name)
-            results = await client.search(search_text="*", select=["id"], include_total_count=True, top=1000)
+            results = await client.search(search_text="*", select=["id"], include_total_count=True, top=1000, headers=_ELEVATED_HEADERS)
             count = 0
             async for page in results.by_page():
                 async for doc in page:

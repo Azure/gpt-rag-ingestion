@@ -38,6 +38,10 @@ from .sharepoint_ingestion_config import (
 )
 from tools import AzureOpenAIClient, KeyVaultClient, CosmosDBClient
 
+# Elevated-read header – bypasses permission filtering for service-side queries.
+_ELEVATED_HEADERS = {"x-ms-enable-elevated-read": "true"}
+_ELEVATED_API_VERSION = "2025-11-01-preview"
+
 # -----------------------------
 # Main indexer
 # -----------------------------
@@ -144,6 +148,7 @@ class SharePointIndexer:
                 endpoint=self.cfg.search_endpoint,
                 index_name=self.cfg.search_index_name,
                 credential=self._credential,
+                api_version=_ELEVATED_API_VERSION,
             )
         if not self._kv:
             self._kv = KeyVaultClient()
@@ -542,7 +547,7 @@ class SharePointIndexer:
             raise RuntimeError("Search client not initialized")
         key = _make_chunk_key(parent_id, 0)
         try:
-            doc = await self._search_client.get_document(key=key)
+            doc = await self._search_client.get_document(key=key, headers=_ELEVATED_HEADERS)
             dt = doc.get("metadata_storage_last_modified")
             if isinstance(dt, datetime):
                 result = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
@@ -583,6 +588,7 @@ class SharePointIndexer:
                 filter=f"parent_id eq '{sanitized}'",
                 select=["metadata_storage_last_modified"],
                 top=1000,
+                headers=_ELEVATED_HEADERS,
             )
             async for page in results.by_page():
                 async for doc in page:
@@ -678,6 +684,7 @@ class SharePointIndexer:
             filter=f"parent_id eq '{sanitized}'",
             select=["id"],
             top=1000,
+            headers=_ELEVATED_HEADERS,
         )
         async for page in results.by_page():
             async for doc in page:
