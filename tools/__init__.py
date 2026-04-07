@@ -19,6 +19,7 @@ __all__ = [
 	"KeyVaultClient",
 	"AISearchClient",
 	"DocumentIntelligenceClient",
+	"ContentUnderstandingClient",
 	"SharePointMetadataStreamer",
 	"CosmosDBClient",
 ]
@@ -62,6 +63,11 @@ def __getattr__(name: str) -> Any:  # PEP 562 lazy attribute access
 			SharePointMetadataStreamer as _SharePointMetadataStreamer,
 		)
 		return _SharePointMetadataStreamer
+	if name == "ContentUnderstandingClient":
+		from .content_understanding import (
+			ContentUnderstandingClient as _ContentUnderstandingClient,
+		)
+		return _ContentUnderstandingClient
 	if name == "CosmosDBClient":
 		from .cosmosdb import CosmosDBClient as _CosmosDBClient
 		return _CosmosDBClient

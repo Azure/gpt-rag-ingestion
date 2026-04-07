@@ -1082,6 +1082,20 @@ class SharePointIndexer:
         except Exception:
             pass
 
+    async def _read_file_log(self, blob_name: str) -> Optional[Dict[str, Any]]:
+        """Read existing file log JSON from the jobs container. Returns None if not found."""
+        if not self._storage_writable:
+            return None
+        cc = self._blob_service.get_container_client(self.cfg.jobs_log_container)
+        blob_path = f"{self.cfg.indexer_name}/files/{blob_name}"
+        try:
+            blob_client = cc.get_blob_client(blob_path)
+            download = await blob_client.download_blob()
+            raw = await download.readall()
+            return json.loads(raw)
+        except Exception:
+            return None
+
     async def _write_file_log(self, blob_name: str, payload: Dict[str, Any]):
         if not self._storage_writable:
             return
@@ -1311,6 +1325,7 @@ class SharePointIndexer:
                 "candidateItems": stats.items_candidates,
                 "indexedItems": stats.items_indexed,
                 "skippedNoChange": stats.items_skipped_nochange,
+                "skippedBlocked": stats.items_skipped_blocked,
                 "failed": max(summary.get("failed", 0), stats.items_failed),
                 "itemsProcessed": max(summary.get("itemsProcessed", 0), stats.items_discovered),
                 "success": max(summary.get("success", 0), stats.items_indexed),
@@ -1349,6 +1364,7 @@ class SharePointIndexer:
                 itemsIndexed=stats.items_indexed,
                 itemsFailed=stats.items_failed,
                 skippedNoChange=stats.items_skipped_nochange,
+                skippedBlocked=stats.items_skipped_blocked,
                 documentLibraryCandidates=stats.att_candidates,
                 documentLibraryChunks=stats.att_uploaded_chunks,
                 totalChunksUploaded=summary.get("totalChunksUploaded", 0),
@@ -1488,7 +1504,30 @@ class SharePointIndexer:
                     f"fieldCount={len(fields)}"
                 )
 
+                # --- Read existing file log for retry tracking ---
+                fl_key = f"{_sanitize_key_part(parent_item_id)}.json"
+                existing_log = await self._read_file_log(fl_key) or {}
+                processing_attempts = existing_log.get("processingAttempts", 0)
+                is_blocked = existing_log.get("blocked", False)
+
+                if is_blocked:
+                    self._log_event(
+                        logging.WARNING,
+                        "ITEM-SKIPPED-BLOCKED",
+                        runId=run_id,
+                        collection=collection_label,
+                        itemId=item_id,
+                        parentId=parent_item_id,
+                        processingAttempts=processing_attempts,
+                    )
+                    async with stats_lock:
+                        stats.items_skipped_blocked += 1
+                    return
+
+                processing_attempts += 1
+
                 file_log = {
+                    **existing_log,
                     "indexerType": self.cfg.indexer_name,
                     "collection": f"{site_domain}/{site_name}/{collection_label}",
                     "itemId": item_id,
@@ -1496,6 +1535,11 @@ class SharePointIndexer:
                     "runId": run_id,
                     "startedAt": _utc_now(),
                     "chunksIds": _make_chunk_key_prefix(parent_item_id),
+                    "processingAttempts": processing_attempts,
+                    "lastAttemptAt": _utc_now(),
+                    "blocked": False,
+                    "blockedAt": existing_log.get("blockedAt"),
+                    "blockedReason": existing_log.get("blockedReason"),
                 }
                 file_log["listType"] = list_type
 
@@ -1594,7 +1638,11 @@ class SharePointIndexer:
                         file_log.update({
                             "status": "success" if did_upload_any else "skipped-no-change",
                             "finishedAt": _utc_now(),
-                            "chunks": local_chunks_for_item
+                            "chunks": local_chunks_for_item,
+                            "processingAttempts": 0 if did_upload_any else file_log.get("processingAttempts", 0),
+                            "blocked": False,
+                            "blockedAt": None,
+                            "blockedReason": None,
                         })
                         await self._write_file_log(f"{_sanitize_key_part(parent_item_id)}.json", file_log)
 
@@ -1665,10 +1713,14 @@ class SharePointIndexer:
                 except asyncio.TimeoutError:
                     # Item took too long; record and continue
                     processed += 1
+                    should_block = processing_attempts >= self.cfg.max_file_processing_attempts
                     file_log.update({
                         "status": "error",
                         "error": f"timeout after {self._item_timeout_s}s",
-                        "finishedAt": _utc_now()
+                        "finishedAt": _utc_now(),
+                        "blocked": should_block,
+                        "blockedAt": _utc_now() if should_block else file_log.get("blockedAt"),
+                        "blockedReason": "max_attempts_exceeded" if should_block else file_log.get("blockedReason"),
                     })
                     await self._write_file_log(f"{_sanitize_key_part(parent_item_id)}.json", file_log)
                     failed += 1
@@ -1688,7 +1740,15 @@ class SharePointIndexer:
                 except Exception as e:
                     logging.exception(f"[{self.cfg.indexer_name}] item {item_id} failed")
                     processed += 1
-                    file_log.update({"status": "error", "error": str(e), "finishedAt": _utc_now()})
+                    should_block = processing_attempts >= self.cfg.max_file_processing_attempts
+                    file_log.update({
+                        "status": "error",
+                        "error": str(e),
+                        "finishedAt": _utc_now(),
+                        "blocked": should_block,
+                        "blockedAt": _utc_now() if should_block else file_log.get("blockedAt"),
+                        "blockedReason": "max_attempts_exceeded" if should_block else file_log.get("blockedReason"),
+                    })
                     await self._write_file_log(f"{_sanitize_key_part(parent_item_id)}.json", file_log)
                     failed += 1
                     async with stats_lock:

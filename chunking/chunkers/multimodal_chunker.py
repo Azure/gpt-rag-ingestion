@@ -5,7 +5,7 @@ import base64
 import re
 from ..exceptions import UnsupportedFormatError
 from .doc_analysis_chunker import DocAnalysisChunker
-from tools import  BlobClient
+from tools import  BlobClient, DocumentIntelligenceClient
 from typing import List, Dict
 from dependencies import get_config
 
@@ -29,6 +29,12 @@ class MultimodalChunker(DocAnalysisChunker):
             token_overlap (int, optional): Number of overlapping tokens between chunks. Defaults to None.
         """
         super().__init__(data, max_chunk_size, minimum_chunk_size, token_overlap)
+        # Multimodal always needs Document Intelligence for figure extraction and analysis
+        self._docint_client = DocumentIntelligenceClient()
+        # Override analysis client to use Document Intelligence (required for figures)
+        self._analysis_client = self._docint_client
+        self.supported_formats = self._analysis_client.file_extensions
+        self.output_content_format = getattr(self._analysis_client, "output_content_format", "markdown")
         self.image_container = app_config_client.get("DOCUMENTS_IMAGES_STORAGE_CONTAINER", "documents-images")
         self.storage_account_name = app_config_client.get("STORAGE_ACCOUNT_NAME", "set-storage-account-name-env-var")
         self.minimum_figure_area_percentage = float(app_config_client.get("MINIMUM_FIGURE_AREA_PERCENTAGE", "4.0"))
@@ -249,7 +255,7 @@ class MultimodalChunker(DocAnalysisChunker):
                         continue
 
                     # 2) Fetch the figure image
-                    image_binary = self.docint_client.get_figure(model_id, result_id, figure_id)
+                    image_binary = self._docint_client.get_figure(model_id, result_id, figure_id)
                     if not image_binary:
                         logging.warning(
                             f"[multimodal_chunker][{self.filename}] No image data retrieved for figure {figure_id}."

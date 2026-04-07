@@ -5,7 +5,7 @@ import re
 from langchain_text_splitters import MarkdownTextSplitter, RecursiveCharacterTextSplitter
 from .base_chunker import BaseChunker
 from ..exceptions import UnsupportedFormatError
-from tools import DocumentIntelligenceClient
+from tools import DocumentIntelligenceClient, ContentUnderstandingClient
 from dependencies import get_config
 
 app_config_client = get_config()
@@ -58,8 +58,23 @@ class DocAnalysisChunker(BaseChunker):
         self.max_chunk_size = max_chunk_size or int(app_config_client.get("CHUNKING_NUM_TOKENS", 2048))
         self.minimum_chunk_size = minimum_chunk_size or int(app_config_client.get("CHUNKING_MIN_CHUNK_SIZE", 100))
         self.token_overlap = token_overlap or int(app_config_client.get("TOKEN_OVERLAP", 200))
-        self.docint_client = DocumentIntelligenceClient()
-        self.supported_formats = self.docint_client.file_extensions
+
+        # Use Content Understanding by default; fall back to Document Intelligence
+        # when USE_DOCUMENT_INTELLIGENCE is explicitly set to true.
+        use_docint = app_config_client.get(
+            "USE_DOCUMENT_INTELLIGENCE", "false"
+        ).lower() in ("true", "1", "yes")
+
+        if use_docint:
+            logging.info(f"[doc_analysis_chunker][{self.filename}] Using DocumentIntelligenceClient (USE_DOCUMENT_INTELLIGENCE=true)")
+            self._analysis_client = DocumentIntelligenceClient()
+        else:
+            logging.info(f"[doc_analysis_chunker][{self.filename}] Using ContentUnderstandingClient (default)")
+            self._analysis_client = ContentUnderstandingClient()
+
+        self.supported_formats = self._analysis_client.file_extensions
+        # Expose output_content_format for splitter selection
+        self.output_content_format = getattr(self._analysis_client, "output_content_format", "markdown")
 
     def get_chunks(self):
         """
@@ -106,7 +121,7 @@ class DocAnalysisChunker(BaseChunker):
         """  
         for attempt in range(retries):
             try:
-                document, analysis_errors = self.docint_client.analyze_document_from_bytes(file_bytes=self.document_bytes, filename=self.filename)
+                document, analysis_errors = self._analysis_client.analyze_document_from_bytes(file_bytes=self.document_bytes, filename=self.filename)
                 return document, analysis_errors
             except Exception as e:
                 logging.error(f"[doc_analysis_chunker][{self.filename}] docint analyze document failed on attempt {attempt + 1}/{retries}: {str(e)}")
@@ -214,7 +229,7 @@ class DocAnalysisChunker(BaseChunker):
         Returns:
             object: The splitter to use for chunking.
         """
-        if self.docint_client.output_content_format == "markdown":
+        if self.output_content_format == "markdown":
             return MarkdownTextSplitter.from_tiktoken_encoder(
                 chunk_size=self.max_chunk_size,
                 chunk_overlap=self.token_overlap

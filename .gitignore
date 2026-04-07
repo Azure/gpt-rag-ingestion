@@ -11,6 +11,10 @@ local.settings.json
 .azure/
 .vscode/
 
+# Frontend build output
+static/
+frontend/node_modules/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -145,4 +149,4 @@ local.settings.json
 __blobstorage__
 __queuestorage__
 __azurite_db*__.json
-.python_packages
+.python_packagesfilelog.json
