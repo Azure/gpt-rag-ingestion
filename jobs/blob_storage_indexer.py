@@ -397,8 +397,9 @@ class BlobStorageDocumentIndexer:
             )
             return {"status": "skipped-blocked", "chunks": 0}
 
-        # --- Increment attempt counter and persist BEFORE expensive work ---
+        # --- Increment attempt counter and check if should block BEFORE work ---
         processing_attempts += 1
+        should_block_precheck = processing_attempts > self.cfg.max_file_processing_attempts
         per_file_log = {
             **existing_log,
             "indexerType": self.cfg.indexer_name,
@@ -410,11 +411,24 @@ class BlobStorageDocumentIndexer:
             "chunksIds": self._make_chunk_key_prefix(parent_id),
             "processingAttempts": processing_attempts,
             "lastAttemptAt": _utc_now(),
-            "blocked": False,
-            "blockedAt": existing_log.get("blockedAt"),
-            "blockedReason": existing_log.get("blockedReason"),
+            "blocked": should_block_precheck,
+            "blockedAt": _utc_now() if should_block_precheck else existing_log.get("blockedAt"),
+            "blockedReason": "max_attempts_exceeded" if should_block_precheck else existing_log.get("blockedReason"),
         }
         await self._write_file_log(self.cfg.jobs_log_container, f"{file_log_key}.json", per_file_log)
+
+        # --- Block if too many attempts (covers crash/OOM scenarios) ---
+        if should_block_precheck:
+            self._log_event(
+                logging.WARNING,
+                "ITEM-BLOCKED",
+                runId=run_id,
+                blobName=blob_name,
+                parentId=parent_id,
+                processingAttempts=processing_attempts,
+                maxAttempts=self.cfg.max_file_processing_attempts,
+            )
+            return {"status": "skipped-blocked", "chunks": 0}
         try:
             # Fetch blob metadata to capture ACL info if provided
             security_user_ids: List[str] = []
