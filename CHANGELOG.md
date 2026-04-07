@@ -14,6 +14,7 @@ This format follows [Keep a Changelog](https://keepachangelog.com/) and adheres 
 
 ### Fixed
 - **Retry blocking not triggered on process crash or OOM**: When a file processing attempt ended due to a container crash, OOM kill, or unhandled timeout, the `except` handler was never reached and the file was never blocked regardless of how many attempts had been made. The blocking check now runs **before** processing starts: after incrementing `processingAttempts`, if the count exceeds `MAX_FILE_PROCESSING_ATTEMPTS`, the file is immediately marked as blocked and persisted to the log, preventing infinite retry loops.
+- **Missing status, error, and run history on pre-processing block**: When a file was blocked during the pre-processing check (crash/OOM recovery path), the file log was missing `status`, `error`, `finishedAt`, and `runHistory` entry. The dashboard detail view showed no explanation for the block. The pre-processing block now writes a complete file log with `status: "blocked"`, a descriptive error message, `finishedAt` timestamp, and a `runHistory` entry so the dashboard displays full context.
 
 ## [v2.2.5] – 2026-03-31
 
