@@ -19,8 +19,15 @@ class ChunkerFactory:
     """Factory class to create appropriate chunker based on file extension."""
     
     def __init__(self):
-        docint_client = DocumentIntelligenceClient()
-        self.docint_40_api = docint_client.docint_40_api 
+        use_docint = app_config_client.get(
+            "USE_DOCUMENT_INTELLIGENCE", "false"
+        ).lower() in ("true", "1", "yes")
+        if use_docint:
+            docint_client = DocumentIntelligenceClient()
+            self.supports_office_formats = docint_client.docint_40_api
+        else:
+            # Content Understanding supports docx/pptx/xlsx natively
+            self.supports_office_formats = True
         _multimodality = app_config_client.get("MULTIMODAL", "false").lower()
         self.multimodality = _multimodality in ["true", "1", "yes"]
 
@@ -51,14 +58,14 @@ class ChunkerFactory:
             else:
                 return DocAnalysisChunker(data)
         elif extension in ('docx', 'pptx'):
-            if self.docint_40_api:
+            if self.supports_office_formats:
                 if self.multimodality:
                     return MultimodalChunker(data)
                 else:
                     return DocAnalysisChunker(data)
             else:
-                logging.info(f"[chunker_factory][{filename}] Processing 'pptx' and 'docx' files requires Doc Intelligence 4.0.")
-                raise RuntimeError("Processing 'pptx' and 'docx' files requires Doc Intelligence 4.0.")
+                logging.info(f"[chunker_factory][{filename}] Processing 'pptx' and 'docx' files requires Doc Intelligence 4.0 or Content Understanding.")
+                raise RuntimeError("Processing 'pptx' and 'docx' files requires Doc Intelligence 4.0 or Content Understanding.")
         elif extension in ('nl2sql'):
             return NL2SQLChunker(data)
         else:
