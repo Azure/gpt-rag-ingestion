@@ -9,7 +9,11 @@ This format follows [Keep a Changelog](https://keepachangelog.com/) and adheres 
 - **Per-file retry tracking and automatic block list**: Tracks processing attempts per file via per-file JSON logs. Files exceeding `MAX_FILE_PROCESSING_ATTEMPTS` (default 3) are automatically blocked and skipped in future runs. Applies to both blob storage and SharePoint indexers. Administrators can unblock files via the admin dashboard.
 - **Admin dashboard**: React-based frontend served from the same Container App at `/dashboard`, providing paginated and sortable tables for job runs and file logs with search, type filter, and an unblock action for blocked files.
 - **Content Understanding integration**: New `ContentUnderstandingClient` using Azure AI Foundry `prebuilt-layout` as the default analysis path in `DocAnalysisChunker`, replacing Document Intelligence Layout with ~69% cost reduction per page.
+- **Content Understanding in MultimodalChunker**: `MultimodalChunker` now inherits the Content Understanding default from `DocAnalysisChunker` instead of always forcing Document Intelligence. `ChunkerFactory` no longer instantiates `DocumentIntelligenceClient` unnecessarily when Content Understanding is active. Figure extraction remains available only when `USE_DOCUMENT_INTELLIGENCE=true`.
 - **Scheduled log cleanup**: Automatic cleanup of old run-summary blobs via APScheduler (`CRON_RUN_LOG_CLEANUP`, default hourly), configurable max via `MAX_LOG_RUN_FILES` (default 500).
+
+### Fixed
+- **Retry blocking not triggered on process crash or OOM**: When a file processing attempt ended due to a container crash, OOM kill, or unhandled timeout, the `except` handler was never reached and the file was never blocked regardless of how many attempts had been made. The blocking check now runs **before** processing starts: after incrementing `processingAttempts`, if the count exceeds `MAX_FILE_PROCESSING_ATTEMPTS`, the file is immediately marked as blocked and persisted to the log, preventing infinite retry loops.
 
 ## [v2.2.5] – 2026-03-31
 
