@@ -400,25 +400,38 @@ class BlobStorageDocumentIndexer:
         # --- Increment attempt counter and check if should block BEFORE work ---
         processing_attempts += 1
         should_block_precheck = processing_attempts > self.cfg.max_file_processing_attempts
+        _now = _utc_now()
         per_file_log = {
             **existing_log,
             "indexerType": self.cfg.indexer_name,
             "blob": blob_name,
             "parent_id": parent_id,
             "last_modified": last_modified.astimezone(timezone.utc).isoformat(),
-            "startedAt": _utc_now(),
+            "startedAt": _now,
             "runId": run_id,
             "chunksIds": self._make_chunk_key_prefix(parent_id),
             "processingAttempts": processing_attempts,
-            "lastAttemptAt": _utc_now(),
+            "lastAttemptAt": _now,
             "blocked": should_block_precheck,
-            "blockedAt": _utc_now() if should_block_precheck else existing_log.get("blockedAt"),
+            "blockedAt": _now if should_block_precheck else existing_log.get("blockedAt"),
             "blockedReason": "max_attempts_exceeded" if should_block_precheck else existing_log.get("blockedReason"),
         }
-        await self._write_file_log(self.cfg.jobs_log_container, f"{file_log_key}.json", per_file_log)
 
         # --- Block if too many attempts (covers crash/OOM scenarios) ---
         if should_block_precheck:
+            _block_error = (
+                f"File blocked after {processing_attempts} attempts "
+                f"(max {self.cfg.max_file_processing_attempts}). "
+                "Previous attempts may have ended due to a crash or timeout "
+                "before an error could be recorded."
+            )
+            _history = per_file_log.get("runHistory", [])
+            _history = [{"runId": run_id, "status": "blocked", "startedAt": _now, "finishedAt": _now, "error": _block_error}] + _history
+            per_file_log["runHistory"] = _history
+            per_file_log["status"] = "blocked"
+            per_file_log["error"] = _block_error
+            per_file_log["finishedAt"] = _now
+            await self._write_file_log(self.cfg.jobs_log_container, f"{file_log_key}.json", per_file_log)
             self._log_event(
                 logging.WARNING,
                 "ITEM-BLOCKED",
@@ -429,6 +442,8 @@ class BlobStorageDocumentIndexer:
                 maxAttempts=self.cfg.max_file_processing_attempts,
             )
             return {"status": "skipped-blocked", "chunks": 0}
+
+        await self._write_file_log(self.cfg.jobs_log_container, f"{file_log_key}.json", per_file_log)
         try:
             # Fetch blob metadata to capture ACL info if provided
             security_user_ids: List[str] = []
