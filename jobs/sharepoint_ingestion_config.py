@@ -48,6 +48,7 @@ class SharePointConfig:
     tenant_id: str = ""
     client_id: str = ""
     client_secret_name: str = "sharepointClientSecret"
+    max_file_processing_attempts: int = 3  # block file after N failed attempts
 
     @staticmethod
     def from_app_config() -> "SharePointConfig":
@@ -64,6 +65,7 @@ class SharePointConfig:
             tenant_id=app.get("SHAREPOINT_TENANT_ID", ""),
             client_id=app.get("SHAREPOINT_CLIENT_ID", ""),
             client_secret_name=app.get("SHAREPOINT_CLIENT_SECRET_NAME", "sharepointClientSecret"),
+            max_file_processing_attempts=int(app.get("MAX_FILE_PROCESSING_ATTEMPTS", 3)),
         )
 
 
@@ -152,6 +154,7 @@ class RunStats:
     items_indexed: int = 0
     items_skipped_nochange: int = 0
     items_failed: int = 0
+    items_skipped_blocked: int = 0
     att_candidates: int = 0
     att_skipped_not_newer: int = 0
     att_skipped_ext_not_allowed: int = 0

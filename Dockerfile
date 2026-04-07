@@ -1,3 +1,13 @@
+# ---- Stage 1: Build the frontend ----
+FROM node:20-slim AS frontend-build
+WORKDIR /build
+COPY frontend/package*.json ./frontend/
+RUN cd frontend && npm ci
+COPY frontend/ ./frontend/
+RUN cd frontend && npm run build
+# Output is at /build/static (vite outDir: '../static')
+
+# ---- Stage 2: Python application ----
 FROM mcr.microsoft.com/devcontainers/python:3.12-bookworm
 
 WORKDIR /app
@@ -7,6 +17,9 @@ RUN pip install --upgrade pip && \
     pip install -r requirements.txt
 
 COPY . .
+
+# Copy the built frontend into /app/static
+COPY --from=frontend-build /build/static ./static
 
 # Use a non-privileged port by default; the Container App ingress targetPort should match.
 EXPOSE 8080

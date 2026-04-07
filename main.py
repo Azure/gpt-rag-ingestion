@@ -15,6 +15,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.responses import JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -150,6 +151,10 @@ async def lifespan(app: FastAPI):
     s_nl2sql_index = _schedule("CRON_RUN_NL2SQL_INDEX", run_nl2sql_index, "nl2sql_index", "nl2sql-indexer")
     s_nl2sql_purge = _schedule("CRON_RUN_NL2SQL_PURGE", run_nl2sql_purge, "nl2sql_purge", "nl2sql-indexer-purger")
 
+    # Log cleanup: runs immediately then every hour (not shown in dashboard)
+    from api.admin import _cleanup_old_runs
+    _schedule("CRON_RUN_LOG_CLEANUP", _cleanup_old_runs, "log_cleanup", "log-cleanup", default_cron="0 * * * *")
+
     # Optional: run scheduled jobs once at startup.
     # WARNING: In Azure, long-running jobs can block app startup/health probes and
     # cause the container to restart in a loop. Default to OFF in Azure.
@@ -167,6 +172,13 @@ async def lifespan(app: FastAPI):
     startup_task: asyncio.Task | None = None
 
     async def _run_startup_jobs() -> None:
+        # Always run log cleanup first to reduce blob count
+        try:
+            logging.info("[startup] Running log-cleanup immediately")
+            await _cleanup_old_runs()
+        except Exception:
+            logging.exception("[startup] Error running log-cleanup")
+
         # If a job was scheduled (env var provided or default cron fallback), run it once sequentially.
         # Only run jobs whose `_schedule` helper returned True.
         try:
@@ -204,7 +216,15 @@ async def lifespan(app: FastAPI):
         logging.info("[startup] Scheduling immediate job runs in background")
         startup_task = asyncio.create_task(_run_startup_jobs())
     else:
+        # Even without startup jobs, always run log cleanup
         logging.info("[startup] Skipping immediate job runs (RUN_JOBS_ON_STARTUP!=true)")
+        async def _run_cleanup_only() -> None:
+            try:
+                logging.info("[startup] Running log-cleanup immediately")
+                await _cleanup_old_runs()
+            except Exception:
+                logging.exception("[startup] Error running log-cleanup")
+        startup_task = asyncio.create_task(_run_cleanup_only())
 
     yield
 
@@ -486,6 +506,26 @@ async def text_embedding(request: Request):
 
 HTTPXClientInstrumentor().instrument()
 FastAPIInstrumentor.instrument_app(app)
+
+# Admin API router
+from api.admin import router as admin_router
+app.include_router(admin_router)
+
+# Serve frontend static files (built by Vite into ./static)
+_static_dir = Path(__file__).resolve().parent / "static"
+if _static_dir.is_dir():
+    from fastapi.responses import FileResponse
+
+    app.mount("/assets", StaticFiles(directory=str(_static_dir / "assets")), name="static-assets")
+
+    @app.get("/logo.png", include_in_schema=False)
+    async def logo():
+        return FileResponse(str(_static_dir / "logo.png"))
+
+    @app.get("/dashboard", include_in_schema=False)
+    async def dashboard():
+        return FileResponse(str(_static_dir / "index.html"))
+
 
 # Only run Uvicorn directly when executing this file as a script.
 # When launched via `uvicorn main:app ...`, this block will not run.

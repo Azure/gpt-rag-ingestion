@@ -57,6 +57,7 @@ class BlobIndexerConfig:
     max_concurrency: int = 8
     batch_size: int = 500  # AI Search recommended batch size
     indexer_name: str = "blob-storage-indexer"
+    max_file_processing_attempts: int = 3  # block file after N failed attempts
 
     # Optional: allow base64 pass-through into chunker, if you change input later
     input_is_base64: bool = False
@@ -76,6 +77,7 @@ class BlobIndexerConfig:
             indexer_name=app.get("BLOB_INDEXER_NAME", "blob-storage-indexer"),
             input_is_base64=(app.get("CHUNKER_INPUT_IS_BASE64", "false").lower() in ("true", "1", "yes")),
             staging_container=app.get("STAGING_CONTAINER", "long-files-staging"),
+            max_file_processing_attempts=int(app.get("MAX_FILE_PROCESSING_ATTEMPTS", 3)),
         )
 
 
@@ -185,6 +187,7 @@ class BlobStorageDocumentIndexer:
             "itemsDiscovered": 0,
             "indexedItems": 0,
             "skippedNoChange": 0,
+            "skippedBlocked": 0,
             "success": 0,
             "failed": 0,
             "totalChunksUploaded": 0,
@@ -206,6 +209,7 @@ class BlobStorageDocumentIndexer:
         failed = 0
         total_chunks = 0
         skipped_no_change = 0
+        skipped_blocked = 0
 
         try:
             # ensure log containers exist (best-effort)
@@ -259,12 +263,14 @@ class BlobStorageDocumentIndexer:
             # Summarize
             success = sum(1 for r in results if isinstance(r, dict) and r.get("status") == "success")
             failed = sum(1 for r in results if not isinstance(r, dict) or r.get("status") == "error")
+            skipped_blocked = sum(1 for r in results if isinstance(r, dict) and r.get("status") == "skipped-blocked")
             total_chunks = sum(r.get("chunks", 0) for r in results if isinstance(r, dict))
 
             summary.update({
                 "success": success,
                 "indexedItems": success,
                 "failed": failed,
+                "skippedBlocked": skipped_blocked,
                 "totalChunksUploaded": total_chunks,
                 "status": "finishing",
             })
@@ -293,6 +299,7 @@ class BlobStorageDocumentIndexer:
                 "success": success,
                 "failed": failed,
                 "skippedNoChange": skipped_no_change,
+                "skippedBlocked": skipped_blocked,
                 "totalChunksUploaded": total_chunks,
             })
             if summary.get("status") not in {"failed", "cancelled"}:
@@ -317,6 +324,7 @@ class BlobStorageDocumentIndexer:
                 itemsDiscovered=items_discovered,
                 indexedItems=success,
                 skippedNoChange=skipped_no_change,
+                skippedBlocked=skipped_blocked,
                 failed=failed,
                 totalChunksUploaded=total_chunks,
                 durationSeconds=duration_seconds,
@@ -345,6 +353,19 @@ class BlobStorageDocumentIndexer:
             logging.debug("[indexer] ignoring error while closing credential", exc_info=True)
 
     # ---------- Core per-blob flow ----------
+    async def _read_file_log(self, file_log_key: str) -> Optional[Dict[str, Any]]:
+        """Read existing file log JSON from the jobs container. Returns None if not found."""
+        await self._ensure_clients()
+        cc = self._blob_service.get_container_client(self.cfg.jobs_log_container)
+        blob_path = f"{self.cfg.indexer_name}/files/{file_log_key}.json"
+        try:
+            blob_client = cc.get_blob_client(blob_path)
+            download = await blob_client.download_blob()
+            raw = await download.readall()
+            return json.loads(raw)
+        except Exception:
+            return None
+
     async def _process_one(
         self,
         blob_name: str,
@@ -359,7 +380,27 @@ class BlobStorageDocumentIndexer:
         file_url = f"https://{self.cfg.storage_account_name}.blob.core.windows.net/{self.cfg.source_container}/{blob_name}"
         file_log_key = parent_id.replace("/", "-")
 
+        # --- Read existing file log for retry tracking ---
+        existing_log = await self._read_file_log(file_log_key) or {}
+        processing_attempts = existing_log.get("processingAttempts", 0)
+        is_blocked = existing_log.get("blocked", False)
+
+        # --- Blocklist check: skip immediately if blocked ---
+        if is_blocked:
+            self._log_event(
+                logging.WARNING,
+                "ITEM-SKIPPED-BLOCKED",
+                runId=run_id,
+                blobName=blob_name,
+                parentId=parent_id,
+                processingAttempts=processing_attempts,
+            )
+            return {"status": "skipped-blocked", "chunks": 0}
+
+        # --- Increment attempt counter and persist BEFORE expensive work ---
+        processing_attempts += 1
         per_file_log = {
+            **existing_log,
             "indexerType": self.cfg.indexer_name,
             "blob": blob_name,
             "parent_id": parent_id,
@@ -367,7 +408,13 @@ class BlobStorageDocumentIndexer:
             "startedAt": _utc_now(),
             "runId": run_id,
             "chunksIds": self._make_chunk_key_prefix(parent_id),
+            "processingAttempts": processing_attempts,
+            "lastAttemptAt": _utc_now(),
+            "blocked": False,
+            "blockedAt": existing_log.get("blockedAt"),
+            "blockedReason": existing_log.get("blockedReason"),
         }
+        await self._write_file_log(self.cfg.jobs_log_container, f"{file_log_key}.json", per_file_log)
         try:
             # Fetch blob metadata to capture ACL info if provided
             security_user_ids: List[str] = []
@@ -458,10 +505,18 @@ class BlobStorageDocumentIndexer:
                     ),
                 )
 
+            _finished = _utc_now()
+            _history = per_file_log.get("runHistory", [])
+            _history = [{"runId": run_id, "status": "success", "startedAt": per_file_log.get("startedAt"), "finishedAt": _finished, "chunks": total_chunks_uploaded}] + _history
+            per_file_log["runHistory"] = _history
             per_file_log.update({
                 "status": "success",
                 "chunks": total_chunks_uploaded,
-                "finishedAt": _utc_now(),
+                "finishedAt": _finished,
+                "processingAttempts": 0,
+                "blocked": False,
+                "blockedAt": None,
+                "blockedReason": None,
             })
             await self._write_file_log(self.cfg.jobs_log_container, f"{file_log_key}.json", per_file_log)
             self._log_event(
@@ -480,12 +535,30 @@ class BlobStorageDocumentIndexer:
 
         except Exception as e:
             logging.exception(f"[{self.cfg.indexer_name}] Failed processing {blob_name}")
+            should_block = processing_attempts >= self.cfg.max_file_processing_attempts
+            _finished = _utc_now()
+            _history = per_file_log.get("runHistory", [])
+            _history = [{"runId": run_id, "status": "error", "startedAt": per_file_log.get("startedAt"), "finishedAt": _finished, "error": str(e)}] + _history
+            per_file_log["runHistory"] = _history
             per_file_log.update({
                 "status": "error",
                 "error": str(e),
-                "finishedAt": _utc_now(),
+                "finishedAt": _finished,
+                "blocked": should_block,
+                "blockedAt": _finished if should_block else per_file_log.get("blockedAt"),
+                "blockedReason": "max_attempts_exceeded" if should_block else per_file_log.get("blockedReason"),
             })
             await self._write_file_log(self.cfg.jobs_log_container, f"{file_log_key}.json", per_file_log)
+            if should_block:
+                self._log_event(
+                    logging.WARNING,
+                    "ITEM-BLOCKED",
+                    runId=run_id,
+                    blobName=blob_name,
+                    parentId=parent_id,
+                    processingAttempts=processing_attempts,
+                    maxAttempts=self.cfg.max_file_processing_attempts,
+                )
             self._log_event(
                 logging.ERROR,
                 "ITEM-ERROR",

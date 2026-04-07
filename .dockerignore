@@ -1,0 +1,9 @@
+.git
+.azure
+.venv
+.venv_temp
+__pycache__
+*.pyc
+static
+frontend/node_modules
+frontend/dist
