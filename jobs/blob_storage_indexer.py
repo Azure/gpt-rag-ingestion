@@ -647,10 +647,10 @@ class BlobStorageDocumentIndexer:
                 _cost_per_1k_compl_in = float(self._app.get("COST_PER_1K_COMPLETION_INPUT_TOKENS", "0.0025"))
                 _cost_per_1k_compl_out = float(self._app.get("COST_PER_1K_COMPLETION_OUTPUT_TOKENS", "0.01"))
 
-                _analysis_cost = round(_pages * _cost_per_page, 4)
-                _embed_cost = round((_embed_tokens / 1000) * _cost_per_1k_embed, 4)
-                _compl_cost = round(((_compl_in_tokens / 1000) * _cost_per_1k_compl_in) + ((_compl_out_tokens / 1000) * _cost_per_1k_compl_out), 4)
-                _total_cost = round(_analysis_cost + _embed_cost + _compl_cost, 4)
+                _analysis_cost = round(_pages * _cost_per_page, 2)
+                _embed_cost = round((_embed_tokens / 1000) * _cost_per_1k_embed, 2)
+                _compl_cost = round(((_compl_in_tokens / 1000) * _cost_per_1k_compl_in) + ((_compl_out_tokens / 1000) * _cost_per_1k_compl_out), 2)
+                _total_cost = round(_analysis_cost + _embed_cost + _compl_cost, 2)
 
                 # Convert chunks to search docs (lightweight mapping, no API calls)
                 all_docs = [

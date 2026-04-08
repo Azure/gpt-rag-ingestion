@@ -128,9 +128,9 @@ function TimingsBar({ timings }: { timings: TimingsData }) {
           </div>,
           ...(key === "chunkEmbedSec" && hasRetryInfo ? [
             <div key="retryInfo" className="flex items-center gap-1.5 col-span-2 pl-5">
-              <span className="text-muted-foreground/60">\u21b3</span>
+              <span className="text-muted-foreground/60">{"\u21b3"}</span>
               <span className="text-muted-foreground/80 italic">
-                {retryCount > 0 ? `${retryCount}\u00d7` : ""} 429 Rate-limit wait{retryWait > 0 ? ` (${formatDuration(retryWait)})` : ""}
+                429 Rate-limit{retryCount > 0 ? ` \u2014 ${retryCount} ${retryCount === 1 ? "retry" : "retries"}` : ""}{retryWait > 0 ? `, ${formatDuration(retryWait)} wait` : ""}
               </span>
             </div>,
           ] : []),
@@ -155,7 +155,7 @@ const ANALYSIS_SVC_LABELS: Record<string, string> = {
 };
 
 function formatUSD(val: number): string {
-  return `$${val.toFixed(4)}`;
+  return `$${val.toFixed(2)}`;
 }
 
 function CostEstimateSection({ costEstimate }: { costEstimate: Record<string, unknown> }) {
@@ -238,6 +238,8 @@ export function DetailDialog({ title, data, onClose }: DetailDialogProps) {
   // Filter out internal fields, runHistory, timings, costEstimate (shown separately), and error when runHistory exists
   const entries = Object.entries(data).filter(
     ([k]) => !k.startsWith("_") && k !== "runHistory" && k !== "itemsDiscovered" && k !== "timings" && k !== "costEstimate" && (k !== "error" || !hasRunHistory)
+  ).map(([k, v]) =>
+    k === "processingAttempts" ? [k, Math.max(0, (typeof v === "number" ? v : 1) - 1)] as [string, unknown] : [k, v] as [string, unknown]
   );
 
   return (
