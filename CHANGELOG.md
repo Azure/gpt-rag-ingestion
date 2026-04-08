@@ -156,13 +156,17 @@ Each concurrent process consumes memory proportional to document size. When adju
 
 ##### Container Resource Allocation
 
-| Container App       | CPU    | Memory |
-|---------------------|--------|--------|
-| Data Ingestion      | 1.0    | 3 GB   |
-| Orchestrator        | 0.5    | 1 GB   |
-| Frontend            | 0.5    | 1 GB   |
+The GPT-RAG solution may deploy up to **4 container apps** in the same Container Apps Environment:
 
-> ⚠️ **Workload Profile Limits:** The **Consumption workload profile** supports up to **4 vCPUs and 8 GB memory per container app**. All recommended configurations above fit within these limits. However, if you need higher resources per container (e.g., for extreme concurrency or very large documents), you must use a **Dedicated workload profile**. Always verify your container app's resource allocation fits within your workload profile limits before applying changes.
+| Container App       | CPU    | Memory | Notes |
+|---------------------|--------|--------|-------|
+| Data Ingestion      | 1.0    | 3 GB   | Recommended for default concurrency (8) |
+| Orchestrator        | 0.5    | 1 GB   | |
+| Frontend            | 0.5    | 1 GB   | |
+| MCP Server          | 0.5    | 1 GB   | Optional, if deployed |
+| **Total (all 4)**   | **2.5**| **6 GB** | |
+
+> ⚠️ **Workload Profile Limits:** The **Consumption workload profile** supports up to **4 vCPUs and 8 GB memory per container app**. The recommended allocations above fit within these limits. However, when adjusting resources, consider the **combined total across all container apps** in your environment. If you increase Data Ingestion resources significantly (e.g., for high concurrency), verify the total allocation still fits your workload profile capacity. For extreme resource requirements, consider using a **Dedicated workload profile**.
 
 To update container resources via CLI:
 ```bash
