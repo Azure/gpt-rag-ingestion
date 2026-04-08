@@ -50,16 +50,18 @@ function navigateToJob(runId: string, onClose: () => void) {
 /** Labels for timing keys in display order */
 const TIMING_LABELS: Record<string, string> = {
   downloadSec: "Download",
-  indexDeleteSec: "Index cleanup",
-  chunkingSec: "Analysis + chunking + embeddings",
+  analysisSec: "Analysis",
+  chunkEmbedSec: "Chunking + embeddings",
   indexUploadSec: "Index upload",
+  overheadSec: "Processing overhead",
   processingSec: "Processing (staged)",
 };
 const TIMING_COLORS: Record<string, string> = {
   downloadSec: "bg-blue-500",
-  indexDeleteSec: "bg-amber-500",
-  chunkingSec: "bg-emerald-500",
+  analysisSec: "bg-amber-500",
+  chunkEmbedSec: "bg-emerald-500",
   indexUploadSec: "bg-violet-500",
+  overheadSec: "bg-gray-400",
   processingSec: "bg-emerald-500",
 };
 function formatDuration(secs: number): string {
