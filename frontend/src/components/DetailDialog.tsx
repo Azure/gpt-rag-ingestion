@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronDown, ChevronRight, X, Clock } from "lucide-react";
+import { ChevronDown, ChevronRight, X, Clock, DollarSign } from "lucide-react";
 import { formatUtc } from "../lib/api";
 import { StatusBadge } from "./StatusBadge";
 
@@ -65,9 +65,8 @@ const TIMING_COLORS: Record<string, string> = {
   processingSec: "bg-emerald-500",
 };
 /** Keys that are sub-items (not shown in bar or main legend) */
-const SUB_ITEM_KEYS = new Set(["retryWaitSec"]);
-const SUB_ITEM_LABELS: Record<string, string> = { retryWaitSec: "Rate-limit wait" };
-const SUB_ITEM_PARENT: Record<string, string> = { retryWaitSec: "chunkEmbedSec" };
+const SUB_ITEM_KEYS = new Set(["retryWaitSec", "retryCount"]);
+const SUB_ITEM_PARENT: Record<string, string> = { retryWaitSec: "chunkEmbedSec", retryCount: "chunkEmbedSec" };
 function formatDuration(secs: number): string {
   if (secs < 60) return `${secs.toFixed(1)}s`;
   const m = Math.floor(secs / 60);
@@ -94,6 +93,11 @@ function TimingsBar({ timings }: { timings: TimingsData }) {
       (subItemsByParent[parent] ??= []).push([k, v]);
     }
   }
+
+  // Compose rate-limit sub-item label
+  const retryWait = timings.retryWaitSec ?? 0;
+  const retryCount = timings.retryCount ?? 0;
+  const hasRetryInfo = retryWait > 0 || retryCount > 0;
 
   return (
     <div className="space-y-2">
@@ -122,13 +126,14 @@ function TimingsBar({ timings }: { timings: TimingsData }) {
             <span className="text-muted-foreground">{TIMING_LABELS[key] ?? key}</span>
             <span className="ml-auto font-mono">{formatDuration(val)}</span>
           </div>,
-          ...(subItemsByParent[key] ?? []).map(([sk, sv]) => (
-            <div key={sk} className="flex items-center gap-1.5 col-span-2 pl-5">
-              <span className="text-muted-foreground/60">↳</span>
-              <span className="text-muted-foreground/80 italic">{SUB_ITEM_LABELS[sk] ?? sk}</span>
-              <span className="ml-auto font-mono text-muted-foreground/80">{formatDuration(sv)}</span>
-            </div>
-          )),
+          ...(key === "chunkEmbedSec" && hasRetryInfo ? [
+            <div key="retryInfo" className="flex items-center gap-1.5 col-span-2 pl-5">
+              <span className="text-muted-foreground/60">\u21b3</span>
+              <span className="text-muted-foreground/80 italic">
+                {retryCount > 0 ? `${retryCount}\u00d7` : ""} 429 Rate-limit wait{retryWait > 0 ? ` (${formatDuration(retryWait)})` : ""}
+              </span>
+            </div>,
+          ] : []),
         ])}
         {totalSec > 0 && (
           <div className="col-span-2 flex items-center gap-1.5 border-t pt-1 font-medium">
@@ -137,6 +142,80 @@ function TimingsBar({ timings }: { timings: TimingsData }) {
             <span className="ml-auto font-mono">{formatDuration(totalSec)}</span>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Cost Estimate helpers ─────────────────────────────────────────────── */
+
+const ANALYSIS_SVC_LABELS: Record<string, string> = {
+  content_understanding: "Content Understanding",
+  document_intelligence: "Document Intelligence",
+};
+
+function formatUSD(val: number): string {
+  return `$${val.toFixed(4)}`;
+}
+
+function CostEstimateSection({ costEstimate }: { costEstimate: Record<string, unknown> }) {
+  const svc = String(costEstimate.analysisService ?? "");
+  const pages = Number(costEstimate.pagesAnalyzed ?? 0);
+  const analysisCost = Number(costEstimate.analysisCost ?? 0);
+  const embedCalls = Number(costEstimate.embeddingCalls ?? 0);
+  const embedTokens = Number(costEstimate.embeddingTokens ?? 0);
+  const embedCost = Number(costEstimate.embeddingCost ?? 0);
+  const complCalls = Number(costEstimate.completionCalls ?? 0);
+  const complIn = Number(costEstimate.completionInputTokens ?? 0);
+  const complOut = Number(costEstimate.completionOutputTokens ?? 0);
+  const complCost = Number(costEstimate.completionCost ?? 0);
+  const totalCost = Number(costEstimate.totalCost ?? 0);
+
+  return (
+    <div className="mt-4 border-t pt-4">
+      <h3 className="mb-2 text-sm font-semibold flex items-center gap-1.5">
+        <DollarSign className="h-4 w-4" /> Cost Estimate
+      </h3>
+      <div className="space-y-2 text-xs">
+        {/* Analysis */}
+        <div className="flex items-baseline justify-between">
+          <span className="text-muted-foreground">
+            {(ANALYSIS_SVC_LABELS[svc] ?? svc) || "Analysis"}{" "}
+            <span className="font-mono">({pages} {pages === 1 ? "page" : "pages"})</span>
+          </span>
+          <span className="font-mono">{formatUSD(analysisCost)}</span>
+        </div>
+
+        {/* Embeddings */}
+        <div className="flex items-baseline justify-between">
+          <span className="text-muted-foreground">
+            Azure OpenAI Embeddings{" "}
+            <span className="font-mono">({embedCalls} {embedCalls === 1 ? "call" : "calls"}, {embedTokens.toLocaleString()} tokens)</span>
+          </span>
+          <span className="font-mono">{formatUSD(embedCost)}</span>
+        </div>
+
+        {/* Completions (optional) */}
+        {complCalls > 0 && (
+          <div className="flex items-baseline justify-between">
+            <span className="text-muted-foreground">
+              Azure OpenAI Completions{" "}
+              <span className="font-mono">({complCalls} {complCalls === 1 ? "call" : "calls"}, {complIn.toLocaleString()}↑ {complOut.toLocaleString()}↓ tokens)</span>
+            </span>
+            <span className="font-mono">{formatUSD(complCost)}</span>
+          </div>
+        )}
+
+        {/* Total */}
+        <div className="flex items-baseline justify-between border-t pt-1 font-semibold">
+          <span>Estimated Total</span>
+          <span className="font-mono">{formatUSD(totalCost)}</span>
+        </div>
+
+        {/* Disclaimer */}
+        <p className="text-[10px] text-muted-foreground/60 italic">
+          Estimates based on list pricing (Apr 2026). Actual costs may vary.
+        </p>
       </div>
     </div>
   );
@@ -152,10 +231,13 @@ export function DetailDialog({ title, data, onClose }: DetailDialogProps) {
   const timings = (data.timings && typeof data.timings === "object" && !Array.isArray(data.timings))
     ? (data.timings as TimingsData)
     : null;
+  const costEstimate = (data.costEstimate && typeof data.costEstimate === "object" && !Array.isArray(data.costEstimate))
+    ? (data.costEstimate as Record<string, unknown>)
+    : null;
 
-  // Filter out internal fields, runHistory, timings (shown separately), and error when runHistory exists
+  // Filter out internal fields, runHistory, timings, costEstimate (shown separately), and error when runHistory exists
   const entries = Object.entries(data).filter(
-    ([k]) => !k.startsWith("_") && k !== "runHistory" && k !== "itemsDiscovered" && k !== "timings" && (k !== "error" || !hasRunHistory)
+    ([k]) => !k.startsWith("_") && k !== "runHistory" && k !== "itemsDiscovered" && k !== "timings" && k !== "costEstimate" && (k !== "error" || !hasRunHistory)
   );
 
   return (
@@ -207,6 +289,10 @@ export function DetailDialog({ title, data, onClose }: DetailDialogProps) {
             </h3>
             <TimingsBar timings={timings} />
           </div>
+        )}
+
+        {costEstimate && (
+          <CostEstimateSection costEstimate={costEstimate} />
         )}
 
         {hasRunHistory && (

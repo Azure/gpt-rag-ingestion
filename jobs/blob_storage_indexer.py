@@ -622,11 +622,35 @@ class BlobStorageDocumentIndexer:
                 _analysis_sec = round(getattr(chunker, '_analysis_elapsed_sec', 0) or 0, 2)
                 _chunk_embed_sec = round(max(_chunk_total_sec - _analysis_sec, 0), 2)
                 _retry_wait_sec = round(getattr(chunker.aoai_client, '_retry_wait_total_sec', 0) or 0, 2)
+                _retry_count = getattr(chunker.aoai_client, '_retry_count', 0) or 0
                 if _analysis_sec > 0:
                     _timings["analysisSec"] = _analysis_sec
                 _timings["chunkEmbedSec"] = _chunk_embed_sec
                 if _retry_wait_sec > 0:
                     _timings["retryWaitSec"] = _retry_wait_sec
+                if _retry_count > 0:
+                    _timings["retryCount"] = _retry_count
+
+                # Collect usage metrics for cost estimation
+                _aoai = chunker.aoai_client
+                _pages = getattr(chunker, '_total_pages_analyzed', 0) or 0
+                _analysis_svc = getattr(chunker, '_analysis_service', 'content_understanding')
+                _embed_tokens = getattr(_aoai, '_embedding_tokens_total', 0) or 0
+                _embed_calls = getattr(_aoai, '_embedding_calls', 0) or 0
+                _compl_in_tokens = getattr(_aoai, '_completion_input_tokens', 0) or 0
+                _compl_out_tokens = getattr(_aoai, '_completion_output_tokens', 0) or 0
+                _compl_calls = getattr(_aoai, '_completion_calls', 0) or 0
+
+                # Cost estimation (configurable via App Config, defaults = Apr 2026 pricing)
+                _cost_per_page = float(self._app.get("COST_PER_PAGE_ANALYSIS", "0.01"))
+                _cost_per_1k_embed = float(self._app.get("COST_PER_1K_EMBEDDING_TOKENS", "0.00013"))
+                _cost_per_1k_compl_in = float(self._app.get("COST_PER_1K_COMPLETION_INPUT_TOKENS", "0.0025"))
+                _cost_per_1k_compl_out = float(self._app.get("COST_PER_1K_COMPLETION_OUTPUT_TOKENS", "0.01"))
+
+                _analysis_cost = round(_pages * _cost_per_page, 4)
+                _embed_cost = round((_embed_tokens / 1000) * _cost_per_1k_embed, 4)
+                _compl_cost = round(((_compl_in_tokens / 1000) * _cost_per_1k_compl_in) + ((_compl_out_tokens / 1000) * _cost_per_1k_compl_out), 4)
+                _total_cost = round(_analysis_cost + _embed_cost + _compl_cost, 4)
 
                 # Convert chunks to search docs (lightweight mapping, no API calls)
                 all_docs = [
@@ -645,16 +669,42 @@ class BlobStorageDocumentIndexer:
                 _timings["indexUploadSec"] = round(time.monotonic() - _t_upload, 2)
 
             _finished = _utc_now()
-            _tracked = round(sum(v for v in _timings.values() if isinstance(v, (int, float))), 2)
+            _NON_DURATION_KEYS = {"retryCount"}
+            _tracked = round(sum(v for k, v in _timings.items() if isinstance(v, (int, float)) and k not in _NON_DURATION_KEYS), 2)
             _wall = round(time.monotonic() - _t_wall_start, 2)
             _overhead = round(max(_wall - _tracked, 0), 2)
             if _overhead >= 0.5:
                 _timings["overheadSec"] = _overhead
             _timings["totalSec"] = _wall
+
+            # Build cost estimate (only for non-staged path where we have metrics)
+            _cost_estimate = None
+            try:
+                if _total_cost > 0:
+                    _cost_estimate = {
+                        "analysisService": _analysis_svc,
+                        "pagesAnalyzed": _pages,
+                        "analysisCost": _analysis_cost,
+                        "embeddingCalls": _embed_calls,
+                        "embeddingTokens": _embed_tokens,
+                        "embeddingCost": _embed_cost,
+                    }
+                    if _compl_calls > 0:
+                        _cost_estimate["completionCalls"] = _compl_calls
+                        _cost_estimate["completionInputTokens"] = _compl_in_tokens
+                        _cost_estimate["completionOutputTokens"] = _compl_out_tokens
+                        _cost_estimate["completionCost"] = _compl_cost
+                    _cost_estimate["totalCost"] = _total_cost
+            except NameError:
+                pass
+
             _history = per_file_log.get("runHistory", [])
-            _history = [{"runId": run_id, "status": "success", "startedAt": per_file_log.get("startedAt"), "finishedAt": _finished, "chunks": total_chunks_uploaded, "timings": _timings}] + _history
+            _run_entry: Dict[str, Any] = {"runId": run_id, "status": "success", "startedAt": per_file_log.get("startedAt"), "finishedAt": _finished, "chunks": total_chunks_uploaded, "timings": _timings}
+            if _cost_estimate:
+                _run_entry["costEstimate"] = _cost_estimate
+            _history = [_run_entry] + _history
             per_file_log["runHistory"] = _history
-            per_file_log.update({
+            _update: Dict[str, Any] = {
                 "status": "success",
                 "error": None,
                 "chunks": total_chunks_uploaded,
@@ -664,7 +714,10 @@ class BlobStorageDocumentIndexer:
                 "blockedAt": None,
                 "blockedReason": None,
                 "timings": _timings,
-            })
+            }
+            if _cost_estimate:
+                _update["costEstimate"] = _cost_estimate
+            per_file_log.update(_update)
             await self._write_file_log(self.cfg.jobs_log_container, f"{file_log_key}.json", per_file_log)
             self._log_event(
                 logging.INFO,
