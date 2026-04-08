@@ -3,6 +3,7 @@ import logging
 import os
 import base64
 import re
+import time
 from ..exceptions import UnsupportedFormatError
 from .doc_analysis_chunker import DocAnalysisChunker
 from tools import  BlobClient, DocumentIntelligenceClient, ContentUnderstandingClient
@@ -63,7 +64,9 @@ class MultimodalChunker(DocAnalysisChunker):
 
         logging.info(f"[multimodal_chunker][{self.filename}] Running get_chunks.")
 
+        _t0 = time.monotonic()
         document, analysis_errors = self._analyze_document_with_retry()
+        self._analysis_elapsed_sec = round(time.monotonic() - _t0, 2)
         if analysis_errors:
             formatted_errors = ', '.join(map(str, analysis_errors))
             raise Exception(f"Error in doc_analysis_chunker analyzing {self.filename}: {formatted_errors}")
