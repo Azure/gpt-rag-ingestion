@@ -47,6 +47,15 @@ class AzureOpenAIClient:
 
         # Cumulative time (seconds) spent sleeping due to 429 rate-limit retries.
         self._retry_wait_total_sec: float = 0.0
+        # Number of 429 rate-limit responses received.
+        self._retry_count: int = 0
+        # Cumulative embedding usage.
+        self._embedding_calls: int = 0
+        self._embedding_tokens_total: int = 0
+        # Cumulative completion usage.
+        self._completion_calls: int = 0
+        self._completion_input_tokens: int = 0
+        self._completion_output_tokens: int = 0
 
         # OpenAI SDK internal retries (disable by default to avoid multiplying waits)
         self.sdk_max_retries      = int(app_config_client.get("OPENAI_SDK_MAX_RETRIES", "0"))
@@ -118,6 +127,7 @@ class AzureOpenAIClient:
             f"[aoai]{self.document_filename} {op_name} rate-limited; sleeping {wait:.2f}s (attempt {attempt + 1}/{self.retry_max_attempts})"
         )
         self._retry_wait_total_sec += wait
+        self._retry_count += 1
         time.sleep(wait)
 
     def get_completion(
@@ -154,6 +164,11 @@ class AzureOpenAIClient:
                     messages             = messages,
                     max_completion_tokens = max_tokens
                 )
+                # Track token usage
+                if resp.usage:
+                    self._completion_calls += 1
+                    self._completion_input_tokens += resp.usage.prompt_tokens or 0
+                    self._completion_output_tokens += resp.usage.completion_tokens or 0
                 content = resp.choices[0].message.content
                 if not content:
                     finish_reason = resp.choices[0].finish_reason
@@ -202,6 +217,10 @@ class AzureOpenAIClient:
                     model = self.embedding_deployment,
                     input = text_trunc
                 )
+                # Track token usage
+                if resp.usage:
+                    self._embedding_calls += 1
+                    self._embedding_tokens_total += resp.usage.total_tokens or 0
                 return resp.data[0].embedding
 
             except openai.RateLimitError as e:

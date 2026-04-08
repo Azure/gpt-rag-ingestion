@@ -108,6 +108,13 @@ class DocAnalysisChunker(BaseChunker):
         _t0 = time.monotonic()
         document, analysis_errors = self._analyze_document_with_retry()
         self._analysis_elapsed_sec = round(time.monotonic() - _t0, 2)
+
+        # Track total pages analyzed (from page-break markers in markdown)
+        page_breaks = document.get("content", "").count("<!-- PageBreak -->") if document else 0
+        self._total_pages_analyzed = page_breaks + 1 if document and document.get("content") else 0
+        # Track which analysis service was used
+        self._analysis_service = "document_intelligence" if isinstance(self._analysis_client, DocumentIntelligenceClient) else "content_understanding"
+
         if analysis_errors:
             formatted_errors = ', '.join(map(str, analysis_errors))
             raise Exception(f"Error in doc_analysis_chunker analyzing {self.filename}: {formatted_errors}")
