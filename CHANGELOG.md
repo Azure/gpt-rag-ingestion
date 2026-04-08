@@ -3,7 +3,17 @@
 All notable changes to this project will be documented in this file.  
 This format follows [Keep a Changelog](https://keepachangelog.com/) and adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [v2.3.2] – 2026-04-08
+
+### Changed
+- **Default `INDEXER_MAX_CONCURRENCY` lowered to 2**: Reduced the default concurrency for all indexers (blob storage, SharePoint, NL2SQL) from 8/4 to 2. This reduces memory pressure and rate-limit contention when processing large documents, improving reliability on default Container App configurations. Still overridable via the `INDEXER_MAX_CONCURRENCY` App Config key.
+
+### Fixed
+- **Dashboard retries column showing inflated count during processing**: The `processingAttempts` counter is pre-incremented before processing starts (for crash detection), so first-attempt files showed "1 retry" instead of "0". Both the Files table and the detail dialog now display `processingAttempts - 1` to reflect actual retries.
+- **Cost estimate displayed with excessive decimal places**: The `formatUSD()` function in the dashboard detail dialog used 4 decimal places (e.g., `$22.7500`). Changed to 2 decimal places (`$22.75`) for cleaner display. Backend cost calculations also rounded to 2 decimals.
+- **Stale "running" jobs stuck forever after container crash/restart**: When a container was killed (OOM, restart) mid-run, the `finally` block that writes `runFinishedAt` never executed, leaving the run summary blob permanently stuck with `status: "running"`. The admin API now detects runs that started more than 2 hours ago without finishing and marks them as `"interrupted"` with an orange status badge.
+- **Literal `\u21b3` text displayed instead of arrow character**: The 429 rate-limit sub-item in the timings bar rendered the raw Unicode escape `\u21b3` as text instead of the ↳ arrow. Fixed by using a JSX expression `{"\u21b3"}` for proper rendering.
+- **Unclear 429 rate-limit display text**: Changed from `"90× 429 Rate-limit wait (5m 42s)"` to `"429 Rate-limit — 90 retries, 5m 42s wait"` for better readability when both count and duration are present.
 
 ## [v2.3.1] – 2026-04-08
 
