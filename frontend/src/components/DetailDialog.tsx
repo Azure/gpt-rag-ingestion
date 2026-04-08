@@ -64,6 +64,10 @@ const TIMING_COLORS: Record<string, string> = {
   overheadSec: "bg-gray-400",
   processingSec: "bg-emerald-500",
 };
+/** Keys that are sub-items (not shown in bar or main legend) */
+const SUB_ITEM_KEYS = new Set(["retryWaitSec"]);
+const SUB_ITEM_LABELS: Record<string, string> = { retryWaitSec: "Rate-limit wait" };
+const SUB_ITEM_PARENT: Record<string, string> = { retryWaitSec: "chunkEmbedSec" };
 function formatDuration(secs: number): string {
   if (secs < 60) return `${secs.toFixed(1)}s`;
   const m = Math.floor(secs / 60);
@@ -78,9 +82,19 @@ interface TimingsData {
 function TimingsBar({ timings }: { timings: TimingsData }) {
   const totalSec = timings.totalSec ?? 0;
   const entries = Object.entries(timings).filter(
-    ([k]) => k !== "totalSec" && typeof timings[k] === "number"
+    ([k]) => k !== "totalSec" && !SUB_ITEM_KEYS.has(k) && typeof timings[k] === "number"
   );
   if (entries.length === 0) return null;
+
+  // Build sub-items grouped by parent key
+  const subItemsByParent: Record<string, [string, number][]> = {};
+  for (const [k, v] of Object.entries(timings)) {
+    if (SUB_ITEM_KEYS.has(k) && typeof v === "number" && v > 0) {
+      const parent = SUB_ITEM_PARENT[k] ?? "";
+      (subItemsByParent[parent] ??= []).push([k, v]);
+    }
+  }
+
   return (
     <div className="space-y-2">
       {/* Stacked bar */}
@@ -102,13 +116,20 @@ function TimingsBar({ timings }: { timings: TimingsData }) {
       )}
       {/* Legend */}
       <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-        {entries.map(([key, val]) => (
+        {entries.flatMap(([key, val]) => [
           <div key={key} className="flex items-center gap-1.5">
             <span className={`inline-block h-2.5 w-2.5 rounded-sm ${TIMING_COLORS[key] ?? "bg-gray-400"}`} />
             <span className="text-muted-foreground">{TIMING_LABELS[key] ?? key}</span>
             <span className="ml-auto font-mono">{formatDuration(val)}</span>
-          </div>
-        ))}
+          </div>,
+          ...(subItemsByParent[key] ?? []).map(([sk, sv]) => (
+            <div key={sk} className="flex items-center gap-1.5 col-span-2 pl-5">
+              <span className="text-muted-foreground/60">↳</span>
+              <span className="text-muted-foreground/80 italic">{SUB_ITEM_LABELS[sk] ?? sk}</span>
+              <span className="ml-auto font-mono text-muted-foreground/80">{formatDuration(sv)}</span>
+            </div>
+          )),
+        ])}
         {totalSec > 0 && (
           <div className="col-span-2 flex items-center gap-1.5 border-t pt-1 font-medium">
             <Clock className="h-3 w-3 text-muted-foreground" />
