@@ -69,8 +69,10 @@ class MultimodalChunker(DocAnalysisChunker):
         self._analysis_elapsed_sec = round(time.monotonic() - _t0, 2)
 
         # Track total pages analyzed (from page-break markers in markdown)
-        page_breaks = document.get("content", "").count("<!-- PageBreak -->") if document else 0
-        self._total_pages_analyzed = page_breaks + 1 if document and document.get("content") else 0
+        # For auto-split PDFs, _total_pages_analyzed is already set inside _analyze_document_with_retry
+        if not getattr(self, '_total_pages_analyzed', 0):
+            page_breaks = document.get("content", "").count("<!-- PageBreak -->") if document else 0
+            self._total_pages_analyzed = page_breaks + 1 if document and document.get("content") else 0
         self._analysis_service = "document_intelligence" if isinstance(self._analysis_client, DocumentIntelligenceClient) else "content_understanding"
 
         if analysis_errors:

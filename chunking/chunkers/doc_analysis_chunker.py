@@ -110,8 +110,10 @@ class DocAnalysisChunker(BaseChunker):
         self._analysis_elapsed_sec = round(time.monotonic() - _t0, 2)
 
         # Track total pages analyzed (from page-break markers in markdown)
-        page_breaks = document.get("content", "").count("<!-- PageBreak -->") if document else 0
-        self._total_pages_analyzed = page_breaks + 1 if document and document.get("content") else 0
+        # For auto-split PDFs, _total_pages_analyzed is already set inside _analyze_document_with_retry
+        if not getattr(self, '_total_pages_analyzed', 0):
+            page_breaks = document.get("content", "").count("<!-- PageBreak -->") if document else 0
+            self._total_pages_analyzed = page_breaks + 1 if document and document.get("content") else 0
         # Track which analysis service was used
         self._analysis_service = "document_intelligence" if isinstance(self._analysis_client, DocumentIntelligenceClient) else "content_understanding"
 
@@ -261,6 +263,9 @@ class DocAnalysisChunker(BaseChunker):
 
         combined_content = "\n".join(combined_content_parts)
         combined_document = {"content": combined_content}
+
+        # Store actual page count before synthetic markers inflate the content
+        self._total_pages_analyzed = page_offset
 
         logging.info(
             f"[doc_analysis_chunker][{self.filename}] Split analysis complete: "
