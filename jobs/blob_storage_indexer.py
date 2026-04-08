@@ -563,6 +563,7 @@ class BlobStorageDocumentIndexer:
             _ext = os.path.splitext(blob_name)[1].lower()
             _temp_path: Optional[str] = None
 
+            _t_download = time.monotonic()
             if _ext == ".pdf" and blob_size > 10 * 1024 * 1024:  # >10 MB
                 _temp_path = tempfile.NamedTemporaryFile(
                     suffix=".pdf", prefix="ingest_dl_", delete=False
@@ -574,6 +575,7 @@ class BlobStorageDocumentIndexer:
             else:
                 download = await blob_client.download_blob()
                 file_bytes = await download.readall()
+            _download_secs = round(time.monotonic() - _t_download, 2)
 
             # If you ever switch to providing Base64 to the chunker, decode here:
             if self.cfg.input_is_base64 and file_bytes and isinstance(file_bytes, (str, bytes)):
@@ -592,7 +594,9 @@ class BlobStorageDocumentIndexer:
                 data["documentTempFile"] = _temp_path
 
             # Excel row-wise: stage docs in Blob to reduce memory pressure (optional design choice).
+            _timings: Dict[str, Any] = {"downloadSec": _download_secs}
             if self._should_stage_excel_rowwise(data):
+                _t_stage = time.monotonic()
                 total_chunks_uploaded = await self._replace_parent_docs_via_staging(
                     data=data,
                     parent_id=parent_id,
@@ -604,25 +608,37 @@ class BlobStorageDocumentIndexer:
                     security_group_ids=security_group_ids,
                     rbac_scope=rbac_scope,
                 )
+                _timings["processingSec"] = round(time.monotonic() - _t_stage, 2)
             else:
-                # Default: replace using streaming uploads in batches.
-                total_chunks_uploaded = await self._replace_parent_docs_stream(
-                    parent_id,
-                    self._iter_search_docs_for_blob(
-                        data=data,
-                        parent_id=parent_id,
-                        file_url=file_url,
-                        blob_name=blob_name,
-                        last_modified=last_modified,
-                        security_user_ids=security_user_ids,
-                        security_group_ids=security_group_ids,
-                        rbac_scope=rbac_scope,
-                    ),
+                # Phase: delete old docs from search index
+                _t_del = time.monotonic()
+                await self._delete_parent_docs(parent_id)
+                _timings["indexDeleteSec"] = round(time.monotonic() - _t_del, 2)
+
+                # Phase: chunking (document analysis + text splitting + embeddings)
+                docs_iter = self._iter_search_docs_for_blob(
+                    data=data,
+                    parent_id=parent_id,
+                    file_url=file_url,
+                    blob_name=blob_name,
+                    last_modified=last_modified,
+                    security_user_ids=security_user_ids,
+                    security_group_ids=security_group_ids,
+                    rbac_scope=rbac_scope,
                 )
+                _t_chunk = time.monotonic()
+                all_docs = await asyncio.to_thread(list, docs_iter)
+                _timings["chunkingSec"] = round(time.monotonic() - _t_chunk, 2)
+
+                # Phase: upload to search index
+                _t_upload = time.monotonic()
+                total_chunks_uploaded = await self._upload_docs_batch(all_docs)
+                _timings["indexUploadSec"] = round(time.monotonic() - _t_upload, 2)
 
             _finished = _utc_now()
+            _timings["totalSec"] = round(sum(v for v in _timings.values() if isinstance(v, (int, float))), 2)
             _history = per_file_log.get("runHistory", [])
-            _history = [{"runId": run_id, "status": "success", "startedAt": per_file_log.get("startedAt"), "finishedAt": _finished, "chunks": total_chunks_uploaded}] + _history
+            _history = [{"runId": run_id, "status": "success", "startedAt": per_file_log.get("startedAt"), "finishedAt": _finished, "chunks": total_chunks_uploaded, "timings": _timings}] + _history
             per_file_log["runHistory"] = _history
             per_file_log.update({
                 "status": "success",
@@ -633,6 +649,7 @@ class BlobStorageDocumentIndexer:
                 "blocked": False,
                 "blockedAt": None,
                 "blockedReason": None,
+                "timings": _timings,
             })
             await self._write_file_log(self.cfg.jobs_log_container, f"{file_log_key}.json", per_file_log)
             self._log_event(
@@ -1149,6 +1166,23 @@ class BlobStorageDocumentIndexer:
                 total += len(batch)
                 batch = []
                 # Give the event loop a chance between heavy batches.
+                await asyncio.sleep(0)
+        if batch:
+            await self._with_backoff(self._search_client.upload_documents, documents=batch)
+            total += len(batch)
+        return total
+
+    async def _upload_docs_batch(self, all_docs: List[Dict[str, Any]]) -> int:
+        """Upload a pre-materialized list of documents in cfg.batch_size chunks."""
+        await self._ensure_clients()
+        batch: List[Dict[str, Any]] = []
+        total = 0
+        for doc in all_docs:
+            batch.append(doc)
+            if len(batch) >= self.cfg.batch_size:
+                await self._with_backoff(self._search_client.upload_documents, documents=batch)
+                total += len(batch)
+                batch = []
                 await asyncio.sleep(0)
         if batch:
             await self._with_backoff(self._search_client.upload_documents, documents=batch)

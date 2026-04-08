@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronDown, ChevronRight, X } from "lucide-react";
+import { ChevronDown, ChevronRight, X, Clock } from "lucide-react";
 import { formatUtc } from "../lib/api";
 import { StatusBadge } from "./StatusBadge";
 
@@ -16,6 +16,7 @@ interface RunHistoryEntry {
   finishedAt?: string;
   chunks?: number;
   error?: string;
+  timings?: TimingsData;
 }
 
 const KEY_LABELS: Record<string, string> = {
@@ -46,6 +47,78 @@ function navigateToJob(runId: string, onClose: () => void) {
   window.dispatchEvent(new CustomEvent("navigate-to-job", { detail: { runId } }));
 }
 
+/** Labels for timing keys in display order */
+const TIMING_LABELS: Record<string, string> = {
+  downloadSec: "Download",
+  indexDeleteSec: "Index cleanup",
+  chunkingSec: "Analysis + chunking + embeddings",
+  indexUploadSec: "Index upload",
+  processingSec: "Processing (staged)",
+};
+const TIMING_COLORS: Record<string, string> = {
+  downloadSec: "bg-blue-500",
+  indexDeleteSec: "bg-amber-500",
+  chunkingSec: "bg-emerald-500",
+  indexUploadSec: "bg-violet-500",
+  processingSec: "bg-emerald-500",
+};
+function formatDuration(secs: number): string {
+  if (secs < 60) return `${secs.toFixed(1)}s`;
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return `${m}m ${s.toFixed(0)}s`;
+}
+
+interface TimingsData {
+  [key: string]: number;
+}
+
+function TimingsBar({ timings }: { timings: TimingsData }) {
+  const totalSec = timings.totalSec ?? 0;
+  const entries = Object.entries(timings).filter(
+    ([k]) => k !== "totalSec" && typeof timings[k] === "number"
+  );
+  if (entries.length === 0) return null;
+  return (
+    <div className="space-y-2">
+      {/* Stacked bar */}
+      {totalSec > 0 && (
+        <div className="flex h-4 w-full overflow-hidden rounded-full bg-muted">
+          {entries.map(([key, val]) => {
+            const pct = totalSec > 0 ? (val / totalSec) * 100 : 0;
+            if (pct < 0.5) return null;
+            return (
+              <div
+                key={key}
+                className={`${TIMING_COLORS[key] ?? "bg-gray-400"} h-full`}
+                style={{ width: `${pct}%` }}
+                title={`${TIMING_LABELS[key] ?? key}: ${formatDuration(val)} (${pct.toFixed(0)}%)`}
+              />
+            );
+          })}
+        </div>
+      )}
+      {/* Legend */}
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+        {entries.map(([key, val]) => (
+          <div key={key} className="flex items-center gap-1.5">
+            <span className={`inline-block h-2.5 w-2.5 rounded-sm ${TIMING_COLORS[key] ?? "bg-gray-400"}`} />
+            <span className="text-muted-foreground">{TIMING_LABELS[key] ?? key}</span>
+            <span className="ml-auto font-mono">{formatDuration(val)}</span>
+          </div>
+        ))}
+        {totalSec > 0 && (
+          <div className="col-span-2 flex items-center gap-1.5 border-t pt-1 font-medium">
+            <Clock className="h-3 w-3 text-muted-foreground" />
+            <span>Total</span>
+            <span className="ml-auto font-mono">{formatDuration(totalSec)}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function DetailDialog({ title, data, onClose }: DetailDialogProps) {
   const [expandedRun, setExpandedRun] = useState<number | null>(null);
 
@@ -53,10 +126,13 @@ export function DetailDialog({ title, data, onClose }: DetailDialogProps) {
 
   const runHistory = Array.isArray(data.runHistory) ? (data.runHistory as RunHistoryEntry[]) : [];
   const hasRunHistory = runHistory.length > 0;
+  const timings = (data.timings && typeof data.timings === "object" && !Array.isArray(data.timings))
+    ? (data.timings as TimingsData)
+    : null;
 
-  // Filter out internal fields, runHistory (shown separately), and error when runHistory exists
+  // Filter out internal fields, runHistory, timings (shown separately), and error when runHistory exists
   const entries = Object.entries(data).filter(
-    ([k]) => !k.startsWith("_") && k !== "runHistory" && k !== "itemsDiscovered" && (k !== "error" || !hasRunHistory)
+    ([k]) => !k.startsWith("_") && k !== "runHistory" && k !== "itemsDiscovered" && k !== "timings" && (k !== "error" || !hasRunHistory)
   );
 
   return (
@@ -101,6 +177,15 @@ export function DetailDialog({ title, data, onClose }: DetailDialogProps) {
           </tbody>
         </table>
 
+        {timings && (
+          <div className="mt-4 border-t pt-4">
+            <h3 className="mb-2 text-sm font-semibold flex items-center gap-1.5">
+              <Clock className="h-4 w-4" /> Processing Timings
+            </h3>
+            <TimingsBar timings={timings} />
+          </div>
+        )}
+
         {hasRunHistory && (
           <div className="mt-4 border-t pt-4">
             <h3 className="mb-2 text-sm font-semibold">Run History</h3>
@@ -113,6 +198,7 @@ export function DetailDialog({ title, data, onClose }: DetailDialogProps) {
                     <th className="px-2 py-1.5 text-left">Status</th>
                     <th className="px-2 py-1.5 text-left">Started (UTC)</th>
                     <th className="px-2 py-1.5 text-left">Finished (UTC)</th>
+                    <th className="px-2 py-1.5 text-right">Duration</th>
                     <th className="px-2 py-1.5 text-right">Chunks</th>
                   </tr>
                 </thead>
@@ -142,11 +228,14 @@ export function DetailDialog({ title, data, onClose }: DetailDialogProps) {
                         <td className="px-2 py-1.5"><StatusBadge status={entry.status} /></td>
                         <td className="px-2 py-1.5">{formatUtc(entry.startedAt)}</td>
                         <td className="px-2 py-1.5">{formatUtc(entry.finishedAt)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono">
+                          {entry.timings?.totalSec != null ? formatDuration(entry.timings.totalSec) : "-"}
+                        </td>
                         <td className="px-2 py-1.5 text-right">{entry.chunks ?? "-"}</td>
                       </tr>
                       {expandedRun === i && entry.error && (
                         <tr key={`${i}-error`}>
-                          <td colSpan={6} className="bg-destructive/5 px-4 py-2">
+                          <td colSpan={7} className="bg-destructive/5 px-4 py-2">
                             <pre className="whitespace-pre-wrap text-xs text-destructive/90">
                               {entry.error}
                             </pre>
