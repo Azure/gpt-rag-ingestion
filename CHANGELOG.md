@@ -136,7 +136,25 @@ Starting with v2.3.0, the default document analysis path uses **Azure AI Foundry
 
 #### Resource Recommendations for Processing Large Files
 
-Large document processing (e.g., 100+ page PDFs, large spreadsheets) can be memory-intensive. The following container resource configuration is recommended:
+Large document processing (e.g., 100+ page PDFs, large spreadsheets) can be memory-intensive. Container sizing must account for the **number of concurrent document processes** controlled by `INDEXER_MAX_CONCURRENCY`.
+
+##### Concurrency and Container Sizing
+
+| Setting                  | Default | Description |
+|--------------------------|---------|-------------|
+| `INDEXER_MAX_CONCURRENCY`| 8       | Maximum documents processed in parallel per indexer run |
+
+Each concurrent process consumes memory proportional to document size. When adjusting concurrency, scale container resources accordingly:
+
+| Concurrency | Recommended CPU | Recommended Memory |
+|-------------|-----------------|---------------------|
+| 2–4         | 0.5             | 1 GB                |
+| 8 (default) | 1.0             | 3 GB                |
+| 16+         | 2.0             | 4 GB                |
+
+> **Tip:** For workloads with very large documents (100+ pages), consider reducing `INDEXER_MAX_CONCURRENCY` to 2–4 to avoid memory exhaustion.
+
+##### Container Resource Allocation
 
 | Container App       | CPU    | Memory |
 |---------------------|--------|--------|
@@ -153,6 +171,11 @@ az containerapp update \
   --resource-group <your-resource-group> \
   --cpu 1.0 \
   --memory 3Gi
+```
+
+To adjust concurrency in Azure App Configuration:
+```
+INDEXER_MAX_CONCURRENCY = 4
 ```
 
 ---
