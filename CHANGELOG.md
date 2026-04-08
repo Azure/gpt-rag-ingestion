@@ -126,14 +126,11 @@ If you use multimodal processing and your primary chat model does not support vi
 
 #### Upgrading from v2.2.5
 
-##### 1. Verify Azure AI Foundry Account
+##### 1. Content Understanding (No Action Required)
 
-Starting with v2.3.0, the default document analysis path uses **Azure AI Foundry Content Understanding** (`prebuilt-layout`) instead of Document Intelligence, reducing costs by ~69% per page. Ensure you have:
+Starting with v2.3.0, the default document analysis path uses **Azure AI Foundry Content Understanding** (`prebuilt-layout`) instead of Document Intelligence, reducing costs by ~69% per page. The `AI_FOUNDRY_ACCOUNT_ENDPOINT` setting is automatically configured during deployment via the infrastructure templates.
 
-- An Azure AI Foundry account configured.
-- The `AI_FOUNDRY_ACCOUNT_ENDPOINT` setting in App Configuration.
-
-If you prefer to continue using Document Intelligence, set `USE_DOCUMENT_INTELLIGENCE=true` in App Configuration.
+> **Note:** If you prefer to continue using Document Intelligence instead of Content Understanding, set `USE_DOCUMENT_INTELLIGENCE=true` in Azure App Configuration.
 
 ---
 
@@ -189,11 +186,13 @@ To validate the ingestion pipeline:
 
 | Current Version | Port Change | Index Fields | RBAC Role | AI Foundry |
 |-----------------|-------------|--------------|-----------|------------|
-| v2.0.x          | Required    | Required     | Required  | Recommended |
-| v2.1.x          | Required    | Required     | Required  | Recommended |
-| v2.2.0          | Required    | ✓            | Required  | Recommended |
-| v2.2.1–v2.2.4   | ✓           | ✓            | Required  | Recommended |
-| v2.2.5          | ✓           | ✓            | ✓         | Recommended |
+| v2.0.x          | Required    | Required     | Required  | Auto |
+| v2.1.x          | Required    | Required     | Required  | Auto |
+| v2.2.0          | Required    | ✓            | Required  | Auto |
+| v2.2.1–v2.2.4   | ✓           | ✓            | Required  | Auto |
+| v2.2.5          | ✓           | ✓            | ✓         | Auto |
+
+> **AI Foundry** column: "Auto" indicates that Content Understanding is the new default (v2.3.0+) and the required settings are automatically configured during deployment.
 
 ---
 
