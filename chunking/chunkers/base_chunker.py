@@ -139,6 +139,9 @@ class BaseChunker:
         document_bytes = data.get('documentBytes') 
         if document_bytes:
             self.document_bytes = document_bytes 
+        elif data.get('documentTempFile'):
+            # Large file downloaded to disk — bytes will be read on demand by the chunker.
+            self.document_bytes = None
         else:
             self.document_bytes = None
             logging.warning(f"[base_chunker][{self.filename}] Document bytes not provided.")

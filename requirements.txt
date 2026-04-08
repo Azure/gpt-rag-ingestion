@@ -36,6 +36,12 @@ tenacity==8.5.0
 # Image library
 Pillow==11.1.0
 
+# PDF manipulation (page counting and splitting)
+pypdf==5.4.0
+
+# Process and system utilities
+psutil==7.0.0
+
 azure-monitor-opentelemetry
 azure-monitor-opentelemetry-exporter
 opentelemetry-instrumentation-httpx==0.52b1
