@@ -7,6 +7,12 @@ from .base_chunker import BaseChunker
 from ..exceptions import UnsupportedFormatError
 from tools import DocumentIntelligenceClient, ContentUnderstandingClient
 from dependencies import get_config
+from utils.file_utils import (
+    split_pdf_to_temp_files,
+    renumber_page_markers,
+    save_bytes_to_temp_file,
+    _safe_delete,
+)
 
 app_config_client = get_config()
 
@@ -75,6 +81,7 @@ class DocAnalysisChunker(BaseChunker):
         self.supported_formats = self._analysis_client.file_extensions
         # Expose output_content_format for splitter selection
         self.output_content_format = getattr(self._analysis_client, "output_content_format", "markdown")
+        self.max_pages_per_analysis = int(app_config_client.get("MAX_PAGES_PER_ANALYSIS", 300))
 
     def get_chunks(self):
         """
@@ -108,26 +115,150 @@ class DocAnalysisChunker(BaseChunker):
 
     def _analyze_document_with_retry(self, retries=3):
         """
-        Analyzes the document using the Document Intelligence Client, with a retry mechanism for error handling.
+        Analyzes the document using the analysis client, with a retry mechanism.
+
+        For PDF files that exceed ``max_pages_per_analysis`` pages, the document
+        is automatically split into smaller parts (temp files on disk) and each
+        part is analyzed separately.  The markdown results are concatenated with
+        page-break offsets so that downstream page-numbering remains correct.
 
         Args:
-            retries (int): The number of times to retry the document analysis in case of failure. Defaults to 3 retries.
+            retries (int): The number of times to retry in case of failure.
 
         Returns:
-            tuple: A tuple containing the analysis result and any errors encountered.
+            tuple: (document_dict, errors_list)
+        """
+        # --- Decide whether we need to split ---
+        temp_source: str | None = None
+        need_split = False
 
-        Raises:
-            Exception: If the document analysis fails after the specified number of retries.
-        """  
+        if self.extension == "pdf":
+            # Prefer temp file path from the indexer (already on disk).
+            temp_source = self.data.get("documentTempFile")
+
+            if not temp_source and self.document_bytes:
+                # Count pages to decide if splitting is needed.
+                from utils.file_utils import get_pdf_page_count
+                try:
+                    page_count = get_pdf_page_count(self.document_bytes)
+                except Exception:
+                    page_count = 0
+
+                if page_count > self.max_pages_per_analysis:
+                    # Write to disk so split_pdf_to_temp_files can work from file.
+                    temp_source = save_bytes_to_temp_file(self.document_bytes, suffix=".pdf")
+                    need_split = True
+            elif temp_source:
+                # Already on disk — check page count from file.
+                from pypdf import PdfReader
+                try:
+                    page_count = len(PdfReader(temp_source).pages)
+                except Exception:
+                    page_count = 0
+                need_split = page_count > self.max_pages_per_analysis
+
+        if need_split and temp_source:
+            return self._analyze_split_pdf(temp_source, retries)
+
+        # --- Standard single-document analysis ---
+        return self._analyze_single_document(retries)
+
+    def _analyze_single_document(self, retries=3):
+        """Analyze a single (non-split) document with retries."""
+        file_bytes = self.document_bytes
+        if not file_bytes:
+            # Fall back to reading from temp file if bytes not in memory.
+            temp_path = self.data.get("documentTempFile")
+            if temp_path:
+                with open(temp_path, "rb") as f:
+                    file_bytes = f.read()
+
         for attempt in range(retries):
             try:
-                document, analysis_errors = self._analysis_client.analyze_document_from_bytes(file_bytes=self.document_bytes, filename=self.filename)
+                document, analysis_errors = self._analysis_client.analyze_document_from_bytes(
+                    file_bytes=file_bytes, filename=self.filename
+                )
                 return document, analysis_errors
             except Exception as e:
-                logging.error(f"[doc_analysis_chunker][{self.filename}] docint analyze document failed on attempt {attempt + 1}/{retries}: {str(e)}")
+                logging.error(
+                    f"[doc_analysis_chunker][{self.filename}] analyze document failed "
+                    f"on attempt {attempt + 1}/{retries}: {str(e)}"
+                )
                 if attempt == retries - 1:
                     raise
-        return None, None, None
+        return None, None
+
+    def _analyze_split_pdf(self, source_path: str, retries=3):
+        """Split a large PDF into parts, analyze each, and concatenate results."""
+        combined_content_parts: list[str] = []
+        all_errors: list = []
+        page_offset = 0
+        part_temp_files: list[str] = []
+
+        try:
+            for part_path in split_pdf_to_temp_files(source_path, self.max_pages_per_analysis):
+                is_original = (part_path == source_path)
+                if not is_original:
+                    part_temp_files.append(part_path)
+
+                # Read part bytes into memory (one part at a time — bounded size).
+                with open(part_path, "rb") as f:
+                    part_bytes = f.read()
+
+                # Analyze this part with retries.
+                doc = None
+                errors = None
+                for attempt in range(retries):
+                    try:
+                        doc, errors = self._analysis_client.analyze_document_from_bytes(
+                            file_bytes=part_bytes, filename=self.filename
+                        )
+                        break
+                    except Exception as e:
+                        logging.error(
+                            f"[doc_analysis_chunker][{self.filename}] analyze part "
+                            f"(offset {page_offset}) failed on attempt "
+                            f"{attempt + 1}/{retries}: {str(e)}"
+                        )
+                        if attempt == retries - 1:
+                            raise
+
+                # Free part bytes immediately.
+                del part_bytes
+
+                if errors:
+                    all_errors.extend(errors)
+
+                if doc and doc.get("content"):
+                    markdown = doc["content"]
+                    # Offset page markers so downstream numbering is absolute.
+                    markdown = renumber_page_markers(markdown, page_offset)
+                    combined_content_parts.append(markdown)
+
+                    # Count actual pages in this part for next offset.
+                    page_breaks = markdown.count("<!-- PageBreak -->")
+                    page_offset += page_breaks + 1  # pages = breaks + 1
+
+                # Delete part temp file right away to free disk.
+                if not is_original:
+                    _safe_delete(part_path)
+                    part_temp_files = [p for p in part_temp_files if p != part_path]
+
+        finally:
+            # Ensure all remaining part temp files are cleaned up.
+            for p in part_temp_files:
+                _safe_delete(p)
+
+        combined_content = "\n".join(combined_content_parts)
+        combined_document = {"content": combined_content}
+
+        logging.info(
+            f"[doc_analysis_chunker][{self.filename}] Split analysis complete: "
+            f"{len(combined_content_parts)} parts, "
+            f"{len(combined_content)} chars total"
+        )
+
+        return combined_document, all_errors if all_errors else None
 
     def _process_document_chunks(self, document):
         """

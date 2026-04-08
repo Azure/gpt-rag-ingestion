@@ -5,6 +5,17 @@ This format follows [Keep a Changelog](https://keepachangelog.com/) and adheres 
 
 ## [Unreleased]
 
+### Added
+- **Automatic PDF splitting for large documents**: PDFs exceeding the Azure analysis service page limit (configurable via `MAX_PAGES_PER_ANALYSIS`, default 300) are now automatically split into smaller parts before analysis. Each part is analyzed separately and the markdown results are concatenated with correct absolute page numbering. This prevents `InputPageCountExceeded` errors and is transparent to the rest of the pipeline — same `parent_id`, same chunk keys, same search index behavior. Requires the new `pypdf` dependency.
+- **Memory guard before blob download**: Before downloading a blob for processing, the indexer now checks the file size against available container memory (via cgroups + `psutil`). If the estimated peak memory usage would exceed available capacity, processing is skipped with a descriptive error instead of risking an OOM crash that restarts the container. Configurable via `MEMORY_SAFETY_MULTIPLIER` (default 4.0) and `MEMORY_SAFETY_THRESHOLD` (default 0.85).
+- **Temp file download for large PDFs**: PDFs larger than 10 MB are now downloaded to a temporary file on disk instead of being held entirely in memory. The auto-split logic operates on these temp files, keeping peak memory usage bounded to one part at a time (~200 MB) instead of the full document (~1.5 GB+).
+
+### Fixed
+- **`_as_datetime` NameError crashing every indexer run**: The helper function `_as_datetime` was called in four places within `blob_storage_indexer.py` but was never defined, causing a `NameError` on every run after the retry-tracking feature was added. Added the missing function definition at module level.
+- **Orphaned `value` variable causing NameError in memory guard**: A leftover code block from an earlier refactor inside `_check_memory_capacity()` referenced an undefined variable `value`, crashing the memory guard check before any file could be processed. Removed the dead code.
+- **Dashboard unresponsive during file processing**: The FastAPI event loop was blocked by synchronous chunking and document iteration calls, making the admin dashboard and health endpoints unresponsive for the entire duration of large file processing (20+ minutes). Wrapped the blocking `list(docs_iter)` calls with `asyncio.to_thread()` so they run in a worker thread without blocking the event loop.
+- **Stale error field on successful re-processing**: When a file was re-processed successfully after previous failures, the top-level `error` field in the file log retained the last error message despite `status` being `success`. The field is now explicitly cleared to `null` on success.
+
 ## [v2.3.0] – 2026-04-07
 
 ### Added

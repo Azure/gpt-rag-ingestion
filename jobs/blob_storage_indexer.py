@@ -19,13 +19,35 @@ from azure.storage.blob.aio import BlobServiceClient
 from azure.storage.blob import ContentSettings
 from azure.search.documents.aio import SearchClient as AsyncSearchClient
 
+import psutil
+import tempfile
+
 from dependencies import get_config
 from chunking import DocumentChunker
 from chunking.chunker_factory import ChunkerFactory
+from utils.file_utils import _safe_delete
 
 # Elevated-read header – bypasses permission filtering for service-side queries.
 _ELEVATED_HEADERS = {"x-ms-enable-elevated-read": "true"}
 _ELEVATED_API_VERSION = "2025-11-01-preview"
+
+# -----------------------------------------------------------------------------
+# Helpers
+# -----------------------------------------------------------------------------
+def _as_datetime(value) -> Optional[datetime]:
+    """Convert a value to a timezone-aware datetime, or return None."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, str):
+        try:
+            dt = datetime.fromisoformat(value)
+            return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        except (ValueError, TypeError):
+            return None
+    return None
+
 
 # -----------------------------------------------------------------------------
 # Custom Exception
@@ -58,6 +80,8 @@ class BlobIndexerConfig:
     batch_size: int = 500  # AI Search recommended batch size
     indexer_name: str = "blob-storage-indexer"
     max_file_processing_attempts: int = 3  # block file after N failed attempts
+    memory_safety_multiplier: float = 4.0  # estimated peak RAM = blob_size * multiplier
+    memory_safety_threshold: float = 0.85  # use at most 85% of container memory limit
 
     # Optional: allow base64 pass-through into chunker, if you change input later
     input_is_base64: bool = False
@@ -78,6 +102,8 @@ class BlobIndexerConfig:
             input_is_base64=(app.get("CHUNKER_INPUT_IS_BASE64", "false").lower() in ("true", "1", "yes")),
             staging_container=app.get("STAGING_CONTAINER", "long-files-staging"),
             max_file_processing_attempts=int(app.get("MAX_FILE_PROCESSING_ATTEMPTS", 3)),
+            memory_safety_multiplier=float(app.get("MEMORY_SAFETY_MULTIPLIER", 4.0)),
+            memory_safety_threshold=float(app.get("MEMORY_SAFETY_THRESHOLD", 0.85)),
         )
 
 
@@ -98,22 +124,57 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _as_datetime(value: Any) -> Optional[datetime]:
+def _get_container_memory_limit() -> Optional[int]:
+    """Read the container memory limit from cgroups v2 (or v1 fallback).
+
+    Returns the limit in bytes, or ``None`` if detection fails.
     """
-    Normalize a value that may be a datetime or ISO-8601 string (optionally with 'Z')
-    into a timezone-aware datetime. Returns None if it cannot be parsed.
-    """
-    if isinstance(value, datetime):
-        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
-    if isinstance(value, str):
-        s = value.strip()
-        if s.endswith("Z"):
-            s = s[:-1] + "+00:00"
+    for path in ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
         try:
-            return datetime.fromisoformat(s)
-        except Exception:
-            return None
+            with open(path) as f:
+                val = f.read().strip()
+            if val == "max":
+                return None  # no limit set
+            return int(val)
+        except (FileNotFoundError, ValueError, OSError):
+            continue
     return None
+
+
+def _check_memory_capacity(
+    blob_size: int,
+    multiplier: float,
+    threshold: float,
+    blob_name: str,
+) -> None:
+    """Raise ``MemoryError`` if processing *blob_name* would likely exceed
+    available container memory.
+
+    The check is best-effort — if cgroup limits cannot be read, it
+    falls back to ``psutil.virtual_memory()`` as a softer guard.
+    """
+    estimated_peak = blob_size * multiplier
+    container_limit = _get_container_memory_limit()
+
+    proc = psutil.Process()
+    rss = proc.memory_info().rss
+
+    if container_limit:
+        available = (container_limit * threshold) - rss
+    else:
+        # Fallback: system-level virtual memory
+        available = psutil.virtual_memory().available * threshold
+
+    if estimated_peak > available:
+        blob_mb = blob_size / (1024 * 1024)
+        peak_mb = estimated_peak / (1024 * 1024)
+        avail_mb = available / (1024 * 1024)
+        raise MemoryError(
+            f"Insufficient memory to process '{blob_name}' safely "
+            f"(file size: {blob_mb:.0f} MB, estimated peak: {peak_mb:.0f} MB, "
+            f"available: {avail_mb:.0f} MB). "
+            f"Consider splitting the file into smaller parts before upload."
+        )
 
 
 # -----------------------------------------------------------------------------
@@ -488,11 +549,34 @@ class BlobStorageDocumentIndexer:
                 security_user_ids = []
                 security_group_ids = []
 
-            download = await blob_client.download_blob()
-            file_bytes = await download.readall()
+            # --- Memory guard: check blob size before downloading ---
+            blob_props = await blob_client.get_blob_properties()
+            blob_size = blob_props.size or 0
+            _check_memory_capacity(
+                blob_size=blob_size,
+                multiplier=self.cfg.memory_safety_multiplier,
+                threshold=self.cfg.memory_safety_threshold,
+                blob_name=blob_name,
+            )
+
+            # --- Download: use temp file for PDFs to reduce memory pressure ---
+            _ext = os.path.splitext(blob_name)[1].lower()
+            _temp_path: Optional[str] = None
+
+            if _ext == ".pdf" and blob_size > 10 * 1024 * 1024:  # >10 MB
+                _temp_path = tempfile.NamedTemporaryFile(
+                    suffix=".pdf", prefix="ingest_dl_", delete=False
+                ).name
+                download = await blob_client.download_blob()
+                with open(_temp_path, "wb") as _tf:
+                    await download.readinto(_tf)
+                file_bytes = None  # not in memory
+            else:
+                download = await blob_client.download_blob()
+                file_bytes = await download.readall()
 
             # If you ever switch to providing Base64 to the chunker, decode here:
-            if self.cfg.input_is_base64 and isinstance(file_bytes, (str, bytes)):
+            if self.cfg.input_is_base64 and file_bytes and isinstance(file_bytes, (str, bytes)):
                 if isinstance(file_bytes, str):
                     file_bytes = base64.b64decode(file_bytes)
 
@@ -504,6 +588,8 @@ class BlobStorageDocumentIndexer:
                 "documentBytes": file_bytes,
                 "fileName": os.path.basename(blob_name),
             }
+            if _temp_path:
+                data["documentTempFile"] = _temp_path
 
             # Excel row-wise: stage docs in Blob to reduce memory pressure (optional design choice).
             if self._should_stage_excel_rowwise(data):
@@ -540,6 +626,7 @@ class BlobStorageDocumentIndexer:
             per_file_log["runHistory"] = _history
             per_file_log.update({
                 "status": "success",
+                "error": None,
                 "chunks": total_chunks_uploaded,
                 "finishedAt": _finished,
                 "processingAttempts": 0,
@@ -600,6 +687,10 @@ class BlobStorageDocumentIndexer:
                 error=str(e),
             )
             return {"status": "error", "error": str(e)}
+        finally:
+            # Cleanup temp file used for large PDF download
+            if _temp_path:
+                _safe_delete(_temp_path)
 
     def _to_search_doc(
         self,
@@ -844,18 +935,24 @@ class BlobStorageDocumentIndexer:
             raise TypeError(f"Object of type {o.__class__.__name__} is not JSON serializable")
 
         # Stage chunk docs as individual blobs, using deterministic names per chunk_id.
+        # Materialise the sync chunking pipeline in a worker thread so the
+        # async event loop stays responsive for FastAPI / health probes.
+        all_docs = await asyncio.to_thread(
+            list,
+            self._iter_search_docs_for_blob(
+                data=data,
+                parent_id=parent_id,
+                file_url=file_url,
+                blob_name=blob_name,
+                last_modified=last_modified,
+                security_user_ids=security_user_ids,
+                security_group_ids=security_group_ids,
+                rbac_scope=rbac_scope,
+            ),
+        )
         staged_count = 0
         last_progress = 0
-        for doc in self._iter_search_docs_for_blob(
-            data=data,
-            parent_id=parent_id,
-            file_url=file_url,
-            blob_name=blob_name,
-            last_modified=last_modified,
-            security_user_ids=security_user_ids,
-            security_group_ids=security_group_ids,
-            rbac_scope=rbac_scope,
-        ):
+        for doc in all_docs:
             chunk_id = int(doc.get("chunk_id", staged_count))
             name = f"{run_prefix}chunks/chunk_{chunk_id:06d}.json"
             payload = json.dumps(doc, ensure_ascii=False, default=_json_default).encode("utf-8")
@@ -1039,9 +1136,13 @@ class BlobStorageDocumentIndexer:
     async def _upload_iter_in_batches(self, docs_iter) -> int:
         """Upload documents from an iterator in cfg.batch_size chunks. Returns total uploaded count."""
         await self._ensure_clients()
+        # The docs iterator drives synchronous chunking (get_chunks, document
+        # analysis, embedding computation).  Materialise it in a worker thread
+        # so the event loop stays responsive for FastAPI / health probes.
+        all_docs = await asyncio.to_thread(list, docs_iter)
         batch: List[Dict[str, Any]] = []
         total = 0
-        for doc in docs_iter:
+        for doc in all_docs:
             batch.append(doc)
             if len(batch) >= self.cfg.batch_size:
                 await self._with_backoff(self._search_client.upload_documents, documents=batch)

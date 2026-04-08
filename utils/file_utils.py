@@ -1,6 +1,12 @@
+import io
+import logging
 import os
 import re
-from typing import Optional
+import tempfile
+from typing import Generator, Optional
+
+from pypdf import PdfReader, PdfWriter
+
 
 def get_file_extension(file_path: str) -> Optional[str]:
     file_path = os.path.basename(file_path)
@@ -56,3 +62,102 @@ def get_filepath_from_data(data: dict) -> str:
     filepath = '/'.join(parts[4:])
     
     return filepath
+
+
+# ---------------------------------------------------------------------------
+# PDF page counting and splitting
+# ---------------------------------------------------------------------------
+
+def get_pdf_page_count(file_bytes: bytes) -> int:
+    """Return the number of pages in a PDF from its raw bytes."""
+    reader = PdfReader(io.BytesIO(file_bytes))
+    return len(reader.pages)
+
+
+def split_pdf_to_temp_files(
+    source_path: str,
+    max_pages: int = 300,
+) -> Generator[str, None, None]:
+    """Split a PDF on disk into temp-file parts of at most *max_pages* pages.
+
+    Yields the path of each temporary PDF file.  The caller is responsible
+    for deleting each temp file after use.
+
+    If the PDF has <= *max_pages* pages, yields *source_path* itself
+    (no splitting, no temp file created).
+    """
+    reader = PdfReader(source_path)
+    total = len(reader.pages)
+
+    if total <= max_pages:
+        yield source_path
+        return
+
+    parts = (total + max_pages - 1) // max_pages
+    logging.info(
+        f"[pdf_split] Splitting {os.path.basename(source_path)}: "
+        f"{total} pages into {parts} parts of up to {max_pages} pages"
+    )
+
+    for part_idx in range(parts):
+        start = part_idx * max_pages
+        end = min(start + max_pages, total)
+        writer = PdfWriter()
+        for page_num in range(start, end):
+            writer.add_page(reader.pages[page_num])
+
+        tmp = tempfile.NamedTemporaryFile(
+            suffix=".pdf", prefix=f"pdfsplit_p{part_idx}_", delete=False
+        )
+        try:
+            writer.write(tmp)
+            tmp.close()
+            yield tmp.name
+        except Exception:
+            tmp.close()
+            _safe_delete(tmp.name)
+            raise
+
+
+def renumber_page_markers(markdown: str, page_offset: int) -> str:
+    """Shift ``<!-- PageBreak -->`` markers in *markdown* by *page_offset*.
+
+    Content Understanding and Document Intelligence emit
+    ``<!-- PageBreak -->`` (unnumbered) between pages.  When multiple
+    parts of a split PDF are concatenated, the second part's markers must
+    be offset so that ``_number_pagebreaks`` (called later) produces
+    correct absolute page numbers.
+
+    This function prepends *page_offset* synthetic ``<!-- PageBreak -->``
+    markers at the beginning of *markdown* so that the downstream
+    numbering pass counts correctly.
+    """
+    if page_offset <= 0:
+        return markdown
+    prefix = "<!-- PageBreak -->\n" * page_offset
+    return prefix + markdown
+
+
+def save_bytes_to_temp_file(data: bytes, suffix: str = ".pdf") -> str:
+    """Write *data* to a temp file and return its path.
+
+    The caller is responsible for deleting the file when done.
+    """
+    tmp = tempfile.NamedTemporaryFile(suffix=suffix, prefix="ingest_", delete=False)
+    try:
+        tmp.write(data)
+        tmp.close()
+        return tmp.name
+    except Exception:
+        tmp.close()
+        _safe_delete(tmp.name)
+        raise
+
+
+def _safe_delete(path: str) -> None:
+    """Delete a file if it exists, ignoring errors."""
+    try:
+        if path and os.path.exists(path):
+            os.unlink(path)
+    except OSError:
+        pass
