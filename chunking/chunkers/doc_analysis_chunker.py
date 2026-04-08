@@ -243,13 +243,13 @@ class DocAnalysisChunker(BaseChunker):
 
                 if doc and doc.get("content"):
                     markdown = doc["content"]
+                    # Count actual pages in this part BEFORE renumbering adds synthetic markers.
+                    page_breaks_in_part = markdown.count("<!-- PageBreak -->")
                     # Offset page markers so downstream numbering is absolute.
                     markdown = renumber_page_markers(markdown, page_offset)
                     combined_content_parts.append(markdown)
 
-                    # Count actual pages in this part for next offset.
-                    page_breaks = markdown.count("<!-- PageBreak -->")
-                    page_offset += page_breaks + 1  # pages = breaks + 1
+                    page_offset += page_breaks_in_part + 1  # pages = breaks + 1
 
                 # Delete part temp file right away to free disk.
                 if not is_original:
