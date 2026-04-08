@@ -45,6 +45,9 @@ class AzureOpenAIClient:
         self.retry_max_seconds    = float(app_config_client.get("OPENAI_RETRY_MAX_SECONDS", "60"))
         self.retry_jitter_seconds = float(app_config_client.get("OPENAI_RETRY_JITTER_SECONDS", "0.5"))
 
+        # Cumulative time (seconds) spent sleeping due to 429 rate-limit retries.
+        self._retry_wait_total_sec: float = 0.0
+
         # OpenAI SDK internal retries (disable by default to avoid multiplying waits)
         self.sdk_max_retries      = int(app_config_client.get("OPENAI_SDK_MAX_RETRIES", "0"))
 
@@ -114,6 +117,7 @@ class AzureOpenAIClient:
         logging.info(
             f"[aoai]{self.document_filename} {op_name} rate-limited; sleeping {wait:.2f}s (attempt {attempt + 1}/{self.retry_max_attempts})"
         )
+        self._retry_wait_total_sec += wait
         time.sleep(wait)
 
     def get_completion(
