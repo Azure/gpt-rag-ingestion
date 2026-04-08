@@ -621,9 +621,12 @@ class BlobStorageDocumentIndexer:
                 _chunk_total_sec = round(time.monotonic() - _t_chunk_total, 2)
                 _analysis_sec = round(getattr(chunker, '_analysis_elapsed_sec', 0) or 0, 2)
                 _chunk_embed_sec = round(max(_chunk_total_sec - _analysis_sec, 0), 2)
+                _retry_wait_sec = round(getattr(chunker.aoai_client, '_retry_wait_total_sec', 0) or 0, 2)
                 if _analysis_sec > 0:
                     _timings["analysisSec"] = _analysis_sec
                 _timings["chunkEmbedSec"] = _chunk_embed_sec
+                if _retry_wait_sec > 0:
+                    _timings["retryWaitSec"] = _retry_wait_sec
 
                 # Convert chunks to search docs (lightweight mapping, no API calls)
                 all_docs = [
