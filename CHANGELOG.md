@@ -5,9 +5,10 @@ This format follows [Keep a Changelog](https://keepachangelog.com/) and adheres 
 
 ## [Unreleased]
 
-## [v2.3.1] – 2026-04-07
+## [v2.3.1] – 2026-04-08
 
 ### Added
+- **Processing timings breakdown in dashboard**: Each file processing run now records per-phase timing data (download, index cleanup, analysis + chunking + embeddings, index upload) and stores it in the file log. The admin dashboard detail dialog displays a stacked color bar and a legend with durations for each phase, plus a total. Run history entries also show a Duration column. This makes it easy to identify bottlenecks when processing large documents.
 - **Automatic PDF splitting for large documents**: PDFs exceeding the Azure analysis service page limit (configurable via `MAX_PAGES_PER_ANALYSIS`, default 300) are now automatically split into smaller parts before analysis. Each part is analyzed separately and the markdown results are concatenated with correct absolute page numbering. This prevents `InputPageCountExceeded` errors and is transparent to the rest of the pipeline — same `parent_id`, same chunk keys, same search index behavior. Requires the new `pypdf` dependency.
 - **Memory guard before blob download**: Before downloading a blob for processing, the indexer now checks the file size against available container memory (via cgroups + `psutil`). If the estimated peak memory usage would exceed available capacity, processing is skipped with a descriptive error instead of risking an OOM crash that restarts the container. Configurable via `MEMORY_SAFETY_MULTIPLIER` (default 4.0) and `MEMORY_SAFETY_THRESHOLD` (default 0.85).
 - **Temp file download for large PDFs**: PDFs larger than 10 MB are now downloaded to a temporary file on disk instead of being held entirely in memory. The auto-split logic operates on these temp files, keeping peak memory usage bounded to one part at a time (~200 MB) instead of the full document (~1.5 GB+).
