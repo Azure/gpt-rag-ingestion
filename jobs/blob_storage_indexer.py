@@ -563,6 +563,7 @@ class BlobStorageDocumentIndexer:
             _ext = os.path.splitext(blob_name)[1].lower()
             _temp_path: Optional[str] = None
 
+            _t_wall_start = time.monotonic()
             _t_download = time.monotonic()
             if _ext == ".pdf" and blob_size > 10 * 1024 * 1024:  # >10 MB
                 _temp_path = tempfile.NamedTemporaryFile(
@@ -611,24 +612,29 @@ class BlobStorageDocumentIndexer:
                 _timings["processingSec"] = round(time.monotonic() - _t_stage, 2)
             else:
                 # Phase: delete old docs from search index
-                _t_del = time.monotonic()
                 await self._delete_parent_docs(parent_id)
-                _timings["indexDeleteSec"] = round(time.monotonic() - _t_del, 2)
 
-                # Phase: chunking (document analysis + text splitting + embeddings)
-                docs_iter = self._iter_search_docs_for_blob(
-                    data=data,
-                    parent_id=parent_id,
-                    file_url=file_url,
-                    blob_name=blob_name,
-                    last_modified=last_modified,
-                    security_user_ids=security_user_ids,
-                    security_group_ids=security_group_ids,
-                    rbac_scope=rbac_scope,
-                )
-                _t_chunk = time.monotonic()
-                all_docs = await asyncio.to_thread(list, docs_iter)
-                _timings["chunkingSec"] = round(time.monotonic() - _t_chunk, 2)
+                # Phase: analysis + chunking + embeddings (split into two timings)
+                _t_chunk_total = time.monotonic()
+                chunker = ChunkerFactory().get_chunker(data)
+                all_chunks = await asyncio.to_thread(chunker.get_chunks)
+                _chunk_total_sec = round(time.monotonic() - _t_chunk_total, 2)
+                _analysis_sec = round(getattr(chunker, '_analysis_elapsed_sec', 0) or 0, 2)
+                _chunk_embed_sec = round(max(_chunk_total_sec - _analysis_sec, 0), 2)
+                if _analysis_sec > 0:
+                    _timings["analysisSec"] = _analysis_sec
+                _timings["chunkEmbedSec"] = _chunk_embed_sec
+
+                # Convert chunks to search docs (lightweight mapping, no API calls)
+                all_docs = [
+                    self._to_search_doc(
+                        chunk, parent_id, file_url, blob_name, last_modified,
+                        security_user_ids=security_user_ids,
+                        security_group_ids=security_group_ids,
+                        rbac_scope=rbac_scope,
+                    )
+                    for chunk in all_chunks
+                ]
 
                 # Phase: upload to search index
                 _t_upload = time.monotonic()
@@ -636,7 +642,12 @@ class BlobStorageDocumentIndexer:
                 _timings["indexUploadSec"] = round(time.monotonic() - _t_upload, 2)
 
             _finished = _utc_now()
-            _timings["totalSec"] = round(sum(v for v in _timings.values() if isinstance(v, (int, float))), 2)
+            _tracked = round(sum(v for v in _timings.values() if isinstance(v, (int, float))), 2)
+            _wall = round(time.monotonic() - _t_wall_start, 2)
+            _overhead = round(max(_wall - _tracked, 0), 2)
+            if _overhead >= 0.5:
+                _timings["overheadSec"] = _overhead
+            _timings["totalSec"] = _wall
             _history = per_file_log.get("runHistory", [])
             _history = [{"runId": run_id, "status": "success", "startedAt": per_file_log.get("startedAt"), "finishedAt": _finished, "chunks": total_chunks_uploaded, "timings": _timings}] + _history
             per_file_log["runHistory"] = _history
