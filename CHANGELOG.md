@@ -162,7 +162,7 @@ Each concurrent process consumes memory proportional to document size. When adju
 | Orchestrator        | 0.5    | 1 GB   |
 | Frontend            | 0.5    | 1 GB   |
 
-> ⚠️ **Workload Profile Limits:** The default **Consumption workload profile** is limited to **4 vCPUs and 16 GB memory total** across all containers. High concurrency configurations (16+) requiring 2+ CPUs for Data Ingestion may not be deployable unless you upgrade to a **Dedicated workload profile** with higher capacity. Ensure the sum of all container CPU/memory allocations fits within your workload profile limits before applying changes.
+> ⚠️ **Workload Profile Limits:** The **Consumption workload profile** supports up to **4 vCPUs and 8 GB memory per container app**. All recommended configurations above fit within these limits. However, if you need higher resources per container (e.g., for extreme concurrency or very large documents), you must use a **Dedicated workload profile**. Always verify your container app's resource allocation fits within your workload profile limits before applying changes.
 
 To update container resources via CLI:
 ```bash
