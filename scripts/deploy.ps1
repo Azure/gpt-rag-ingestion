@@ -200,14 +200,12 @@ Write-Host ""
 #region Login to ACR
 
 Write-Green ("🔐 Logging into ACR ({0} in {1})…" -f $values.CONTAINER_REGISTRY_NAME, $values.AZURE_RESOURCE_GROUP)
-try {
-    az acr login --name $values.CONTAINER_REGISTRY_NAME --resource-group $values.AZURE_RESOURCE_GROUP
-    Write-Green "✅ Logged into ACR."
-} catch {
-    $errMsg = $_.Exception.Message
-    Write-Yellow ("⚠️  Failed to login to ACR: {0}" -f $errMsg)
+az acr login --name $values.CONTAINER_REGISTRY_NAME --resource-group $values.AZURE_RESOURCE_GROUP
+if ($LASTEXITCODE -ne 0) {
+    Write-ErrorColored "❌ ACR login failed (exit $LASTEXITCODE)."
     exit 1
 }
+Write-Green "✅ Logged into ACR."
 Write-Host ""
 #endregion
 
@@ -242,28 +240,24 @@ if ($env:tag) {
 $fullImageName = "$($values.CONTAINER_REGISTRY_LOGIN_SERVER)/azure-gpt-rag/data-ingestion:$tag"
 Write-Green "🛠️  Building Docker image…"
 if (Get-Command docker -ErrorAction SilentlyContinue) {
-    try {
-        docker build --platform linux/amd64 -t $fullImageName .
-        Write-Green "✅ Docker build succeeded."
-    } catch {
-        $errMsg = $_.Exception.Message
-        Write-Yellow ("⚠️  Docker build failed: {0}" -f $errMsg)
+    docker build --platform linux/amd64 -t $fullImageName .
+    if ($LASTEXITCODE -ne 0) {
+        Write-ErrorColored "❌ Docker build failed (exit $LASTEXITCODE)."
         exit 1
     }
+    Write-Green "✅ Docker build succeeded."
 } else {
     Write-Blue "⚠️  Docker CLI not found locally. Falling back to 'az acr build'."
-    try {
-        az acr build `
-            --registry $values.CONTAINER_REGISTRY_NAME `
-            --image "azure-gpt-rag/data-ingestion:$tag" `
-            --file Dockerfile `
-            .
-        Write-Green "✅ ACR cloud build succeeded."
-    } catch {
-        $errMsg = $_.Exception.Message
-        Write-Yellow ("⚠️  ACR build failed: {0}" -f $errMsg)
+    az acr build `
+        --registry $values.CONTAINER_REGISTRY_NAME `
+        --image "azure-gpt-rag/data-ingestion:$tag" `
+        --file Dockerfile `
+        .
+    if ($LASTEXITCODE -ne 0) {
+        Write-ErrorColored "❌ ACR cloud build failed (exit $LASTEXITCODE)."
         exit 1
     }
+    Write-Green "✅ ACR cloud build succeeded."
 }
 Write-Host ""
 #endregion
@@ -271,14 +265,12 @@ Write-Host ""
 #region Push Docker image (if local build used)
 if (Get-Command docker -ErrorAction SilentlyContinue) {
     Write-Green "📤 Pushing image…"
-    try {
-        docker push $fullImageName
-        Write-Green "✅ Image pushed."
-    } catch {
-        $errMsg = $_.Exception.Message
-        Write-Yellow ("⚠️  Docker push failed: {0}" -f $errMsg)
+    docker push $fullImageName
+    if ($LASTEXITCODE -ne 0) {
+        Write-ErrorColored "❌ Docker push failed (exit $LASTEXITCODE)."
         exit 1
     }
+    Write-Green "✅ Image pushed."
     Write-Host ""
 } else {
     # If using az acr build, image is already in ACR
@@ -290,62 +282,58 @@ if (Get-Command docker -ErrorAction SilentlyContinue) {
 
 #Make sure container registry is registered
 Write-Green "🔄 Updating container app registry…"
-try {
-    $ids = $(az containerapp identity show `
+$ids = $(az containerapp identity show `
+    --name $values.DATA_INGEST_APP_NAME `
+    --resource-group $values.AZURE_RESOURCE_GROUP `
+    --output json) | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0) {
+    Write-ErrorColored "❌ Failed to retrieve container app identity (exit $LASTEXITCODE)."
+    exit 1
+}
+
+if ($ids.type.tostring().contains("UserAssigned"))
+{
+    az containerapp registry set `
         --name $values.DATA_INGEST_APP_NAME `
         --resource-group $values.AZURE_RESOURCE_GROUP `
-        --output json) | ConvertFrom-Json
-
-    if ($ids.type.tostring().contains("UserAssigned"))
-    {
-        az containerapp registry set `
-            --name $values.DATA_INGEST_APP_NAME `
-            --resource-group $values.AZURE_RESOURCE_GROUP `
-            --server "$($values.CONTAINER_REGISTRY_NAME).azurecr.io" `
-            --identity "/subscriptions/$($values.SUBSCRIPTION_ID)/resourceGroups/$($values.AZURE_RESOURCE_GROUP)/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uai-ca-$($values.RESOURCE_TOKEN)-dataingest" `
-    }
-    else {
-        az containerapp registry set `
+        --server "$($values.CONTAINER_REGISTRY_NAME).azurecr.io" `
+        --identity "/subscriptions/$($values.SUBSCRIPTION_ID)/resourceGroups/$($values.AZURE_RESOURCE_GROUP)/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uai-ca-$($values.RESOURCE_TOKEN)-dataingest"
+}
+else {
+    az containerapp registry set `
         --name $values.DATA_INGEST_APP_NAME `
         --resource-group $values.AZURE_RESOURCE_GROUP `
         --server "$($values.CONTAINER_REGISTRY_NAME).azurecr.io" `
         --identity "system"
-    }
-    
-
-    Write-Green "✅ Container app updated."
-} catch {
-    $errMsg = $_.Exception.Message
-    Write-Yellow ("⚠️  Failed to update container app: {0}" -f $errMsg)
+}
+if ($LASTEXITCODE -ne 0) {
+    Write-ErrorColored "❌ Failed to update container app registry (exit $LASTEXITCODE)."
     exit 1
 }
+Write-Green "✅ Container app registry updated."
 
 #region Update Container App
 Write-Green "🔄 Updating container app…"
-try {
-    az containerapp update `
-        --name $values.DATA_INGEST_APP_NAME `
-        --resource-group $values.AZURE_RESOURCE_GROUP `
-        --image $fullImageName
-    Write-Green "✅ Container app updated."
-} catch {
-    $errMsg = $_.Exception.Message
-    Write-Yellow ("⚠️  Failed to update container app: {0}" -f $errMsg)
+az containerapp update `
+    --name $values.DATA_INGEST_APP_NAME `
+    --resource-group $values.AZURE_RESOURCE_GROUP `
+    --image $fullImageName
+if ($LASTEXITCODE -ne 0) {
+    Write-ErrorColored "❌ Failed to update container app (exit $LASTEXITCODE)."
     exit 1
 }
+Write-Green "✅ Container app updated."
 
 Write-Green "🌐 Updating container app ingress target port…"
-try {
-    az containerapp ingress update `
-        --name $values.DATA_INGEST_APP_NAME `
-        --resource-group $values.AZURE_RESOURCE_GROUP `
-        --target-port 8080
-    Write-Green "✅ Ingress target port updated."
-} catch {
-    $errMsg = $_.Exception.Message
-    Write-Yellow ("⚠️  Failed to update ingress target port: {0}" -f $errMsg)
+az containerapp ingress update `
+    --name $values.DATA_INGEST_APP_NAME `
+    --resource-group $values.AZURE_RESOURCE_GROUP `
+    --target-port 8080
+if ($LASTEXITCODE -ne 0) {
+    Write-ErrorColored "❌ Failed to update ingress target port (exit $LASTEXITCODE)."
     exit 1
 }
+Write-Green "✅ Ingress target port updated."
 
 #get the current revision
 Write-Blue "🔍 Fetching current revision…"
@@ -356,16 +344,13 @@ $currentRevision = az containerapp revision list `
 
 #region Restart Container App
 Write-Green "🔄 Restarting container app revision : $currentRevision…"
-try {
-    az containerapp revision restart `
-        --name $values.DATA_INGEST_APP_NAME `
-        --resource-group $values.AZURE_RESOURCE_GROUP `
-        --revision $currentRevision
-
-    Write-Green "✅ Container app revision restarted."
-} catch {
-    $errMsg = $_.Exception.Message
-    Write-Yellow ("⚠️  Failed to restart container app: {0}" -f $errMsg)
+az containerapp revision restart `
+    --name $values.DATA_INGEST_APP_NAME `
+    --resource-group $values.AZURE_RESOURCE_GROUP `
+    --revision $currentRevision
+if ($LASTEXITCODE -ne 0) {
+    Write-ErrorColored "❌ Failed to restart container app revision (exit $LASTEXITCODE)."
     exit 1
 }
+Write-Green "✅ Container app revision restarted."
 #endregion
