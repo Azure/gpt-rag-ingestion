@@ -41,8 +41,8 @@ async def _get_blob_service() -> BlobServiceClient:
         account = cfg.get("STORAGE_ACCOUNT_NAME")
         client_id = cfg.get("AZURE_CLIENT_ID", None, allow_none=True) or None
         credential = ChainedTokenCredential(
-            AzureCliCredential(),
             ManagedIdentityCredential(client_id=client_id),
+            AzureCliCredential(),
         )
         _blob_service = BlobServiceClient(
             account_url=f"https://{account}.blob.core.windows.net",
