@@ -201,11 +201,33 @@ def build_figure_image_map(
                         f"[figure_extraction] Could not crop PDF figure {fig_id}"
                     )
         else:
+            # Render every page once; map each figure to its page using
+            # the page number encoded in the figure ID (e.g. "3.1" → page 3).
             all_images = _extract_all_pdf_images(file_bytes)
-            for idx, fig in enumerate(figures):
+            for fig in figures:
                 fig_id = fig.get("id")
-                if fig_id and idx < len(all_images):
-                    image_map[fig_id] = all_images[idx]
+                if not fig_id:
+                    continue
+                try:
+                    page_num = int(fig_id.split(".")[0])
+                except (ValueError, IndexError):
+                    logging.warning(
+                        f"[figure_extraction] Cannot parse page from "
+                        f"figure id '{fig_id}'; skipping"
+                    )
+                    continue
+                page_idx = page_num - 1
+                if 0 <= page_idx < len(all_images):
+                    image_map[fig_id] = all_images[page_idx]
+                    logging.info(
+                        f"[figure_extraction] Mapped figure {fig_id} "
+                        f"→ page {page_num} render"
+                    )
+                else:
+                    logging.warning(
+                        f"[figure_extraction] Figure {fig_id} refers to "
+                        f"page {page_num} but PDF has {len(all_images)} pages"
+                    )
 
     elif extension == "docx":
         all_images = _extract_images_from_ooxml(file_bytes, "word/media/")
