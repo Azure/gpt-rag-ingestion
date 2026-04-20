@@ -5,9 +5,12 @@ This format follows [Keep a Changelog](https://keepachangelog.com/) and adheres 
 
 ## [v2.3.3] - 2026-04-20
 
+### Added
+- **Multimodal figure/image extraction for Content Understanding** ([Azure/GPT-RAG#446](https://github.com/Azure/GPT-RAG/issues/446)): When using Content Understanding as the document analysis backend (`USE_DOCUMENT_INTELLIGENCE=false`), the multimodal chunker now extracts figures from documents, uploads them to the `documents-images` blob container, generates captions using a vision-capable model, and populates `relatedImages`, `imageCaptions`, and `captionVector` fields in the search index — achieving full multimodal parity with the Document Intelligence path. Supports PDF (PyMuPDF page rendering with bounding-box crop), DOCX (`word/media/` ZIP extraction), and PPTX (`ppt/media/` ZIP extraction). The `ContentUnderstandingClient` now parses and returns figure and page metadata from the API response instead of discarding it. New dependencies: `PyMuPDF`, `python-docx`, `python-pptx`.
+
 ### Fixed
-- **PDF figures mapped to wrong pages in fallback path**: When Content Understanding does not return `boundingRegions` (common with scanned PDFs), the fallback figure-to-page mapping used sequential enumerate index. Because Content Understanding returns figure IDs in alphabetical order (`1.1`, `10.1`, `2.1`, …), figures were silently assigned to incorrect pages — for example, figure `10.1` was mapped to page 2 instead of page 10. Figures whose index exceeded the page count were dropped entirely. Fixed by parsing the page number from the figure ID format `X.Y` (where `X` is the page number) and mapping each figure to the correct rendered page.
-- **PDF figure extraction using embedded images instead of page rendering**: Replaced embedded-image extraction (`page.get_images()`) with PyMuPDF page rendering (`get_pixmap`) for all PDF figure extraction paths. Scanned PDFs often contain multiple image layers (e.g. JPEG 2000 with artefacts) that Pillow may decode incorrectly depending on the runtime's codec libraries. Page rendering always produces a correct visual representation. Applies to both the bounding-box crop path and the full-page fallback path.
+- **PDF figures mapped to wrong pages in fallback path**: When Content Understanding does not return `boundingRegions` (common with scanned PDFs), the fallback figure-to-page mapping used sequential enumerate index instead of parsing the page number from figure IDs. Fixed by parsing the figure ID format `X.Y` where `X` is the page number.
+- **PDF figure extraction using embedded images instead of page rendering**: Replaced embedded-image extraction (`page.get_images()`) with PyMuPDF page rendering (`get_pixmap`) for all PDF figure extraction paths, avoiding decode issues with multi-layer scanned PDFs.
 
 ## [v2.3.2] – 2026-04-08
 
