@@ -94,8 +94,13 @@ def extract_figure_from_pdf(file_bytes: bytes, figure: dict, dpi: int = 200) -> 
         # --- Attempt 1: extract from embedded images ---
         best_crop = None
         best_score = -1
+        img_list = page.get_images(full=True)
+        logging.info(
+            f"[figure_extraction] Page {page_number}: {page_w}x{page_h}, "
+            f"{len(img_list)} embedded images, polygon={polygon[:4]}..."
+        )
 
-        for img_info in page.get_images(full=True):
+        for img_info in img_list:
             xref = img_info[0]
             try:
                 base = doc.extract_image(xref)
@@ -112,7 +117,7 @@ def extract_figure_from_pdf(file_bytes: bytes, figure: dict, dpi: int = 200) -> 
                     continue
 
                 score = _image_quality_score(cropped)
-                logging.debug(
+                logging.info(
                     f"[figure_extraction] xref={xref} "
                     f"({pil_img.width}x{pil_img.height}) "
                     f"crop={cropped.width}x{cropped.height} "
@@ -122,7 +127,7 @@ def extract_figure_from_pdf(file_bytes: bytes, figure: dict, dpi: int = 200) -> 
                     best_score = score
                     best_crop = cropped
             except Exception as exc:
-                logging.debug(
+                logging.info(
                     f"[figure_extraction] Could not process xref {xref}: {exc}"
                 )
 
