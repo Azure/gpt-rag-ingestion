@@ -120,26 +120,45 @@ def _extract_images_from_ooxml(file_bytes: bytes, media_prefix: str) -> list[byt
     return images
 
 
-def _extract_all_pdf_images(file_bytes: bytes) -> list[bytes]:
-    """Extract all embedded images from a PDF in page order.
+def _extract_all_pdf_images(file_bytes: bytes, dpi: int = 200) -> list[bytes]:
+    """Render each PDF page as an image.
 
     Used as a fallback when bounding-box information is not available
     (e.g. when Content Understanding does not return ``boundingRegions``).
+
+    Uses page rendering (``get_pixmap``) instead of embedded-image
+    extraction to avoid corrupted JPEG 2000 layers in scanned PDFs.
     """
     import fitz  # PyMuPDF
+    from PIL import Image
 
     images: list[bytes] = []
+    max_render_px = 2500
     try:
         doc = fitz.open(stream=file_bytes, filetype="pdf")
-        for page in doc:
-            for img_info in page.get_images(full=True):
-                xref = img_info[0]
-                base_image = doc.extract_image(xref)
-                if base_image and base_image.get("image"):
-                    images.append(base_image["image"])
+        for page_idx, page in enumerate(doc):
+            page_w = page.rect.width
+            page_h = page.rect.height
+            max_dim_pt = max(page_w, page_h)
+            effective_dpi = min(dpi, int(max_render_px * 72 / max_dim_pt))
+            effective_dpi = max(effective_dpi, 72)
+
+            zoom = effective_dpi / 72
+            mat = fitz.Matrix(zoom, zoom)
+            pix = page.get_pixmap(matrix=mat, alpha=False)
+
+            buf = io.BytesIO()
+            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            img.save(buf, format="PNG")
+            images.append(buf.getvalue())
+
+            logging.info(
+                f"[figure_extraction] Fallback: rendered page {page_idx + 1} "
+                f"as {pix.width}x{pix.height} at {effective_dpi} dpi"
+            )
         doc.close()
     except Exception as e:
-        logging.error(f"[figure_extraction] PDF image extraction failed: {e}")
+        logging.error(f"[figure_extraction] PDF page rendering failed: {e}")
     return images
 
 
@@ -163,8 +182,12 @@ def build_figure_image_map(
 
     if extension == "pdf":
         # Use bounding-box cropping when available; otherwise fall back to
-        # extracting all embedded images and mapping them by order.
+        # rendering full pages and mapping them by order.
         has_bounds = any(fig.get("boundingRegions") for fig in figures)
+        logging.info(
+            f"[figure_extraction] PDF path: {len(figures)} figures, "
+            f"has_bounds={has_bounds}"
+        )
         if has_bounds:
             for fig in figures:
                 fig_id = fig.get("id")
