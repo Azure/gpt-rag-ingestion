@@ -39,6 +39,13 @@ Pillow==11.1.0
 # PDF manipulation (page counting and splitting)
 pypdf==5.4.0
 
+# PDF figure extraction (bounding-box crop)
+PyMuPDF==1.25.4
+
+# OOXML image extraction
+python-docx==1.1.2
+python-pptx==1.0.2
+
 # Process and system utilities
 psutil==7.0.0
 

@@ -33,16 +33,19 @@ class MultimodalChunker(DocAnalysisChunker):
         # _analysis_client, supported_formats, and output_content_format are
         # already set by DocAnalysisChunker based on USE_DOCUMENT_INTELLIGENCE.
 
-        # Figure extraction requires Document Intelligence (get_figure is DI-specific).
-        # When Content Understanding is used for analysis, figures won't be in the
-        # result, so figure attachment is skipped naturally.
+        # Figure extraction strategy:
+        # - DocumentIntelligenceClient: use its get_figure API.
+        # - ContentUnderstandingClient: extract figures from source document
+        #   using format-specific methods (PDF crop, DOCX/PPTX media extraction).
         if isinstance(self._analysis_client, DocumentIntelligenceClient):
             self._docint_client = self._analysis_client
+            self._use_format_extraction = False
         else:
             self._docint_client = None
+            self._use_format_extraction = True
             logging.info(
                 f"[multimodal_chunker][{self.filename}] Using ContentUnderstandingClient; "
-                f"figure extraction is not available."
+                f"figures will be extracted from source document."
             )
         self.image_container = app_config_client.get("DOCUMENTS_IMAGES_STORAGE_CONTAINER", "documents-images")
         self.storage_account_name = app_config_client.get("STORAGE_ACCOUNT_NAME", "set-storage-account-name-env-var")
@@ -93,6 +96,12 @@ class MultimodalChunker(DocAnalysisChunker):
         Returns:
             list: A list of processed document chunks.
         """
+        # 0) Normalize Content Understanding figure references.
+        #    CU returns ![caption](figures/X.Y) markdown syntax whereas the
+        #    rest of the pipeline expects <figureX.Y> tags.
+        if self._use_format_extraction:
+            self._normalize_cu_figure_references(document)
+
         # 1) Replace <figure>...</figure> with <figure{id}> in sequence
         if "figures" in document and document["figures"]:
             document["content"] = self._replace_figures_in_sequence(
@@ -109,6 +118,43 @@ class MultimodalChunker(DocAnalysisChunker):
         return chunks  # Ensure chunks are returned
 
 
+
+    def _normalize_cu_figure_references(self, document):
+        """
+        Convert Content Understanding markdown figure references
+        ``![caption](figures/X.Y)`` into ``<figureX.Y>`` tags so the
+        downstream figure-attachment logic can find them.
+
+        If the CU response did not include a structured ``figures`` list,
+        one is synthesised from the markdown references.
+        """
+        content = document.get("content", "")
+        cu_figure_pattern = re.compile(r'!\[([^\]]*)\]\(figures/(\d+(?:\.\d+)*)\)')
+
+        matches = list(cu_figure_pattern.finditer(content))
+        if not matches:
+            return  # No CU-style figure references found
+
+        # Synthesise a figures list when the API did not return one
+        if "figures" not in document or not document["figures"]:
+            document["figures"] = []
+            seen_ids: set = set()
+            for match in matches:
+                fig_id = match.group(2)
+                if fig_id not in seen_ids:
+                    seen_ids.add(fig_id)
+                    document["figures"].append({"id": fig_id})
+
+        # Replace ![caption](figures/X.Y) → <figureX.Y>
+        def _replace_fn(m):
+            return f"<figure{m.group(2)}>"
+
+        document["content"] = cu_figure_pattern.sub(_replace_fn, content)
+
+        logging.info(
+            f"[multimodal_chunker][{self.filename}] Normalised {len(matches)} CU-style "
+            f"figure reference(s). Figures in document: {len(document['figures'])}"
+        )
 
     def _replace_figures_in_sequence(self, content, figures):
         """
@@ -222,17 +268,50 @@ class MultimodalChunker(DocAnalysisChunker):
             logging.info(f"[multimodal_chunker][{self.filename}] No figures to attach.")
             return
 
-        result_id = document.get("result_id")
-        model_id = document.get("model_id")
-        if not result_id or not model_id:
-            logging.warning(
-                f"[multimodal_chunker][{self.filename}] Missing 'result_id' or 'model_id' in document analysis results."
-            )
-            return
+        # Prepare figure retrieval strategy
+        figure_image_map = {}
+        result_id = None
+        model_id = None
+
+        if self._use_format_extraction:
+            # Content Understanding path: pre-extract all figure images from
+            # the source document using format-specific methods.
+            from tools.figure_extraction import build_figure_image_map
+
+            file_bytes = self.document_bytes
+            if not file_bytes:
+                temp_path = self.data.get("documentTempFile")
+                if temp_path:
+                    with open(temp_path, "rb") as f:
+                        file_bytes = f.read()
+
+            if file_bytes:
+                figure_image_map = build_figure_image_map(
+                    file_bytes, self.extension, document["figures"]
+                )
+                logging.info(
+                    f"[multimodal_chunker][{self.filename}] Pre-extracted "
+                    f"{len(figure_image_map)} figure image(s) from source document."
+                )
+            else:
+                logging.warning(
+                    f"[multimodal_chunker][{self.filename}] No file bytes available "
+                    f"for format-based figure extraction."
+                )
+                return
+        else:
+            # Document Intelligence path: need result_id and model_id for get_figure API.
+            result_id = document.get("result_id")
+            model_id = document.get("model_id")
+            if not result_id or not model_id:
+                logging.warning(
+                    f"[multimodal_chunker][{self.filename}] Missing 'result_id' or 'model_id' in document analysis results."
+                )
+                return
 
         logging.info(
-            f"[multimodal_chunker][{self.filename}] Attaching figures to chunks using "
-            f"result_id: {result_id} and model_id: {model_id}."
+            f"[multimodal_chunker][{self.filename}] Attaching figures to chunks "
+            f"(extraction={'format-based' if self._use_format_extraction else 'DI API'})."
         )
 
         # Create a quick-access dictionary for the figures by their ID
@@ -263,18 +342,25 @@ class MultimodalChunker(DocAnalysisChunker):
                     continue
 
                 try:
-                    # 1) Check dimensions
-                    figure_area_percentage = round(self._figure_area(figure, document['pages']), 2)
-                    if figure_area_percentage <= self.minimum_figure_area_percentage:
-                        logging.warning(
-                            f"[multimodal_chunker][{self.filename}] Image for figure {figure_id} "
-                            f"has insufficient percentual area ({figure_area_percentage}). Skipping."
-                        )
-                        chunk_content = chunk_content.replace(f"<figure{figure_id}>", "")
-                        continue
+                    # 1) Check dimensions (requires pages metadata AND bounding regions)
+                    pages = document.get('pages', [])
+                    if pages and figure.get('boundingRegions'):
+                        figure_area_percentage = round(self._figure_area(figure, pages), 2)
+                        if figure_area_percentage <= self.minimum_figure_area_percentage:
+                            logging.warning(
+                                f"[multimodal_chunker][{self.filename}] Image for figure {figure_id} "
+                                f"has insufficient percentual area ({figure_area_percentage}). Skipping."
+                            )
+                            chunk_content = chunk_content.replace(f"<figure{figure_id}>", "")
+                            continue
+                    else:
+                        figure_area_percentage = None
 
                     # 2) Fetch the figure image
-                    image_binary = self._docint_client.get_figure(model_id, result_id, figure_id)
+                    if self._use_format_extraction:
+                        image_binary = figure_image_map.get(figure_id)
+                    else:
+                        image_binary = self._docint_client.get_figure(model_id, result_id, figure_id)
                     if not image_binary:
                         logging.warning(
                             f"[multimodal_chunker][{self.filename}] No image data retrieved for figure {figure_id}."

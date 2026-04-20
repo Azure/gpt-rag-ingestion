@@ -3,7 +3,11 @@
 All notable changes to this project will be documented in this file.  
 This format follows [Keep a Changelog](https://keepachangelog.com/) and adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [v2.3.3] - 2026-04-20
+
+### Fixed
+- **PDF figures mapped to wrong pages in fallback path**: When Content Understanding does not return `boundingRegions` (common with scanned PDFs), the fallback figure-to-page mapping used sequential enumerate index. Because Content Understanding returns figure IDs in alphabetical order (`1.1`, `10.1`, `2.1`, …), figures were silently assigned to incorrect pages — for example, figure `10.1` was mapped to page 2 instead of page 10. Figures whose index exceeded the page count were dropped entirely. Fixed by parsing the page number from the figure ID format `X.Y` (where `X` is the page number) and mapping each figure to the correct rendered page.
+- **PDF figure extraction using embedded images instead of page rendering**: Replaced embedded-image extraction (`page.get_images()`) with PyMuPDF page rendering (`get_pixmap`) for all PDF figure extraction paths. Scanned PDFs often contain multiple image layers (e.g. JPEG 2000 with artefacts) that Pillow may decode incorrectly depending on the runtime's codec libraries. Page rendering always produces a correct visual representation. Applies to both the bounding-box crop path and the full-page fallback path.
 
 ## [v2.3.2] – 2026-04-08
 

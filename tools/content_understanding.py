@@ -178,19 +178,34 @@ class ContentUnderstandingClient:
                 break
 
             if status == "succeeded":
-                # Extract markdown from response
+                # Extract markdown, figures, and pages from response
                 contents = (
                     data.get("result", {}).get("contents", [])
                 )
                 if contents:
-                    markdown = contents[0].get("markdown", "")
+                    content_data = contents[0]
+                    markdown = content_data.get("markdown", "")
+                    figures = content_data.get("figures", [])
+                    pages = content_data.get("pages", [])
                 else:
                     markdown = ""
+                    figures = []
+                    pages = []
 
                 result = {"content": markdown}
+                if figures:
+                    result["figures"] = figures
+                if pages:
+                    result["pages"] = pages
+
+                # Set result_id and model_id for downstream compatibility
+                result["result_id"] = data.get("id", "")
+                result["model_id"] = self.analyzer
+
                 logging.info(
                     f"[content_understanding][{filename}] Analysis succeeded, "
-                    f"content length={len(markdown)}"
+                    f"content length={len(markdown)}, "
+                    f"figures={len(figures)}, pages={len(pages)}"
                 )
                 break
 
