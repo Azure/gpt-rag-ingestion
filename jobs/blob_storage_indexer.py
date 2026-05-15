@@ -815,6 +815,8 @@ class BlobStorageDocumentIndexer:
             "source": "blob",
             "contentVector": chunk.get("contentVector", []),
             "captionVector": chunk.get("captionVector", []),
+            # Not a chat upload; keep field present for consistent filtering
+            "conversationId": "NaN",
         }
 
     # ---------- Index state & (re)write ----------

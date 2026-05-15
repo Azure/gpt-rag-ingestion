@@ -1,9 +1,10 @@
-from azure.storage.blob import ContainerClient, BlobServiceClient
+from azure.storage.blob import ContainerClient, BlobServiceClient, ContentSettings
 from azure.identity import ManagedIdentityCredential, AzureCliCredential, ChainedTokenCredential
 from azure.core.exceptions import ResourceNotFoundError, AzureError
 from urllib.parse import urlparse, unquote
 import logging
 import time
+import json
 
 from dependencies import get_config
 
@@ -217,4 +218,61 @@ class BlobContainerClient:
         except AzureError as e:
             logging.info(f"[blob] Failed to list blobs: {e}")
             return []
+
+
+def upload_bytes_to_container(
+    *,
+    container_name: str,
+    blob_name: str,
+    data: bytes,
+    content_type: str = "application/octet-stream",
+    metadata: dict | None = None,
+    overwrite: bool = True,
+) -> str:
+    """
+    Upload raw bytes to a blob container using STORAGE_ACCOUNT_NAME.
+    Returns the https blob URL.
+    """
+    if not container_name:
+        raise ValueError("container_name is required")
+    if not blob_name:
+        raise ValueError("blob_name is required")
+    if data is None:
+        raise ValueError("data is required")
+
+    storage_account_name = app_config_client.get("STORAGE_ACCOUNT_NAME")
+    if not storage_account_name:
+        raise EnvironmentError("STORAGE_ACCOUNT_NAME is not set.")
+
+    # Reuse the same credential logic as other Blob helpers
+    client_id = app_config_client.get("AZURE_CLIENT_ID", None, allow_none=True) or None
+    credential = ChainedTokenCredential(
+        ManagedIdentityCredential(client_id=client_id),
+        AzureCliCredential(),
+    )
+
+    account_url = f"https://{storage_account_name}.blob.core.windows.net"
+    bsc = BlobServiceClient(account_url=account_url, credential=credential)
+    container = bsc.get_container_client(container_name)
+
+    # Ensure metadata values are strings (Azure requirement)
+    safe_meta = {}
+    if metadata:
+        for k, v in metadata.items():
+            if v is None:
+                continue
+            if isinstance(v, (list, dict)):
+                safe_meta[str(k)] = json.dumps(v, ensure_ascii=False)
+            else:
+                safe_meta[str(k)] = str(v)
+
+    blob = container.get_blob_client(blob_name)
+    blob.upload_blob(
+        data,
+        overwrite=overwrite,
+        metadata=safe_meta or None,
+        content_settings=ContentSettings(content_type=content_type or "application/octet-stream"),
+    )
+
+    return f"{account_url}/{container_name}/{blob_name}"
 
