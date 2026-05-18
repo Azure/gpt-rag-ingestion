@@ -34,8 +34,16 @@ def get_config(action: str | None = None) -> AppConfigClient:
 
 
 def validate_api_key_header(x_api_key: str = Depends(APIKeyHeader(name="X-API-KEY"))):
-    result = x_api_key == get_config().get("INGESTION_APP_APIKEY")
-    if not result:
+    cfg = get_config()
+    # Accept the canonical infra-provided key first (matches `${app.canonical_name}_APIKEY`
+    # generated from canonical_name=DATA_INGEST_APP in main.parameters.json), with the
+    # legacy alias as a fallback so older environments keep working.
+    expected_keys = [
+        cfg.get("DATA_INGEST_APP_APIKEY", default="", allow_none=True),
+        cfg.get("INGESTION_APP_APIKEY", default="", allow_none=True),
+    ]
+    expected_keys = [k for k in expected_keys if k]
+    if not expected_keys or x_api_key not in expected_keys:
         logging.error("Invalid API key. You must provide a valid API key in the X-API-KEY header.")
         raise HTTPException(status_code=401, detail="Invalid API key.")
 

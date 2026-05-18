@@ -22,6 +22,8 @@ from pathlib import Path
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 
+import base64
+
 from utils.file_utils import get_filename
 from dependencies import get_config, validate_api_key_header
 from telemetry import Telemetry
@@ -536,6 +538,8 @@ async def ingest_documents(request: Request):
     from chunking import DocumentChunker
     from tools import AzureOpenAIClient
     from tools import AISearchClient
+    from tools.blob import upload_bytes_to_container
+    from jobs.sharepoint_ingestion_config import _make_chunk_key
 
     aoai_client = AzureOpenAIClient()
     search_client = AISearchClient()
@@ -569,6 +573,33 @@ async def ingest_documents(request: Request):
 
         # --- Chunk document ---
         norm_file_name = get_filename(file_name)
+
+        # --- Persist original bytes to per-conversation blob container (best-effort) ---
+        conv_docs_container = app_config_client.get(
+            "CONVERSATION_DOCUMENTS_STORAGE_CONTAINER", None, allow_none=True
+        )
+        safe_record_id = (record_id or "").strip() or "record"
+        blob_path = f"conversations/{conversation_id}/{safe_record_id}/{norm_file_name}"
+        blob_url = ""
+        if conv_docs_container:
+            try:
+                blob_url = upload_bytes_to_container(
+                    container_name=conv_docs_container,
+                    blob_name=blob_path,
+                    data=file_bytes,
+                    content_type=content_type or "application/octet-stream",
+                    metadata={
+                        "conversationId": conversation_id,
+                        "recordId": safe_record_id,
+                    },
+                )
+            except Exception as e:
+                warnings.append({"message": f"Blob persistence failed: {e}"})
+        else:
+            warnings.append(
+                {"message": "CONVERSATION_DOCUMENTS_STORAGE_CONTAINER not configured; original file not persisted"}
+            )
+
         input_data = {
             "documentBytes": file_bytes,
             "fileName": norm_file_name,
@@ -605,7 +636,7 @@ async def ingest_documents(request: Request):
                 document = {
                     "id": _make_chunk_key(parent_id, chunk_id),
                     "parent_id": parent_id,
-                    "conversation_id": conversation_id,
+                    "conversationId": conversation_id,
                     "metadata_storage_path": parent_id,
                     "metadata_storage_name": norm_file_name,
                     "metadata_storage_last_modified": last_modified,
@@ -620,8 +651,8 @@ async def ingest_documents(request: Request):
                     "length": int(chunk.get("length", len(content))),
                     "title": chunk.get("title", ""),
                     "category": chunk.get("category", ""),
-                    "filepath": chunk.get("filepath", ""),
-                    "url": chunk.get("url", ""),
+                    "filepath": blob_path if blob_url else chunk.get("filepath", ""),
+                    "url": blob_url or chunk.get("url", ""),
                     "summary": chunk.get("summary", ""),
                     "relatedImages": chunk.get("relatedImages", []),
                     "relatedFiles": chunk.get("relatedFiles", []),
