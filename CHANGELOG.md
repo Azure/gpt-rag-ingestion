@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.  
 This format follows [Keep a Changelog](https://keepachangelog.com/) and adheres to [Semantic Versioning](https://semver.org/).
 
+## [v2.3.4] – 2026-05-19
+
+### Added
+- **Per-conversation document upload endpoint (`POST /ingest-documents`)**: Users can now upload files directly through the chat interface and have them ingested, indexed, and made available for retrieval scoped to a specific conversation. The endpoint persists the original bytes under `conversations/<conversationId>/<recordId>/<filename>` in the `conversation-documents` storage container, chunks and embeds the document with `DocumentChunkerFactory`, and writes each chunk to Azure AI Search tagged with the camelCase `conversationId` field that the orchestrator filter expects. Authentication is enforced via the `DATA_INGEST_APP_APIKEY` (also accepts the legacy `INGESTION_APP_APIKEY`). Implements [Azure/GPT-RAG#401](https://github.com/Azure/GPT-RAG/issues/401). ([#183](https://github.com/Azure/gpt-rag-ingestion/pull/183))
+
+### Fixed
+- **`conversationId` field naming**: `/ingest-documents` now writes the camelCase `conversationId` field (matching the index schema, blob/SharePoint indexers, and the orchestrator retrieval filter). The original PR used snake_case `conversation_id`, which would have caused chunks to land with null `conversationId` and never match the orchestrator's per-conversation filter.
+- **Missing imports inside the endpoint**: Deferred imports of `_make_chunk_key` (from `jobs.sharepoint_ingestion_config`) and `upload_bytes_to_container` (from `tools.blob`) inside the request handler, preventing `NameError` during chunk indexing and blob persistence.
+- **Original document bytes were discarded**: The endpoint now actually calls `upload_bytes_to_container` to persist the uploaded bytes to the `conversation-documents` container, and propagates the resulting blob path/URL into the indexed `url` and `filepath` fields so the orchestrator can cite back to the uploaded file.
+- **`documentUrl` missing from chunker input**: The chunker `input_data` now includes `documentUrl` (previously raised `KeyError: 'documentUrl'` inside `BaseChunker.__init__`, which was caught as a generic "Embedding error" with zero chunks indexed).
+
 ## [v2.3.2] – 2026-04-08
 
 ### Changed

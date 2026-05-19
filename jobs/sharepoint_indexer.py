@@ -905,6 +905,8 @@ class SharePointIndexer:
         return {
             "id": doc_id,
             "parent_id": parent_id,
+            # Not a chat upload; keep field present for consistent filtering
+            "conversationId": "NaN",
             "metadata_storage_path": parent_id,
             "metadata_storage_name": key_id,
             "metadata_storage_last_modified": last_mod,
@@ -943,6 +945,8 @@ class SharePointIndexer:
         return {
             "id": _make_chunk_key(parent_id, cid),
             "parent_id": parent_id,
+            # Not a chat upload; keep field present for consistent filtering
+            "conversationId": "NaN",
             "metadata_storage_path": parent_id,
             "metadata_storage_name": file_name,
             "metadata_storage_last_modified": last_mod,

@@ -22,6 +22,8 @@ from pathlib import Path
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 
+import base64
+
 from utils.file_utils import get_filename
 from dependencies import get_config, validate_api_key_header
 from telemetry import Telemetry
@@ -503,6 +505,256 @@ async def text_embedding(request: Request):
     logging.info(f'[text_embedding] Finished in {elapsed:.2f} seconds.')
 
     return JSONResponse(content=results)
+    
+# -------------------------------
+# HTTP-triggered ingest-documents (base64 upload, chunk, embed, index)
+# -------------------------------
+@app.post("/ingest-documents", dependencies=[Depends(validate_api_key_header)])
+async def ingest_documents(request: Request):
+    start_time = time.time()
+
+    try:
+        body = await request.json()
+    except json.JSONDecodeError as e:
+        logging.error(f"[ingest_documents] Invalid JSON: {e}")
+        return Response(f"Invalid JSON: {e}", status_code=400)
+
+    # --- validate schema ---
+    try:
+        jsonschema.validate(body, schema=get_ingest_documents_request_schema())
+    except jsonschema.ValidationError as e:
+        logging.error(f"[ingest_documents] Validation error: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid request: {e}") from e
+
+    values_list = body.get("values")
+    conversation_id = body.get("conversationId")
+
+    if not values_list or not isinstance(values_list, list):
+        return Response("Invalid body: missing or invalid values array", status_code=400)
+
+    if len(values_list) > 5:
+        return Response("Too many files (max 5)", status_code=400)
+
+    from chunking import DocumentChunker
+    from tools import AzureOpenAIClient
+    from tools import AISearchClient
+    from tools.blob import upload_bytes_to_container
+    from jobs.sharepoint_ingestion_config import _make_chunk_key
+
+    aoai_client = AzureOpenAIClient()
+    search_client = AISearchClient()
+
+    index_name = app_config_client.get("SEARCH_RAG_INDEX_NAME")
+
+    results = []
+
+    for item in values_list:
+        record_id = item.get("recordId")
+        data = item.get("data", {})
+        file_name = data.get("fileName")
+        content_type = data.get("contentType")
+        file_b64 = data.get("fileBase64")
+
+        errors = []
+        warnings = []
+
+        if not (file_name and content_type and file_b64):
+            errors.append({"message": "Missing fileName, contentType or fileBase64 in data"})
+            results.append({"recordId": record_id, "errors": errors, "warnings": warnings})
+            continue
+
+        # --- Decode base64 ---
+        try:
+            file_bytes = base64.b64decode(file_b64)
+        except Exception as e:
+            errors.append({"message": f"Error decoding base64: {e}"})
+            results.append({"recordId": record_id, "errors": errors, "warnings": warnings})
+            continue
+
+        # --- Chunk document ---
+        norm_file_name = get_filename(file_name)
+
+        # --- Persist original bytes to per-conversation blob container (best-effort) ---
+        conv_docs_container = app_config_client.get(
+            "CONVERSATION_DOCUMENTS_STORAGE_CONTAINER", None, allow_none=True
+        )
+        safe_record_id = (record_id or "").strip() or "record"
+        blob_path = f"conversations/{conversation_id}/{safe_record_id}/{norm_file_name}"
+        blob_url = ""
+        if conv_docs_container:
+            try:
+                blob_url = upload_bytes_to_container(
+                    container_name=conv_docs_container,
+                    blob_name=blob_path,
+                    data=file_bytes,
+                    content_type=content_type or "application/octet-stream",
+                    metadata={
+                        "conversationId": conversation_id,
+                        "recordId": safe_record_id,
+                    },
+                )
+            except Exception as e:
+                warnings.append({"message": f"Blob persistence failed: {e}"})
+        else:
+            warnings.append(
+                {"message": "CONVERSATION_DOCUMENTS_STORAGE_CONTAINER not configured; original file not persisted"}
+            )
+
+        input_data = {
+            "documentUrl": blob_url or blob_path,
+            "documentBytes": file_bytes,
+            "fileName": norm_file_name,
+            "documentContentType": content_type
+        }
+
+        try:
+            chunks, chunk_errors, chunk_warnings = DocumentChunker().chunk_documents(input_data)
+            errors.extend(chunk_errors)
+            warnings.extend(chunk_warnings)
+        except Exception as e:
+            errors.append({"message": f"Chunking error: {e}"})
+            results.append({"recordId": record_id, "errors": errors, "warnings": warnings})
+            continue
+
+        # --- Prepare documents batch (fields must match AI Search index / blob indexer schema) ---
+        documents_to_upload = []
+        parent_id = f"/ingest/{conversation_id}/{record_id}/{norm_file_name}"
+        last_modified = datetime.datetime.now(datetime.timezone.utc)
+        emb_dims = int(app_config_client.get("EMBEDDINGS_VECTOR_DIMENSIONS", "3072"))
+
+        for chunk in chunks:
+            try:
+                content = chunk.get("content", "")
+                if not content.strip():
+                    continue
+
+                embedding = aoai_client.get_embeddings(content)
+                chunk_id = int(chunk.get("chunk_id", 0))
+                caption_vec = chunk.get("captionVector")
+                if not caption_vec:
+                    caption_vec = [0.0] * emb_dims
+
+                document = {
+                    "id": _make_chunk_key(parent_id, chunk_id),
+                    "parent_id": parent_id,
+                    "conversationId": conversation_id,
+                    "metadata_storage_path": parent_id,
+                    "metadata_storage_name": norm_file_name,
+                    "metadata_storage_last_modified": last_modified,
+                    "metadata_security_user_ids": [],
+                    "metadata_security_group_ids": [],
+                    "metadata_security_rbac_scope": "",
+                    "chunk_id": chunk_id,
+                    "content": content,
+                    "imageCaptions": chunk.get("imageCaptions", ""),
+                    "page": int(chunk.get("page", 0)),
+                    "offset": int(chunk.get("offset", 0)),
+                    "length": int(chunk.get("length", len(content))),
+                    "title": chunk.get("title", ""),
+                    "category": chunk.get("category", ""),
+                    "filepath": blob_path if blob_url else chunk.get("filepath", ""),
+                    "url": blob_url or chunk.get("url", ""),
+                    "summary": chunk.get("summary", ""),
+                    "relatedImages": chunk.get("relatedImages", []),
+                    "relatedFiles": chunk.get("relatedFiles", []),
+                    "source": "ingest-documents",
+                    "contentVector": embedding,
+                    "captionVector": caption_vec,
+                }
+
+                documents_to_upload.append(document)
+
+            except Exception as e:
+                errors.append({"message": f"Embedding error: {e}"})
+
+        # --- Batch upload ---
+        indexed_count = 0
+
+        if documents_to_upload:
+            try:
+                logging.info("About to load")
+                client = await search_client.get_search_client(index_name)
+                result = await client.upload_documents(documents=documents_to_upload)
+                logging.info(result)
+
+                indexed_count = sum(1 for r in result if r.succeeded)
+
+                failed = [r for r in result if not r.succeeded]
+                for f in failed:
+                    errors.append({"message": f"Indexing failed for document id {f.key}"})
+
+            except Exception as e:
+                errors.append({"message": f"Batch indexing error: {e}"})
+
+        logging.info(
+            f"[ingest_documents] File {norm_file_name}: "
+            f"{indexed_count}/{len(documents_to_upload)} chunks indexed."
+        )
+
+        results.append({
+            "recordId": record_id,
+            "indexedChunks": indexed_count,
+            "errors": errors,
+            "warnings": warnings
+        })
+
+    elapsed = time.time() - start_time
+    logging.info(f"[ingest_documents] Finished in {elapsed:.2f} seconds.")
+
+    return JSONResponse(content={"values": results})
+
+def get_ingest_documents_request_schema():
+    return {
+        "$schema": "http://json-schema.org/draft-04/schema#",
+        "type": "object",
+        "properties": {
+            "conversationId": {
+                "type": "string",
+                "minLength": 1
+            },
+            "values": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 5,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "recordId": {
+                            "type": "string",
+                            "minLength": 1
+                        },
+                        "data": {
+                            "type": "object",
+                            "properties": {
+                                "fileName": {
+                                    "type": "string",
+                                    "minLength": 1
+                                },
+                                "contentType": {
+                                    "type": "string",
+                                    "minLength": 1
+                                },
+                                "fileBase64": {
+                                    "type": "string",
+                                    "minLength": 1
+                                }
+                            },
+                            "required": [
+                                "fileName",
+                                "contentType",
+                                "fileBase64"
+                            ],
+                            "additionalProperties": False
+                        }
+                    },
+                    "required": ["recordId", "data"],
+                    "additionalProperties": False
+                }
+            }
+        },
+        "required": ["conversationId", "values"],
+        "additionalProperties": False
+    }
 
 HTTPXClientInstrumentor().instrument()
 FastAPIInstrumentor.instrument_app(app)

@@ -155,7 +155,7 @@ export function FilesTable() {
                 <td className="px-4 py-2">
                   <StatusBadge status={file.status} blocked={file.blocked} />
                 </td>
-                <td className="px-4 py-2 text-right">{file.processingAttempts ?? 0}</td>
+                <td className="px-4 py-2 text-right">{Math.max(0, (file.processingAttempts ?? 1) - 1)}</td>
                 <td className="px-4 py-2 text-xs">{formatUtc(file.startedAt)}</td>
                 <td className="px-4 py-2 text-xs">{formatUtc(file.finishedAt)}</td>
                 <td className="px-4 py-2 text-center">

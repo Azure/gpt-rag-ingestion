@@ -137,6 +137,17 @@ async def _load_all_runs() -> Tuple[List[dict], List[str]]:
                 pass
         if not data.get("status"):
             data["status"] = "finished" if data.get("runFinishedAt") else "running"
+        # Detect stale runs: if status is non-terminal and started > 2 h ago, mark interrupted
+        if data.get("status") in ("running", "started", "finishing"):
+            _started_raw = data.get("runStartedAt") or ""
+            try:
+                _st = datetime.fromisoformat(_started_raw.replace("Z", "+00:00"))
+                if (datetime.now(timezone.utc) - _st).total_seconds() > 7200:
+                    data["status"] = "interrupted"
+                    if not data.get("runFinishedAt"):
+                        data["runFinishedAt"] = _started_raw  # best-effort placeholder
+            except (ValueError, TypeError):
+                pass
         indexer_types.add(data.get("indexerType", ""))
         runs.append(data)
     return runs, sorted(indexer_types)
