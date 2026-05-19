@@ -601,6 +601,7 @@ async def ingest_documents(request: Request):
             )
 
         input_data = {
+            "documentUrl": blob_url or blob_path,
             "documentBytes": file_bytes,
             "fileName": norm_file_name,
             "documentContentType": content_type
