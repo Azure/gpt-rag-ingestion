@@ -76,7 +76,7 @@ class BlobIndexerConfig:
     staging_container: str = "long-files-staging"
 
     # Behavior
-    max_concurrency: int = 2
+    max_concurrency: int = 8
     batch_size: int = 500  # AI Search recommended batch size
     indexer_name: str = "blob-storage-indexer"
     max_file_processing_attempts: int = 3  # block file after N failed attempts
@@ -96,7 +96,7 @@ class BlobIndexerConfig:
             jobs_log_container=app.get("JOBS_LOG_CONTAINER", "jobs"),
             blob_prefix=app.get("BLOB_PREFIX", ""),
             search_index_name=app.get("AI_SEARCH_INDEX_NAME", app.get("SEARCH_RAG_INDEX_NAME", "")),
-            max_concurrency=int(app.get("INDEXER_MAX_CONCURRENCY", 2)),
+            max_concurrency=int(app.get("INDEXER_MAX_CONCURRENCY", 8)),
             batch_size=int(app.get("INDEXER_BATCH_SIZE", 500)),
             indexer_name=app.get("BLOB_INDEXER_NAME", "blob-storage-indexer"),
             input_is_base64=(app.get("CHUNKER_INPUT_IS_BASE64", "false").lower() in ("true", "1", "yes")),
@@ -647,10 +647,10 @@ class BlobStorageDocumentIndexer:
                 _cost_per_1k_compl_in = float(self._app.get("COST_PER_1K_COMPLETION_INPUT_TOKENS", "0.0025"))
                 _cost_per_1k_compl_out = float(self._app.get("COST_PER_1K_COMPLETION_OUTPUT_TOKENS", "0.01"))
 
-                _analysis_cost = round(_pages * _cost_per_page, 2)
-                _embed_cost = round((_embed_tokens / 1000) * _cost_per_1k_embed, 2)
-                _compl_cost = round(((_compl_in_tokens / 1000) * _cost_per_1k_compl_in) + ((_compl_out_tokens / 1000) * _cost_per_1k_compl_out), 2)
-                _total_cost = round(_analysis_cost + _embed_cost + _compl_cost, 2)
+                _analysis_cost = round(_pages * _cost_per_page, 4)
+                _embed_cost = round((_embed_tokens / 1000) * _cost_per_1k_embed, 4)
+                _compl_cost = round(((_compl_in_tokens / 1000) * _cost_per_1k_compl_in) + ((_compl_out_tokens / 1000) * _cost_per_1k_compl_out), 4)
+                _total_cost = round(_analysis_cost + _embed_cost + _compl_cost, 4)
 
                 # Convert chunks to search docs (lightweight mapping, no API calls)
                 all_docs = [
@@ -815,8 +815,6 @@ class BlobStorageDocumentIndexer:
             "source": "blob",
             "contentVector": chunk.get("contentVector", []),
             "captionVector": chunk.get("captionVector", []),
-            # Not a chat upload; keep field present for consistent filtering
-            "conversationId": "NaN",
         }
 
     # ---------- Index state & (re)write ----------
