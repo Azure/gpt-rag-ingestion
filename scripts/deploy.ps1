@@ -16,6 +16,13 @@
     - Running in PowerShell 5.1+ or PowerShell Core.
 #>
 
+try {
+    [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+    [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
+} catch {}
+$env:PYTHONIOENCODING = 'utf-8'
+$env:PYTHONUTF8 = '1'
+
 #region Helper: color output functions
 function Write-Green($msg) {
     Write-Host $msg -ForegroundColor Green
