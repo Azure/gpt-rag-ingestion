@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     deploy.ps1 — validate Docker and APP_CONFIG_ENDPOINT, load App Config (label=gpt-rag), then build & push
 
