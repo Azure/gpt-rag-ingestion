@@ -114,15 +114,40 @@ echo "   resourceGroupName = $resourceGroupName"
 echo "   dataIngestApp = $dataIngestApp"
 echo
 
-USE_DOCKER=${USE_DOCKER:-false}
+docker_ready() {
+  command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1
+}
 
-if [[ "$USE_DOCKER" == "true" ]]; then
+buildMode="${BUILD_MODE:-}"
+if [[ -z "$buildMode" ]]; then
+  if [[ "${NETWORK_ISOLATION:-}" == "true" || -n "${ACR_TASK_AGENT_POOL:-}" ]]; then
+    buildMode="acr-task"
+  elif [[ "${USE_DOCKER:-}" == "true" ]] && docker_ready; then
+    buildMode="local"
+  elif docker_ready; then
+    buildMode="local"
+  else
+    buildMode="acr-task"
+  fi
+fi
+
+if [[ "$buildMode" != "local" && "$buildMode" != "acr-task" ]]; then
+  echo -e "${YELLOW}⚠️  Unsupported BUILD_MODE '${buildMode}'. Use 'local' or 'acr-task'.${NC}"
+  exit 1
+fi
+if [[ "$buildMode" == "local" ]] && ! docker_ready; then
+  echo -e "${YELLOW}⚠️  BUILD_MODE=local requested, but Docker is not available.${NC}"
+  exit 1
+fi
+
+echo -e "${GREEN}✅ Build mode: ${buildMode}${NC}"
+if [[ "$buildMode" == "local" ]]; then
   echo -e "${GREEN}🔐 Logging into ACR (${containerRegistryName} in ${resourceGroupName})…${NC}"
   az acr login --name "${containerRegistryName}" --resource-group "${resourceGroupName}"
   echo -e "${GREEN}✅ Logged into ACR.${NC}"
   echo
 else
-  echo -e "${YELLOW}⚠️  Using remote build (set USE_DOCKER=true to use local Docker).${NC}"
+  echo -e "${GREEN}✅ Using remote ACR build; local Docker login is not required.${NC}"
   echo
 fi
 
@@ -153,7 +178,7 @@ fi
 
 imageRef="${containerRegistryLoginServer}/azure-gpt-rag/data-ingestion:${tag}"
 
-if [[ "$USE_DOCKER" == "true" ]]; then
+if [[ "$buildMode" == "local" ]]; then
   echo -e "${GREEN}🛠️  Building Docker image (local docker)…${NC}"
   docker build \
     --platform linux/amd64 \
@@ -166,10 +191,13 @@ if [[ "$USE_DOCKER" == "true" ]]; then
   echo -e "${GREEN}✅ Image pushed.${NC}"
 else
   echo -e "${GREEN}🛠️  Building image remotely via 'az acr build'…${NC}"
-  az acr build \
-    --registry "${containerRegistryName}" \
-    --image "azure-gpt-rag/data-ingestion:${tag}" \
-    .
+  acr_build_args=(acr build --registry "${containerRegistryName}" --image "azure-gpt-rag/data-ingestion:${tag}" --file Dockerfile)
+  if [[ -n "${ACR_TASK_AGENT_POOL:-}" ]]; then
+    az acr agentpool show --registry "${containerRegistryName}" --name "${ACR_TASK_AGENT_POOL}" --resource-group "${resourceGroupName}" --only-show-errors >/dev/null
+    acr_build_args+=(--agent-pool "${ACR_TASK_AGENT_POOL}")
+  fi
+  acr_build_args+=(.)
+  az "${acr_build_args[@]}"
   echo -e "${GREEN}✅ Remote build completed.${NC}"
 fi
 
