@@ -1,5 +1,10 @@
 # ---- Stage 1: Build the frontend ----
-FROM node:20-slim AS frontend-build
+# Defaults point at Microsoft Container Registry so network-isolated ACR Tasks
+# builds use the AI Landing Zone firewall allow-list without Docker Hub egress.
+ARG REGISTRY=mcr.microsoft.com
+ARG NODE_IMAGE=devcontainers/javascript-node:20
+ARG PYTHON_IMAGE=devcontainers/python:3.12-bookworm
+FROM ${REGISTRY}/${NODE_IMAGE} AS frontend-build
 WORKDIR /build
 COPY frontend/package*.json ./frontend/
 RUN cd frontend && npm ci
@@ -8,7 +13,7 @@ RUN cd frontend && npm run build
 # Output is at /build/static (vite outDir: '../static')
 
 # ---- Stage 2: Python application ----
-FROM mcr.microsoft.com/devcontainers/python:3.12-bookworm
+FROM ${REGISTRY}/${PYTHON_IMAGE}
 
 WORKDIR /app
 
