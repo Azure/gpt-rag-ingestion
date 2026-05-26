@@ -179,33 +179,29 @@ function Set-ContainerAppRegistry {
     ) -What 'set container app registry' | Out-Null
 }
 
-function Restart-LatestRevision {
+function Confirm-ContainerAppImage {
     param(
         [Parameter(Mandatory=$true)][string]$AppName,
-        [Parameter()][string]$Revision,
-        [Parameter(Mandatory=$true)][string]$ResourceGroupName
+        [Parameter(Mandatory=$true)][string]$ResourceGroupName,
+        [Parameter(Mandatory=$true)][string]$ExpectedImage
     )
 
-    if ([string]::IsNullOrWhiteSpace($Revision) -or $Revision -eq 'null') {
-        $Revision = (Invoke-ExternalCommand -FilePath 'az' -Arguments @(
-            'containerapp','show',
-            '--name',$AppName,
-            '--resource-group',$ResourceGroupName,
-            '--query','properties.latestRevisionName','-o','tsv'
-        ) -What 'fetch latest revision' | Out-String).Trim()
-    }
+    $actualImage = (Invoke-ExternalCommand -FilePath 'az' -Arguments @(
+        'containerapp','show',
+        '--name',$AppName,
+        '--resource-group',$ResourceGroupName,
+        '--query','properties.template.containers[0].image','-o','tsv'
+    ) -What 'fetch container app image' | Out-String).Trim()
 
-    if ([string]::IsNullOrWhiteSpace($Revision) -or $Revision -eq 'null') {
-        Write-ErrorColored "Could not determine latest revision for '$AppName'."
+    if ([string]::IsNullOrWhiteSpace($actualImage) -or $actualImage -eq 'null') {
+        Write-ErrorColored "Could not determine configured image for '$AppName'."
         exit 1
     }
 
-    Invoke-ExternalCommand -FilePath 'az' -Arguments @(
-        'containerapp','revision','restart',
-        '--name',$AppName,
-        '--resource-group',$ResourceGroupName,
-        '--revision',$Revision
-    ) -What 'restart container app revision' | Out-Null
+    if ($actualImage -ne $ExpectedImage) {
+        Write-ErrorColored "Container app '$AppName' is configured with '$actualImage' instead of '$ExpectedImage'."
+        exit 1
+    }
 }
 
 Write-Host ''
@@ -298,6 +294,9 @@ $latestRevision = (Invoke-ExternalCommand -FilePath 'az' -Arguments @(
     '--query','properties.latestRevisionName','-o','tsv'
 ) -What 'update container app image' | Out-String).Trim()
 Write-Green 'Container app updated.'
+if (-not [string]::IsNullOrWhiteSpace($latestRevision) -and $latestRevision -ne 'null') {
+    Write-Green "Latest revision: $latestRevision"
+}
 
 Write-Blue 'Ensuring container app ingress target port is 8080...'
 Invoke-ExternalCommand -FilePath 'az' -Arguments @(
@@ -308,6 +307,6 @@ Invoke-ExternalCommand -FilePath 'az' -Arguments @(
 ) -What 'update container app ingress' | Out-Null
 Write-Green 'Ingress target port updated.'
 
-Write-Blue 'Restarting latest container app revision...'
-Restart-LatestRevision -AppName $values.APP_NAME -Revision $latestRevision -ResourceGroupName $values.AZURE_RESOURCE_GROUP
-Write-Green 'Container app revision restarted.'
+Write-Blue 'Verifying container app image...'
+Confirm-ContainerAppImage -AppName $values.APP_NAME -ResourceGroupName $values.AZURE_RESOURCE_GROUP -ExpectedImage $fullImageName
+Write-Green 'Container app image verified.'
