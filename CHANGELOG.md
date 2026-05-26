@@ -3,7 +3,10 @@
 All notable changes to this project will be documented in this file.  
 This format follows [Keep a Changelog](https://keepachangelog.com/) and adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [v2.3.5] - 2026-05-25
+
+### Fixed
+- **Docker-free component deployment:** Updated Bash and PowerShell deploy scripts to choose the build mode before touching Docker, use `az acr build` when Docker is unavailable or remote build is requested, configure Container App registry identity, and restart the latest revision after image updates. Fixes [Azure/GPT-RAG#449](https://github.com/Azure/GPT-RAG/issues/449).
 
 ## [v2.3.4] – 2026-05-19
 
