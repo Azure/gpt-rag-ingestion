@@ -22,6 +22,31 @@ success() { echo -e "${GREEN}$*${NC}" >&2; }
 warn() { echo -e "${YELLOW}$*${NC}" >&2; }
 error() { echo -e "${RED}$*${NC}" >&2; }
 
+select_cli_value() {
+  local expected="${1:-}"
+  local line trimmed fallback=""
+
+  while IFS= read -r line; do
+    trimmed="$(printf "%s" "$line" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+    [[ -z "$trimmed" ]] && continue
+
+    if [[ -n "$expected" && "$trimmed" == "$expected" ]]; then
+      printf "%s" "$trimmed"
+      return 0
+    fi
+
+    case "$trimmed" in
+      WARNING:*|ERROR:*|Running.*|*site-packages*UserWarning:*|from\ cryptography*|D:\\a\\_work\\*)
+        continue
+        ;;
+    esac
+
+    fallback="$trimmed"
+  done
+
+  printf "%s" "$fallback"
+}
+
 unique_candidates() {
   local key="$1"
   local upper lower
@@ -58,11 +83,12 @@ get_config_value() {
       --key "$candidate" \
       --label "$label" \
       --auth-mode login \
+      --only-show-errors \
       --query value -o tsv 2>&1)"
     status=$?
     set -e
 
-    output="$(printf "%s" "$output" | tr -d '\r')"
+    output="$(printf "%s" "$output" | select_cli_value)"
     if [[ $status -eq 0 && -n "${output//[[:space:]]/}" ]]; then
       printf "%s" "$output"
       return 0
@@ -143,7 +169,8 @@ set_containerapp_registry() {
   identity_type="$(az containerapp identity show \
     --name "$app_name" \
     --resource-group "$resourceGroupName" \
-    --query type -o tsv)"
+    --only-show-errors \
+    --query type -o tsv 2>&1 | select_cli_value)"
 
   if [[ "$identity_type" == *"UserAssigned"* ]]; then
     if [[ -z "${subscriptionId:-}" || -z "${resourceToken:-}" ]]; then
@@ -155,13 +182,15 @@ set_containerapp_registry() {
       --name "$app_name" \
       --resource-group "$resourceGroupName" \
       --server "$containerRegistryLoginServer" \
-      --identity "/subscriptions/${subscriptionId}/resourceGroups/${resourceGroupName}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uai-ca-${resourceToken}-${identitySuffix}"
+      --identity "/subscriptions/${subscriptionId}/resourceGroups/${resourceGroupName}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uai-ca-${resourceToken}-${identitySuffix}" \
+      --only-show-errors
   else
     az containerapp registry set \
       --name "$app_name" \
       --resource-group "$resourceGroupName" \
       --server "$containerRegistryLoginServer" \
-      --identity system
+      --identity system \
+      --only-show-errors
   fi
 }
 
@@ -173,7 +202,8 @@ verify_containerapp_image() {
   actual_image="$(az containerapp show \
     --name "$app_name" \
     --resource-group "$resourceGroupName" \
-    --query 'properties.template.containers[0].image' -o tsv)"
+    --only-show-errors \
+    --query 'properties.template.containers[0].image' -o tsv 2>&1 | select_cli_value "$expected_image")"
 
   if [[ -z "${actual_image//[[:space:]]/}" || "$actual_image" == "null" ]]; then
     error "Could not determine configured image for '$app_name'."
@@ -217,7 +247,7 @@ containerRegistryName="$(require_config_value "CONTAINER_REGISTRY_NAME")"
 containerRegistryLoginServer="$(require_config_value "CONTAINER_REGISTRY_LOGIN_SERVER")"
 resourceGroupName="$(require_config_value "AZURE_RESOURCE_GROUP")"
 appName="$(require_config_value "$appConfigKey")"
-subscriptionId="$(get_config_value "SUBSCRIPTION_ID" || az account show --query id -o tsv)"
+subscriptionId="$(get_config_value "SUBSCRIPTION_ID" || az account show --only-show-errors --query id -o tsv 2>&1 | select_cli_value)"
 resourceToken="$(get_config_value "RESOURCE_TOKEN" || true)"
 
 success "All App Configuration values retrieved:"
@@ -267,7 +297,8 @@ latestRevision="$(az containerapp update \
   --name "$appName" \
   --resource-group "$resourceGroupName" \
   --image "$imageRef" \
-  --query properties.latestRevisionName -o tsv)"
+  --only-show-errors \
+  --query properties.latestRevisionName -o tsv 2>&1 | select_cli_value)"
 success "Container app updated."
 if [[ -n "${latestRevision//[[:space:]]/}" && "$latestRevision" != "null" ]]; then
   success "Latest revision: ${latestRevision}"
@@ -277,7 +308,8 @@ info "Ensuring container app ingress target port is 8080..."
 az containerapp ingress update \
   --name "$appName" \
   --resource-group "$resourceGroupName" \
-  --target-port 8080
+  --target-port 8080 \
+  --only-show-errors
 success "Ingress target port updated."
 
 info "Verifying container app image..."

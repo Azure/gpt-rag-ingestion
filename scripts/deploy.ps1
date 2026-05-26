@@ -37,6 +37,51 @@ function Invoke-ExternalCommand {
     return $output
 }
 
+function Get-CliOutputValue {
+    param(
+        [Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$Output,
+        [Parameter()][string]$ExpectedValue,
+        [Parameter()][string]$Pattern
+    )
+
+    $lines = New-Object System.Collections.Generic.List[string]
+    foreach ($item in @($Output)) {
+        if ($null -eq $item) { continue }
+        foreach ($line in ($item.ToString() -split "`r?`n")) {
+            $trimmed = $line.Trim()
+            if (-not [string]::IsNullOrWhiteSpace($trimmed)) {
+                $lines.Add($trimmed)
+            }
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($ExpectedValue)) {
+        for ($i = $lines.Count - 1; $i -ge 0; $i--) {
+            if ($lines[$i] -eq $ExpectedValue) { return $lines[$i] }
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($Pattern)) {
+        for ($i = $lines.Count - 1; $i -ge 0; $i--) {
+            if ($lines[$i] -match $Pattern) { return $lines[$i] }
+        }
+    }
+
+    for ($i = $lines.Count - 1; $i -ge 0; $i--) {
+        $line = $lines[$i]
+        if ($line -match '^WARNING:' -or
+            $line -match '^D:\\a\\_work\\' -or
+            $line -match 'site-packages.*UserWarning:' -or
+            $line -match '^from cryptography' -or
+            $line -match '^Running\.') {
+            continue
+        }
+        return $line
+    }
+
+    return ''
+}
+
 function Get-AzdEnvValue {
     param([Parameter(Mandatory=$true)][string]$Key)
 
@@ -74,9 +119,10 @@ function Get-ConfigValue {
             --key $candidate `
             --label $label `
             --auth-mode login `
+            --only-show-errors `
             --query value -o tsv 2>&1
         $exitCode = $LASTEXITCODE
-        $value = ($output | Out-String).Trim()
+        $value = Get-CliOutputValue -Output $output
         if ($exitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($value)) {
             return $value
         }
@@ -153,12 +199,14 @@ function Set-ContainerAppRegistry {
         [Parameter(Mandatory=$true)][hashtable]$Values
     )
 
-    $identityType = (Invoke-ExternalCommand -FilePath 'az' -Arguments @(
+    $identityOutput = Invoke-ExternalCommand -FilePath 'az' -Arguments @(
         'containerapp','identity','show',
         '--name',$AppName,
         '--resource-group',$Values.AZURE_RESOURCE_GROUP,
+        '--only-show-errors',
         '--query','type','-o','tsv'
-    ) -What 'fetch container app identity' | Out-String).Trim()
+    ) -What 'fetch container app identity'
+    $identityType = Get-CliOutputValue -Output $identityOutput -Pattern 'UserAssigned|SystemAssigned|None'
 
     if ($identityType -like '*UserAssigned*') {
         if ([string]::IsNullOrWhiteSpace($Values.SUBSCRIPTION_ID) -or [string]::IsNullOrWhiteSpace($Values.RESOURCE_TOKEN)) {
@@ -175,7 +223,8 @@ function Set-ContainerAppRegistry {
         '--name',$AppName,
         '--resource-group',$Values.AZURE_RESOURCE_GROUP,
         '--server',$Values.CONTAINER_REGISTRY_LOGIN_SERVER,
-        '--identity',$registryIdentity
+        '--identity',$registryIdentity,
+        '--only-show-errors'
     ) -What 'set container app registry' | Out-Null
 }
 
@@ -186,12 +235,14 @@ function Confirm-ContainerAppImage {
         [Parameter(Mandatory=$true)][string]$ExpectedImage
     )
 
-    $actualImage = (Invoke-ExternalCommand -FilePath 'az' -Arguments @(
+    $imageOutput = Invoke-ExternalCommand -FilePath 'az' -Arguments @(
         'containerapp','show',
         '--name',$AppName,
         '--resource-group',$ResourceGroupName,
+        '--only-show-errors',
         '--query','properties.template.containers[0].image','-o','tsv'
-    ) -What 'fetch container app image' | Out-String).Trim()
+    ) -What 'fetch container app image'
+    $actualImage = Get-CliOutputValue -Output $imageOutput -ExpectedValue $ExpectedImage
 
     if ([string]::IsNullOrWhiteSpace($actualImage) -or $actualImage -eq 'null') {
         Write-ErrorColored "Could not determine configured image for '$AppName'."
@@ -242,7 +293,8 @@ $values = @{
     RESOURCE_TOKEN = (Get-ConfigValue -Key 'RESOURCE_TOKEN')
 }
 if ([string]::IsNullOrWhiteSpace($values.SUBSCRIPTION_ID)) {
-    $values.SUBSCRIPTION_ID = (Invoke-ExternalCommand -FilePath 'az' -Arguments @('account','show','--query','id','-o','tsv') -What 'fetch subscription id' | Out-String).Trim()
+    $subscriptionOutput = Invoke-ExternalCommand -FilePath 'az' -Arguments @('account','show','--only-show-errors','--query','id','-o','tsv') -What 'fetch subscription id'
+    $values.SUBSCRIPTION_ID = Get-CliOutputValue -Output $subscriptionOutput -Pattern '^[0-9a-fA-F-]{36}$'
 }
 
 Write-Green 'All App Configuration values retrieved:'
@@ -286,13 +338,15 @@ Set-ContainerAppRegistry -AppName $values.APP_NAME -Values $values
 Write-Green 'Container app registry updated.'
 
 Write-Blue 'Updating container app image...'
-$latestRevision = (Invoke-ExternalCommand -FilePath 'az' -Arguments @(
+$latestRevisionOutput = Invoke-ExternalCommand -FilePath 'az' -Arguments @(
     'containerapp','update',
     '--name',$values.APP_NAME,
     '--resource-group',$values.AZURE_RESOURCE_GROUP,
     '--image',$fullImageName,
+    '--only-show-errors',
     '--query','properties.latestRevisionName','-o','tsv'
-) -What 'update container app image' | Out-String).Trim()
+) -What 'update container app image'
+$latestRevision = Get-CliOutputValue -Output $latestRevisionOutput -Pattern '^[A-Za-z0-9][A-Za-z0-9-]*--[A-Za-z0-9-]+$'
 Write-Green 'Container app updated.'
 if (-not [string]::IsNullOrWhiteSpace($latestRevision) -and $latestRevision -ne 'null') {
     Write-Green "Latest revision: $latestRevision"
@@ -303,7 +357,8 @@ Invoke-ExternalCommand -FilePath 'az' -Arguments @(
     'containerapp','ingress','update',
     '--name',$values.APP_NAME,
     '--resource-group',$values.AZURE_RESOURCE_GROUP,
-    '--target-port','8080'
+    '--target-port','8080',
+    '--only-show-errors'
 ) -What 'update container app ingress' | Out-Null
 Write-Green 'Ingress target port updated.'
 
