@@ -42,7 +42,7 @@ tenacity==8.5.0
 Pillow==12.1.1
 
 # PDF manipulation (page counting and splitting)
-pypdf==5.4.0
+pypdf==6.10.2
 
 # Process and system utilities
 psutil==7.0.0
