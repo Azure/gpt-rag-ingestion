@@ -1,190 +1,317 @@
 #!/usr/bin/env bash
-# -------------------------------------------------------------------------
-# deploy.sh — validate APP_CONFIG_ENDPOINT, load App Config (label=gpt-rag), then build & push
-# -------------------------------------------------------------------------
-
 set -euo pipefail
 
-# Toggle DEBUG for verbose output
 DEBUG=${DEBUG:-false}
 if [[ "$DEBUG" == "true" ]]; then
   set -x
 fi
 
-# colors
 YELLOW='\033[0;33m'
 BLUE='\033[0;34m'
 GREEN='\033[0;32m'
-NC='\033[0m' # no color
+RED='\033[0;31m'
+NC='\033[0m'
+
+label="gpt-rag"
+imageRepository="data-ingestion"
+appConfigKey="DATA_INGEST_APP_NAME"
+identitySuffix="dataingest"
+
+info() { echo -e "${BLUE}$*${NC}" >&2; }
+success() { echo -e "${GREEN}$*${NC}" >&2; }
+warn() { echo -e "${YELLOW}$*${NC}" >&2; }
+error() { echo -e "${RED}$*${NC}" >&2; }
+
+select_cli_value() {
+  local expected="${1:-}"
+  local line trimmed fallback=""
+
+  while IFS= read -r line; do
+    trimmed="$(printf "%s" "$line" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+    [[ -z "$trimmed" ]] && continue
+
+    if [[ -n "$expected" && "$trimmed" == "$expected" ]]; then
+      printf "%s" "$trimmed"
+      return 0
+    fi
+
+    case "$trimmed" in
+      WARNING:*|ERROR:*|Running.*|*site-packages*UserWarning:*|from\ cryptography*|D:\\a\\_work\\*)
+        continue
+        ;;
+    esac
+
+    fallback="$trimmed"
+  done
+
+  printf "%s" "$fallback"
+}
+
+unique_candidates() {
+  local key="$1"
+  local upper lower
+  upper="$(printf "%s" "$key" | tr '[:lower:]' '[:upper:]')"
+  lower="$(printf "%s" "$key" | tr '[:upper:]' '[:lower:]')"
+
+  printf "%s\n" "$key"
+  [[ "$upper" != "$key" ]] && printf "%s\n" "$upper"
+  [[ "$lower" != "$key" && "$lower" != "$upper" ]] && printf "%s\n" "$lower"
+}
+
+get_azd_value() {
+  local key="$1"
+  local value=""
+
+  if command -v azd >/dev/null 2>&1; then
+    value="$(azd env get-values 2>/dev/null | awk -F= -v k="$key" '
+      $1==k { v=$0; sub(/^[^=]*=/, "", v); gsub(/^"|"$/, "", v); print v; exit }' || true)"
+  fi
+
+  printf "%s" "$value" | tr -d '\r'
+}
+
+get_config_value() {
+  local key="$1"
+  local candidate output status last_output=""
+
+  while IFS= read -r candidate; do
+    [[ -z "$candidate" ]] && continue
+    info "Retrieving '$candidate' from App Configuration..."
+    set +e
+    output="$(az appconfig kv show \
+      --endpoint "$APP_CONFIG_ENDPOINT" \
+      --key "$candidate" \
+      --label "$label" \
+      --auth-mode login \
+      --only-show-errors \
+      --query value -o tsv 2>&1)"
+    status=$?
+    set -e
+
+    output="$(printf "%s" "$output" | select_cli_value)"
+    if [[ $status -eq 0 && -n "${output//[[:space:]]/}" ]]; then
+      printf "%s" "$output"
+      return 0
+    fi
+    last_output="$output"
+  done < <(unique_candidates "$key")
+
+  warn "Failed to retrieve key '$key'. Last CLI output: $last_output"
+  return 1
+}
+
+require_config_value() {
+  local key="$1"
+  local value
+  if ! value="$(get_config_value "$key")"; then
+    return 1
+  fi
+  printf "%s" "$value"
+}
+
+docker_ready() {
+  command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1
+}
+
+select_build_mode() {
+  local mode="${BUILD_MODE:-}"
+  mode="$(printf "%s" "$mode" | tr '[:upper:]' '[:lower:]' | xargs)"
+
+  if [[ -z "$mode" && -n "${USE_DOCKER:-}" ]]; then
+    case "$(printf "%s" "$USE_DOCKER" | tr '[:upper:]' '[:lower:]')" in
+      true|1|yes) mode="local" ;;
+      false|0|no) mode="acr-task" ;;
+    esac
+  fi
+
+  if [[ -z "$mode" ]]; then
+    if [[ "$(printf "%s" "${NETWORK_ISOLATION:-}" | tr '[:upper:]' '[:lower:]')" == "true" || -n "${ACR_TASK_AGENT_POOL:-}" ]]; then
+      mode="acr-task"
+    elif docker_ready; then
+      mode="local"
+    else
+      mode="acr-task"
+    fi
+  fi
+
+  if [[ "$mode" != "local" && "$mode" != "acr-task" ]]; then
+    error "Unsupported BUILD_MODE '$mode'. Use 'local' or 'acr-task'."
+    exit 1
+  fi
+
+  if [[ "$mode" == "local" ]] && ! docker_ready; then
+    error "BUILD_MODE=local requested, but Docker is not available."
+    exit 1
+  fi
+
+  printf "%s" "$mode"
+}
+
+determine_tag() {
+  if [[ -n "${tag:-}" ]]; then
+    printf "%s" "$tag"
+    return
+  fi
+
+  local git_short=""
+  git_short="$(git rev-parse --short HEAD 2>/dev/null || true)"
+  if [[ -n "$git_short" ]]; then
+    printf "%s" "$git_short"
+  else
+    printf "GPT%s" "$(( RANDOM % 900000 + 100000 ))"
+  fi
+}
+
+set_containerapp_registry() {
+  local app_name="$1"
+  local identity_type
+
+  identity_type="$(az containerapp identity show \
+    --name "$app_name" \
+    --resource-group "$resourceGroupName" \
+    --only-show-errors \
+    --query type -o tsv 2>&1 | select_cli_value)"
+
+  if [[ "$identity_type" == *"UserAssigned"* ]]; then
+    if [[ -z "${subscriptionId:-}" || -z "${resourceToken:-}" ]]; then
+      error "SUBSCRIPTION_ID and RESOURCE_TOKEN are required for user-assigned registry identity."
+      exit 1
+    fi
+
+    az containerapp registry set \
+      --name "$app_name" \
+      --resource-group "$resourceGroupName" \
+      --server "$containerRegistryLoginServer" \
+      --identity "/subscriptions/${subscriptionId}/resourceGroups/${resourceGroupName}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uai-ca-${resourceToken}-${identitySuffix}" \
+      --only-show-errors
+  else
+    az containerapp registry set \
+      --name "$app_name" \
+      --resource-group "$resourceGroupName" \
+      --server "$containerRegistryLoginServer" \
+      --identity system \
+      --only-show-errors
+  fi
+}
+
+verify_containerapp_image() {
+  local app_name="$1"
+  local expected_image="$2"
+  local actual_image
+
+  actual_image="$(az containerapp show \
+    --name "$app_name" \
+    --resource-group "$resourceGroupName" \
+    --only-show-errors \
+    --query 'properties.template.containers[0].image' -o tsv 2>&1 | select_cli_value "$expected_image")"
+
+  if [[ -z "${actual_image//[[:space:]]/}" || "$actual_image" == "null" ]]; then
+    error "Could not determine configured image for '$app_name'."
+    exit 1
+  fi
+
+  if [[ "$actual_image" != "$expected_image" ]]; then
+    error "Container app '$app_name' is configured with '$actual_image' instead of '$expected_image'."
+    exit 1
+  fi
+}
 
 echo
-# First, check shell environment
 if [[ -n "${APP_CONFIG_ENDPOINT:-}" ]]; then
-  echo -e "${GREEN}✅ Using APP_CONFIG_ENDPOINT from environment: ${APP_CONFIG_ENDPOINT}${NC}"
+  success "Using APP_CONFIG_ENDPOINT from environment: ${APP_CONFIG_ENDPOINT}"
 else
-  echo -e "${BLUE}🔍 Fetching APP_CONFIG_ENDPOINT from azd env…${NC}"
-  envValues="$(azd env get-values 2>/dev/null || true)"
-  APP_CONFIG_ENDPOINT="$(echo "$envValues" \
-    | grep -i '^APP_CONFIG_ENDPOINT=' \
-    | cut -d '=' -f2- \
-    | tr -d '"' \
-    | tr -d '[:space:]' || true)"
+  info "Fetching APP_CONFIG_ENDPOINT from azd env..."
+  APP_CONFIG_ENDPOINT="$(get_azd_value "APP_CONFIG_ENDPOINT")"
 fi
 
 if [[ -z "${APP_CONFIG_ENDPOINT:-}" ]]; then
-  echo -e "${YELLOW}⚠️  Missing APP_CONFIG_ENDPOINT.${NC}"
-  echo -e "  • ${BLUE}Set it with:${NC} azd env set APP_CONFIG_ENDPOINT <your-endpoint>"
-  echo -e "  • ${BLUE}Or export in shell:${NC} export APP_CONFIG_ENDPOINT=<your-endpoint> before running this script."
+  warn "Missing APP_CONFIG_ENDPOINT."
+  echo "Set it with: azd env set APP_CONFIG_ENDPOINT <your-endpoint>"
+  echo "Or export APP_CONFIG_ENDPOINT=<your-endpoint> before running this script."
   exit 1
 fi
+success "APP_CONFIG_ENDPOINT: ${APP_CONFIG_ENDPOINT}"
 
-echo -e "${GREEN}✅ APP_CONFIG_ENDPOINT: ${APP_CONFIG_ENDPOINT}${NC}"
-echo
-
-# derive App Configuration name from endpoint
-configName="${APP_CONFIG_ENDPOINT#https://}"
-configName="${configName%.azconfig.io}"
-if [[ -z "$configName" ]]; then
-  echo -e "${YELLOW}⚠️  Could not parse config name from endpoint '${APP_CONFIG_ENDPOINT}'.${NC}"
-  exit 1
-fi
-echo -e "${GREEN}✅ App Configuration name: ${configName}${NC}"
-echo
-
-echo -e "${BLUE}🔐 Checking Azure CLI login and subscription…${NC}"
+info "Checking Azure CLI login and subscription..."
 if ! az account show >/dev/null 2>&1; then
-  echo -e "${YELLOW}⚠️  Not logged in. Please run 'az login'.${NC}"
+  error "Not logged in. Please run 'az login'."
   exit 1
 fi
-echo -e "${GREEN}✅ Azure CLI is logged in.${NC}"
-echo
+success "Azure CLI is logged in."
 
-# label for your configuration keys
-label="gpt-rag"
+buildMode="$(select_build_mode)"
+success "Build mode: ${buildMode}"
 
-echo -e "${GREEN}⚙️ Loading App Configuration settings (label=${label})…${NC}"
-echo
+info "Loading App Configuration settings (label=${label})..."
+containerRegistryName="$(require_config_value "CONTAINER_REGISTRY_NAME")"
+containerRegistryLoginServer="$(require_config_value "CONTAINER_REGISTRY_LOGIN_SERVER")"
+resourceGroupName="$(require_config_value "AZURE_RESOURCE_GROUP")"
+appName="$(require_config_value "$appConfigKey")"
+subscriptionId="$(get_config_value "SUBSCRIPTION_ID" || az account show --only-show-errors --query id -o tsv 2>&1 | select_cli_value)"
+resourceToken="$(get_config_value "RESOURCE_TOKEN" || true)"
 
-# helper to fetch a key (with label) from App Configuration via az CLI
-get_config_value() {
-  key="$1"
-  echo -e "${BLUE}🛠️  Retrieving '$key' (label=${label}) from App Configuration…${NC}" >&2
-  val="$(az appconfig kv show \
-    --name "$configName" \
-    --key "$key" \
-    --label "$label" \
-    --auth-mode login \
-    --query value -o tsv 2>&1)" || status=$?
-  if [[ -z "${val// /}" ]]; then
-    echo -e "${YELLOW}⚠️  Failed to retrieve key '$key'. CLI output: $val${NC}" >&2
-    return 1
-  fi
-  echo "$val"
-}
-
-# fetch required settings
-containerRegistryName=""
-containerRegistryLoginServer=""
-resourceGroupName=""
-dataIngestApp=""
-missing_keys=()
-
-if ! containerRegistryName="$(get_config_value "CONTAINER_REGISTRY_NAME")"; then
-  missing_keys+=("CONTAINER_REGISTRY_NAME")
-fi
-if ! containerRegistryLoginServer="$(get_config_value "CONTAINER_REGISTRY_LOGIN_SERVER")"; then
-  missing_keys+=("CONTAINER_REGISTRY_LOGIN_SERVER")
-fi
-if ! resourceGroupName="$(get_config_value "AZURE_RESOURCE_GROUP")"; then
-  missing_keys+=("AZURE_RESOURCE_GROUP")
-fi
-if ! dataIngestApp="$(get_config_value "DATA_INGEST_APP_NAME")"; then
-  missing_keys+=("DATA_INGEST_APP_NAME")
-fi
-
-if [[ ${#missing_keys[@]} -gt 0 ]]; then
-  echo -e "${YELLOW}⚠️  Missing or invalid App Config keys: ${missing_keys[*]}${NC}"
-  exit 1
-fi
-
-echo -e "${GREEN}✅ All App Configuration values retrieved:${NC}"
+success "All App Configuration values retrieved:"
 echo "   containerRegistryName = $containerRegistryName"
 echo "   containerRegistryLoginServer = $containerRegistryLoginServer"
 echo "   resourceGroupName = $resourceGroupName"
-echo "   dataIngestApp = $dataIngestApp"
+echo "   appName = $appName"
 echo
 
-USE_DOCKER=${USE_DOCKER:-false}
-
-if [[ "$USE_DOCKER" == "true" ]]; then
-  echo -e "${GREEN}🔐 Logging into ACR (${containerRegistryName} in ${resourceGroupName})…${NC}"
-  az acr login --name "${containerRegistryName}" --resource-group "${resourceGroupName}"
-  echo -e "${GREEN}✅ Logged into ACR.${NC}"
-  echo
+if [[ "$buildMode" == "local" ]]; then
+  info "Logging into ACR (${containerRegistryName} in ${resourceGroupName})..."
+  az acr login --name "$containerRegistryName" --resource-group "$resourceGroupName"
+  success "Logged into ACR."
 else
-  echo -e "${YELLOW}⚠️  Using remote build (set USE_DOCKER=true to use local Docker).${NC}"
-  echo
+  success "Using remote ACR build; local Docker login is not required."
 fi
 
-echo -e "${BLUE}🛢️ Defining tag…${NC}"
-if [[ -n "${tag:-}" ]]; then
-  tag="${tag}"
-  echo -e "${GREEN}Using tag from environment: ${tag}${NC}"
-else
-  if gitShort=$(git rev-parse --short HEAD 2>/dev/null); then
-    if [[ -n "$gitShort" ]]; then
-      tag="$gitShort"
-      echo -e "${GREEN}Using Git short HEAD as tag: ${tag}${NC}"
-    else
-      echo -e "${YELLOW}Could not get Git short HEAD. Generating random tag.${NC}"
-      rand=$(od -An -N4 -tu4 /dev/urandom | tr -d ' ')
-      rand=$(( rand % 900000 + 100000 ))
-      tag="GPT${rand}"
-      echo -e "${GREEN}Generated random tag: ${tag}${NC}"
-    fi
-  else
-    echo -e "${YELLOW}Git command failed. Generating random tag.${NC}"
-    rand=$(od -An -N4 -tu4 /dev/urandom | tr -d ' ')
-    rand=$(( rand % 900000 + 100000 ))
-    tag="GPT${rand}"
-    echo -e "${GREEN}Generated random tag: ${tag}${NC}"
-  fi
-fi
+tag="$(determine_tag)"
+success "Using image tag: ${tag}"
+imageRef="${containerRegistryLoginServer}/azure-gpt-rag/${imageRepository}:${tag}"
 
-imageRef="${containerRegistryLoginServer}/azure-gpt-rag/data-ingestion:${tag}"
+if [[ "$buildMode" == "local" ]]; then
+  info "Building Docker image..."
+  docker build --platform linux/amd64 -t "$imageRef" .
 
-if [[ "$USE_DOCKER" == "true" ]]; then
-  echo -e "${GREEN}🛠️  Building Docker image (local docker)…${NC}"
-  docker build \
-    --platform linux/amd64 \
-    -t "$imageRef" \
-    .
-
-  echo
-  echo -e "${GREEN}📤 Pushing image…${NC}"
+  info "Pushing image..."
   docker push "$imageRef"
-  echo -e "${GREEN}✅ Image pushed.${NC}"
+  success "Image pushed."
 else
-  echo -e "${GREEN}🛠️  Building image remotely via 'az acr build'…${NC}"
-  az acr build \
-    --registry "${containerRegistryName}" \
-    --image "azure-gpt-rag/data-ingestion:${tag}" \
-    .
-  echo -e "${GREEN}✅ Remote build completed.${NC}"
+  info "Building image remotely via az acr build..."
+  acr_build_args=(acr build --registry "$containerRegistryName" --image "azure-gpt-rag/${imageRepository}:${tag}" --file Dockerfile)
+  if [[ -n "${ACR_TASK_AGENT_POOL:-}" ]]; then
+    az acr agentpool show --registry "$containerRegistryName" --name "$ACR_TASK_AGENT_POOL" --resource-group "$resourceGroupName" --only-show-errors >/dev/null
+    acr_build_args+=(--agent-pool "$ACR_TASK_AGENT_POOL")
+  fi
+  acr_build_args+=(.)
+  az "${acr_build_args[@]}"
+  success "Remote build completed."
 fi
 
-echo
-echo -e "${GREEN}🔄 Updating container app…${NC}"
-az containerapp update \
-  --name "${dataIngestApp}" \
-  --resource-group "${resourceGroupName}" \
-  --image "$imageRef"
-echo -e "${GREEN}✅ Container app updated.${NC}"
+info "Updating container app registry..."
+set_containerapp_registry "$appName"
+success "Container app registry updated."
 
-echo
-echo -e "${GREEN}🌐 Updating container app ingress target port…${NC}"
+info "Updating container app image..."
+latestRevision="$(az containerapp update \
+  --name "$appName" \
+  --resource-group "$resourceGroupName" \
+  --image "$imageRef" \
+  --only-show-errors \
+  --query properties.latestRevisionName -o tsv 2>&1 | select_cli_value)"
+success "Container app updated."
+if [[ -n "${latestRevision//[[:space:]]/}" && "$latestRevision" != "null" ]]; then
+  success "Latest revision: ${latestRevision}"
+fi
+
+info "Ensuring container app ingress target port is 8080..."
 az containerapp ingress update \
-  --name "${dataIngestApp}" \
-  --resource-group "${resourceGroupName}" \
-  --target-port 8080
-echo -e "${GREEN}✅ Ingress target port updated.${NC}"
+  --name "$appName" \
+  --resource-group "$resourceGroupName" \
+  --target-port 8080 \
+  --only-show-errors
+success "Ingress target port updated."
+
+info "Verifying container app image..."
+verify_containerapp_image "$appName" "$imageRef"
+success "Container app image verified."

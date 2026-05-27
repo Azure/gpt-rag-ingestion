@@ -3,6 +3,26 @@
 All notable changes to this project will be documented in this file.  
 This format follows [Keep a Changelog](https://keepachangelog.com/) and adheres to [Semantic Versioning](https://semver.org/).
 
+## [v2.3.8] - 2026-05-27
+
+### Changed
+- **Dependency refresh:** Updated `requests` to 2.33.0, `aiohttp` to 3.13.4, and `Pillow` to 12.1.1 for ingestion runtime dependencies.
+
+## [v2.3.7] - 2026-05-26
+
+### Fixed
+- **Azure CLI warning-safe deploy verification:** Filter Azure CLI warning and progress lines from App Configuration, Container Apps update, and image verification output before consuming TSV values, so Windows deploys do not fail when the Azure CLI or Container Apps extension emits non-data output. Fixes [Azure/GPT-RAG#449](https://github.com/Azure/GPT-RAG/issues/449).
+
+## [v2.3.6] - 2026-05-26
+
+### Fixed
+- **Container Apps image update verification:** Replaced the mandatory latest-revision restart with explicit image verification after `az containerapp update --image`, avoiding transient `Not Found` failures immediately after revision creation while still confirming the new image is configured. Fixes [Azure/GPT-RAG#449](https://github.com/Azure/GPT-RAG/issues/449).
+
+## [v2.3.5] - 2026-05-25
+
+### Fixed
+- **Docker-free component deployment:** Updated Bash and PowerShell deploy scripts to choose the build mode before touching Docker, use `az acr build` when Docker is unavailable or remote build is requested, configure Container App registry identity, and restart the latest revision after image updates. Fixes [Azure/GPT-RAG#449](https://github.com/Azure/GPT-RAG/issues/449).
+
 ## [v2.3.4] – 2026-05-19
 
 ### Added
