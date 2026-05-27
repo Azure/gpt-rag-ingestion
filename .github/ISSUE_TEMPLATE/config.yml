@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a GPT-RAG issue
+    url: https://github.com/Azure/GPT-RAG/issues/new/choose
+    about: Please create all bug reports, feature requests, and support questions in the main Azure/GPT-RAG repository.
