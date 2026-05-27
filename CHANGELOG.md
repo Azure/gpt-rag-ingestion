@@ -5,6 +5,9 @@ This format follows [Keep a Changelog](https://keepachangelog.com/) and adheres 
 
 ## [Unreleased]
 
+### Changed
+- **Dependency refresh:** Updated `requests` to 2.33.0, `aiohttp` to 3.13.4, and `Pillow` to 12.1.1 for ingestion runtime dependencies.
+
 ## [v2.3.7] - 2026-05-26
 
 ### Fixed
