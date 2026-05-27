@@ -1,356 +1,367 @@
 <#
 .SYNOPSIS
-    deploy.ps1 — validate Docker and APP_CONFIG_ENDPOINT, load App Config (label=gpt-rag), then build & push
-
-.DESCRIPTION
-    - Validates Docker Desktop availability immediately when the script starts.
-    - Checks for APP_CONFIG_ENDPOINT in environment; if missing, tries to fetch from `azd env get-values`.
-    - Parses App Configuration name from endpoint.
-    - Checks Azure CLI login.
-    - Fetches required keys (CONTAINER_REGISTRY_NAME, CONTAINER_REGISTRY_LOGIN_SERVER, AZURE_RESOURCE_GROUP, DATA_INGEST_APP_NAME) from Azure App Configuration with label "gpt-rag".
-      If a key is not found with original casing, tries uppercase.
-    - Logs into ACR, builds Docker image (tag from git short HEAD unless $env:tag is set). If local Docker is unavailable, uses `az acr build`.
-    - Pushes image and updates the Container App.
-.NOTES
-    - Requires Azure CLI installed and logged in.
-    - Running in PowerShell 5.1+ or PowerShell Core.
+    Deploys the GPT-RAG ingestion Container App image.
 #>
 
-#region Helper: color output functions
-function Write-Green($msg) {
-    Write-Host $msg -ForegroundColor Green
-}
-function Write-Blue($msg) {
-    Write-Host $msg -ForegroundColor Cyan
-}
-function Write-Yellow($msg) {
-    Write-Host $msg -ForegroundColor Yellow
-}
-function Write-ErrorColored($msg) {
-    Write-Host $msg -ForegroundColor Red
-}
-#endregion
+$utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+[Console]::OutputEncoding = $utf8NoBom
+[Console]::InputEncoding = $utf8NoBom
+$env:PYTHONIOENCODING = 'utf-8'
+$env:PYTHONUTF8 = '1'
+$ProgressPreference = 'SilentlyContinue'
 
-Write-Host ""  # blank line
+$label = 'gpt-rag'
+$imageRepository = 'data-ingestion'
+$appConfigKey = 'DATA_INGEST_APP_NAME'
+$identitySuffix = 'dataingest'
 
-#region Early Docker validation
-$pausedPattern   = 'Docker Desktop is manually paused'
-$daemonDownRegex = '((?i)error during connect|Cannot connect to the Docker daemon|Is the docker daemon running|The Docker daemon is not running|dockerDesktopLinuxEngine|dockerDesktopWindowsEngine|The system cannot find the file specified|open \\./pipe/|context deadline exceeded)'
+function Write-Green($msg) { Write-Host $msg -ForegroundColor Green }
+function Write-Blue($msg) { Write-Host $msg -ForegroundColor Cyan }
+function Write-Yellow($msg) { Write-Host $msg -ForegroundColor Yellow }
+function Write-ErrorColored($msg) { Write-Host $msg -ForegroundColor Red }
 
-# Optional: try service check, but do NOT fail based on it
-try {
-    $dockerSvc = Get-Service -Name 'com.docker.service' -ErrorAction SilentlyContinue
-    if ($dockerSvc) {
-        Write-Blue "🔍 Docker Desktop service status: $($dockerSvc.Status)"
-    }
-} catch { }
+function Invoke-ExternalCommand {
+    param(
+        [Parameter(Mandatory=$true)][string]$FilePath,
+        [Parameter()][string[]]$Arguments = @(),
+        [Parameter(Mandatory=$true)][string]$What
+    )
 
-if (Get-Command docker -ErrorAction SilentlyContinue) {
-    Write-Blue "🔍 Checking Docker availability…"
-    $probeOutput = & docker info 2>&1
-    $probeExit   = $LASTEXITCODE
-    $probeText   = ($probeOutput | Out-String)
-
-    if ($probeText -match $pausedPattern -or $probeText -match $daemonDownRegex -or $probeExit -ne 0) {
-        if ($probeText -match $pausedPattern) {
-            Write-ErrorColored '❌ Docker Desktop is manually paused. Unpause it via the Whale menu or Dashboard.'
-        } else {
-            Write-ErrorColored '❌ Docker Desktop is not running.'
-        }
-        Write-Yellow '⚠️  Please start/unpause Docker Desktop and re-run this script.'
+    $output = & $FilePath @Arguments 2>&1
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0) {
+        Write-ErrorColored ("Failed: {0} (exit {1})" -f $What, $exitCode)
+        if ($output) { Write-Host ($output | Out-String) }
         exit 1
     }
-} else {
-    Write-ErrorColored '❌ Docker CLI not found on this system.'
-    Write-Yellow '⚠️  Please install Docker Desktop and re-run this script.'
-    exit 1
+    return $output
 }
-Write-Green "✅ Docker is available."
-Write-Host ""
-#endregion
 
-#region Debug toggle
-if ($env:DEBUG -eq 'true') {
-    $VerbosePreference = 'Continue'
-    Write-Verbose "DEBUG mode is ON"
-} else {
-    $VerbosePreference = 'SilentlyContinue'
-}
-#endregion
+function Get-CliOutputValue {
+    param(
+        [Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$Output,
+        [Parameter()][string]$ExpectedValue,
+        [Parameter()][string]$Pattern
+    )
 
-
-#region APP_CONFIG_ENDPOINT check
-if ($null -ne $env:APP_CONFIG_ENDPOINT -and $env:APP_CONFIG_ENDPOINT.Trim() -ne '') {
-    Write-Green "✅ Using APP_CONFIG_ENDPOINT from environment: $($env:APP_CONFIG_ENDPOINT)"
-    $APP_CONFIG_ENDPOINT = $env:APP_CONFIG_ENDPOINT.Trim()
-} else {
-    Write-Blue "🔍 Fetching APP_CONFIG_ENDPOINT from azd env…"
-    try {
-        $envValues = azd env get-values 2>$null
-    } catch {
-        $envValues = $null
-    }
-    if ($envValues) {
-        foreach ($line in $envValues -split "`n") {
-            if ($line -match '^\s*APP_CONFIG_ENDPOINT\s*=\s*"?([^"]+)"?\s*$') {
-                $APP_CONFIG_ENDPOINT = $Matches[1].Trim()
-                break
+    $lines = New-Object System.Collections.Generic.List[string]
+    foreach ($item in @($Output)) {
+        if ($null -eq $item) { continue }
+        foreach ($line in ($item.ToString() -split "`r?`n")) {
+            $trimmed = $line.Trim()
+            if (-not [string]::IsNullOrWhiteSpace($trimmed)) {
+                $lines.Add($trimmed)
             }
         }
     }
-}
-if (-not $APP_CONFIG_ENDPOINT) {
-    Write-Yellow "⚠️  Missing APP_CONFIG_ENDPOINT."
-    Write-Host "  • Set it with: azd env set APP_CONFIG_ENDPOINT <your-endpoint>"
-    Write-Host "  • Or in PowerShell: `$env:APP_CONFIG_ENDPOINT = '<your-endpoint>'` before running."
-    exit 1
-}
-Write-Green "✅ APP_CONFIG_ENDPOINT: $APP_CONFIG_ENDPOINT"
-Write-Host ""
-#endregion
 
-#region Parse configName from endpoint
-$configName = $APP_CONFIG_ENDPOINT -replace '^https?://', ''
-$configName = $configName -replace '\.azconfig\.io/?$', ''
-if (-not $configName) {
-    Write-Yellow ("⚠️ Could not parse config name from endpoint '{0}'." -f $APP_CONFIG_ENDPOINT)
-    exit 1
-}
-Write-Green "✅ App Configuration name: $configName"
-Write-Host ""
-#endregion
-
-#region Azure CLI login check
-Write-Blue "🔐 Checking Azure CLI login and subscription…"
-try {
-    az account show > $null 2>&1
-    az account set -s $env:AZURE_SUBSCRIPTION_ID 2>$null
-} catch {
-    Write-Yellow "⚠️  Not logged in. Please run 'az login'."
-    exit 1
-}
-Write-Green "✅ Azure CLI is logged in."
-Write-Host ""
-#endregion
-
-#region Fetch App Configuration values
-$label = "gpt-rag"
-Write-Green "⚙️ Loading App Configuration settings (label=$label)…"
-Write-Host ""
-
-function Get-ConfigValue {
-    param(
-        [Parameter(Mandatory=$true)][string]$Key
-    )
-    Write-Blue ("🛠️  Retrieving '{0}' (label={1}) from App Configuration…" -f $Key, $label)
-    try {
-        $val = az appconfig kv show `
-            --name $configName `
-            --key $Key `
-            --label $label `
-            --auth-mode login `
-            --endpoint "https://appcs-$($env:RESOURCE_TOKEN).azconfig.io" `
-            --query value -o tsv 2>&1
-        $exitCode = $LASTEXITCODE
-    } catch {
-        $val = $_.Exception.Message
-        $exitCode = 1
-    }
-    if ($exitCode -ne 0 -or [string]::IsNullOrWhiteSpace($val)) {
-        Write-Yellow ("⚠️  Key '{0}' not found or empty. CLI output: {1}" -f $Key, $val)
-        return $null
-    }
-    return $val.Trim()
-}
-
-# Define required keys
-$keyNames = @('CONTAINER_REGISTRY_NAME', 'CONTAINER_REGISTRY_LOGIN_SERVER', 'SUBSCRIPTION_ID', 'AZURE_RESOURCE_GROUP', 'RESOURCE_TOKEN', 'DATA_INGEST_APP_NAME')
-$values = @{}
-$missing = @()
-
-foreach ($k in $keyNames) {
-    $v = Get-ConfigValue -Key $k
-    if ($null -eq $v) {
-        # try uppercase fallback
-        $upperKey = $k.ToUpper()
-        if ($upperKey -ne $k) {
-            Write-Blue ("🔍 Trying uppercase key '{0}'…" -f $upperKey)
-            $v = Get-ConfigValue -Key $upperKey
+    if (-not [string]::IsNullOrWhiteSpace($ExpectedValue)) {
+        for ($i = $lines.Count - 1; $i -ge 0; $i--) {
+            if ($lines[$i] -eq $ExpectedValue) { return $lines[$i] }
         }
     }
-    if ($null -eq $v) {
-        $missing += $k
-    } else {
-        $values[$k] = $v
+
+    if (-not [string]::IsNullOrWhiteSpace($Pattern)) {
+        for ($i = $lines.Count - 1; $i -ge 0; $i--) {
+            if ($lines[$i] -match $Pattern) { return $lines[$i] }
+        }
     }
-}
-if ($missing.Count -gt 0) {
-    Write-Yellow ("⚠️  Missing or invalid App Config keys: {0}" -f ($missing -join ', '))
-    exit 1
+
+    for ($i = $lines.Count - 1; $i -ge 0; $i--) {
+        $line = $lines[$i]
+        if ($line -match '^WARNING:' -or
+            $line -match '^D:\\a\\_work\\' -or
+            $line -match 'site-packages.*UserWarning:' -or
+            $line -match '^from cryptography' -or
+            $line -match '^Running\.') {
+            continue
+        }
+        return $line
+    }
+
+    return ''
 }
 
-Write-Green "✅ All App Configuration values retrieved:"
+function Get-AzdEnvValue {
+    param([Parameter(Mandatory=$true)][string]$Key)
+
+    $envValues = & azd env get-values 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $envValues) { return $null }
+
+    foreach ($line in $envValues -split "`n") {
+        if ($line -match "^\s*$([regex]::Escape($Key))\s*=\s*`"?([^`"]+)`"?\s*$") {
+            return $Matches[1].Trim()
+        }
+    }
+    return $null
+}
+
+function Get-ConfigCandidates {
+    param([Parameter(Mandatory=$true)][string]$Key)
+
+    $candidates = New-Object System.Collections.Generic.List[string]
+    foreach ($candidate in @($Key, $Key.ToUpperInvariant(), $Key.ToLowerInvariant())) {
+        if (-not [string]::IsNullOrWhiteSpace($candidate) -and -not $candidates.Contains($candidate)) {
+            $candidates.Add($candidate)
+        }
+    }
+    return $candidates
+}
+
+function Get-ConfigValue {
+    param([Parameter(Mandatory=$true)][string]$Key)
+
+    $lastOutput = $null
+    foreach ($candidate in (Get-ConfigCandidates -Key $Key)) {
+        Write-Blue ("Retrieving '{0}' from App Configuration..." -f $candidate)
+        $output = & az appconfig kv show `
+            --endpoint $APP_CONFIG_ENDPOINT `
+            --key $candidate `
+            --label $label `
+            --auth-mode login `
+            --only-show-errors `
+            --query value -o tsv 2>&1
+        $exitCode = $LASTEXITCODE
+        $value = Get-CliOutputValue -Output $output
+        if ($exitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($value)) {
+            return $value
+        }
+        $lastOutput = $value
+    }
+
+    Write-Yellow ("Failed to retrieve key '{0}'. Last CLI output: {1}" -f $Key, $lastOutput)
+    return $null
+}
+
+function Get-RequiredConfigValue {
+    param([Parameter(Mandatory=$true)][string]$Key)
+
+    $value = Get-ConfigValue -Key $Key
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        Write-ErrorColored ("Missing required App Configuration key: {0}" -f $Key)
+        exit 1
+    }
+    return $value
+}
+
+function Test-DockerReady {
+    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { return $false }
+    $output = & docker info 2>&1
+    return ($LASTEXITCODE -eq 0 -and ($output | Out-String) -notmatch 'Docker Desktop is manually paused')
+}
+
+function Get-BuildMode {
+    $mode = if ($env:BUILD_MODE) { $env:BUILD_MODE.Trim().ToLowerInvariant() } else { '' }
+
+    if (-not $mode -and $env:USE_DOCKER) {
+        switch ($env:USE_DOCKER.Trim().ToLowerInvariant()) {
+            { $_ -in @('true','1','yes') } { $mode = 'local'; break }
+            { $_ -in @('false','0','no') } { $mode = 'acr-task'; break }
+        }
+    }
+
+    if (-not $mode) {
+        $networkIsolation = ($env:NETWORK_ISOLATION -and $env:NETWORK_ISOLATION.Trim().ToLowerInvariant() -eq 'true')
+        if ($networkIsolation -or $env:ACR_TASK_AGENT_POOL) {
+            $mode = 'acr-task'
+        } elseif (Test-DockerReady) {
+            $mode = 'local'
+        } else {
+            $mode = 'acr-task'
+        }
+    }
+
+    if ($mode -notin @('local','acr-task')) {
+        Write-ErrorColored "Unsupported BUILD_MODE '$mode'. Use 'local' or 'acr-task'."
+        exit 1
+    }
+    if ($mode -eq 'local' -and -not (Test-DockerReady)) {
+        Write-ErrorColored 'BUILD_MODE=local requested, but Docker is not available.'
+        exit 1
+    }
+    return $mode
+}
+
+function Get-ImageTag {
+    if ($env:tag) { return $env:tag.Trim() }
+
+    $gitTag = & git rev-parse --short HEAD 2>$null
+    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($gitTag)) {
+        return $gitTag.Trim()
+    }
+
+    return "GPT$(Get-Random -Minimum 100000 -Maximum 999999)"
+}
+
+function Set-ContainerAppRegistry {
+    param(
+        [Parameter(Mandatory=$true)][string]$AppName,
+        [Parameter(Mandatory=$true)][hashtable]$Values
+    )
+
+    $identityOutput = Invoke-ExternalCommand -FilePath 'az' -Arguments @(
+        'containerapp','identity','show',
+        '--name',$AppName,
+        '--resource-group',$Values.AZURE_RESOURCE_GROUP,
+        '--only-show-errors',
+        '--query','type','-o','tsv'
+    ) -What 'fetch container app identity'
+    $identityType = Get-CliOutputValue -Output $identityOutput -Pattern 'UserAssigned|SystemAssigned|None'
+
+    if ($identityType -like '*UserAssigned*') {
+        if ([string]::IsNullOrWhiteSpace($Values.SUBSCRIPTION_ID) -or [string]::IsNullOrWhiteSpace($Values.RESOURCE_TOKEN)) {
+            Write-ErrorColored 'SUBSCRIPTION_ID and RESOURCE_TOKEN are required for user-assigned registry identity.'
+            exit 1
+        }
+        $registryIdentity = "/subscriptions/$($Values.SUBSCRIPTION_ID)/resourceGroups/$($Values.AZURE_RESOURCE_GROUP)/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uai-ca-$($Values.RESOURCE_TOKEN)-$identitySuffix"
+    } else {
+        $registryIdentity = 'system'
+    }
+
+    Invoke-ExternalCommand -FilePath 'az' -Arguments @(
+        'containerapp','registry','set',
+        '--name',$AppName,
+        '--resource-group',$Values.AZURE_RESOURCE_GROUP,
+        '--server',$Values.CONTAINER_REGISTRY_LOGIN_SERVER,
+        '--identity',$registryIdentity,
+        '--only-show-errors'
+    ) -What 'set container app registry' | Out-Null
+}
+
+function Confirm-ContainerAppImage {
+    param(
+        [Parameter(Mandatory=$true)][string]$AppName,
+        [Parameter(Mandatory=$true)][string]$ResourceGroupName,
+        [Parameter(Mandatory=$true)][string]$ExpectedImage
+    )
+
+    $imageOutput = Invoke-ExternalCommand -FilePath 'az' -Arguments @(
+        'containerapp','show',
+        '--name',$AppName,
+        '--resource-group',$ResourceGroupName,
+        '--only-show-errors',
+        '--query','properties.template.containers[0].image','-o','tsv'
+    ) -What 'fetch container app image'
+    $actualImage = Get-CliOutputValue -Output $imageOutput -ExpectedValue $ExpectedImage
+
+    if ([string]::IsNullOrWhiteSpace($actualImage) -or $actualImage -eq 'null') {
+        Write-ErrorColored "Could not determine configured image for '$AppName'."
+        exit 1
+    }
+
+    if ($actualImage -ne $ExpectedImage) {
+        Write-ErrorColored "Container app '$AppName' is configured with '$actualImage' instead of '$ExpectedImage'."
+        exit 1
+    }
+}
+
+Write-Host ''
+if ($env:APP_CONFIG_ENDPOINT -and $env:APP_CONFIG_ENDPOINT.Trim() -ne '') {
+    $APP_CONFIG_ENDPOINT = $env:APP_CONFIG_ENDPOINT.Trim()
+    Write-Green "Using APP_CONFIG_ENDPOINT from environment: $APP_CONFIG_ENDPOINT"
+} else {
+    Write-Blue 'Fetching APP_CONFIG_ENDPOINT from azd env...'
+    $APP_CONFIG_ENDPOINT = Get-AzdEnvValue -Key 'APP_CONFIG_ENDPOINT'
+}
+
+if ([string]::IsNullOrWhiteSpace($APP_CONFIG_ENDPOINT)) {
+    Write-ErrorColored 'Missing APP_CONFIG_ENDPOINT.'
+    Write-Host 'Set it with: azd env set APP_CONFIG_ENDPOINT <your-endpoint>'
+    Write-Host "Or set `$env:APP_CONFIG_ENDPOINT before running this script."
+    exit 1
+}
+Write-Green "APP_CONFIG_ENDPOINT: $APP_CONFIG_ENDPOINT"
+
+Write-Blue 'Checking Azure CLI login and subscription...'
+$null = & az account show 2>$null
+if ($LASTEXITCODE -ne 0) {
+    Write-ErrorColored "Not logged in. Please run 'az login'."
+    exit 1
+}
+Write-Green 'Azure CLI is logged in.'
+
+$buildMode = Get-BuildMode
+Write-Green "Build mode: $buildMode"
+
+Write-Blue "Loading App Configuration settings (label=$label)..."
+$values = @{
+    CONTAINER_REGISTRY_NAME = (Get-RequiredConfigValue -Key 'CONTAINER_REGISTRY_NAME')
+    CONTAINER_REGISTRY_LOGIN_SERVER = (Get-RequiredConfigValue -Key 'CONTAINER_REGISTRY_LOGIN_SERVER')
+    AZURE_RESOURCE_GROUP = (Get-RequiredConfigValue -Key 'AZURE_RESOURCE_GROUP')
+    APP_NAME = (Get-RequiredConfigValue -Key $appConfigKey)
+    SUBSCRIPTION_ID = (Get-ConfigValue -Key 'SUBSCRIPTION_ID')
+    RESOURCE_TOKEN = (Get-ConfigValue -Key 'RESOURCE_TOKEN')
+}
+if ([string]::IsNullOrWhiteSpace($values.SUBSCRIPTION_ID)) {
+    $subscriptionOutput = Invoke-ExternalCommand -FilePath 'az' -Arguments @('account','show','--only-show-errors','--query','id','-o','tsv') -What 'fetch subscription id'
+    $values.SUBSCRIPTION_ID = Get-CliOutputValue -Output $subscriptionOutput -Pattern '^[0-9a-fA-F-]{36}$'
+}
+
+Write-Green 'All App Configuration values retrieved:'
 Write-Host ("   CONTAINER_REGISTRY_NAME = {0}" -f $values.CONTAINER_REGISTRY_NAME)
 Write-Host ("   CONTAINER_REGISTRY_LOGIN_SERVER = {0}" -f $values.CONTAINER_REGISTRY_LOGIN_SERVER)
 Write-Host ("   AZURE_RESOURCE_GROUP = {0}" -f $values.AZURE_RESOURCE_GROUP)
-Write-Host ("   DATA_INGEST_APP_NAME = {0}" -f $values.DATA_INGEST_APP_NAME)
-Write-Host ""
-#endregion
+Write-Host ("   APP_NAME = {0}" -f $values.APP_NAME)
 
-#region Login to ACR
-
-Write-Green ("🔐 Logging into ACR ({0} in {1})…" -f $values.CONTAINER_REGISTRY_NAME, $values.AZURE_RESOURCE_GROUP)
-az acr login --name $values.CONTAINER_REGISTRY_NAME --resource-group $values.AZURE_RESOURCE_GROUP
-if ($LASTEXITCODE -ne 0) {
-    Write-ErrorColored "❌ ACR login failed (exit $LASTEXITCODE)."
-    exit 1
-}
-Write-Green "✅ Logged into ACR."
-Write-Host ""
-#endregion
-
-#region Determine tag
-Write-Blue "Defining tag..."
-if ($env:tag) {
-    $tag = $env:tag.Trim()
-    Write-Verbose ("Using tag from environment: {0}" -f $tag)
+if ($buildMode -eq 'local') {
+    Write-Blue ("Logging into ACR ({0} in {1})..." -f $values.CONTAINER_REGISTRY_NAME, $values.AZURE_RESOURCE_GROUP)
+    Invoke-ExternalCommand -FilePath 'az' -Arguments @('acr','login','--name',$values.CONTAINER_REGISTRY_NAME,'--resource-group',$values.AZURE_RESOURCE_GROUP) -What 'ACR login' | Out-Null
+    Write-Green 'Logged into ACR.'
 } else {
-    try {
-        $gitTag = & git rev-parse --short HEAD 2>$null
-        if ($LASTEXITCODE -eq 0 -and $gitTag) {
-            $tag = $gitTag.Trim()
-            Write-Verbose ("Using Git short HEAD as tag: {0}" -f $tag)
-        } else {
-            Write-Yellow "Could not get Git short HEAD. Generating random tag."
-            $randomNumber = Get-Random -Minimum 100000 -Maximum 999999
-            $tag = "GPT$randomNumber"
-            Write-Verbose ("Generated random tag: {0}" -f $tag)
-        }
-    } catch {
-        $errMsg = $_.Exception.Message
-        Write-Yellow ("Error running Git: {0}. Generating random tag." -f $errMsg)
-        $randomNumber = Get-Random -Minimum 100000 -Maximum 999999
-        $tag = "GPT$randomNumber"
-        Write-Verbose ("Generated random tag: {0}" -f $tag)
-    }
+    Write-Green 'Using remote ACR build; local Docker login is not required.'
 }
-#endregion
 
-#region Build or ACR build image
-$fullImageName = "$($values.CONTAINER_REGISTRY_LOGIN_SERVER)/azure-gpt-rag/data-ingestion:$tag"
-Write-Green "🛠️  Building Docker image…"
-if (Get-Command docker -ErrorAction SilentlyContinue) {
-    docker build --platform linux/amd64 -t $fullImageName .
-    if ($LASTEXITCODE -ne 0) {
-        Write-ErrorColored "❌ Docker build failed (exit $LASTEXITCODE)."
-        exit 1
-    }
-    Write-Green "✅ Docker build succeeded."
+$tag = Get-ImageTag
+Write-Green "Using image tag: $tag"
+$fullImageName = "$($values.CONTAINER_REGISTRY_LOGIN_SERVER)/azure-gpt-rag/${imageRepository}:$tag"
+
+if ($buildMode -eq 'local') {
+    Write-Blue 'Building Docker image...'
+    Invoke-ExternalCommand -FilePath 'docker' -Arguments @('build','--platform','linux/amd64','-t',$fullImageName,'.') -What 'Docker build' | Out-Null
+    Write-Blue 'Pushing image...'
+    Invoke-ExternalCommand -FilePath 'docker' -Arguments @('push',$fullImageName) -What 'Docker push' | Out-Null
+    Write-Green 'Image pushed.'
 } else {
-    Write-Blue "⚠️  Docker CLI not found locally. Falling back to 'az acr build'."
-    az acr build `
-        --registry $values.CONTAINER_REGISTRY_NAME `
-        --image "azure-gpt-rag/data-ingestion:$tag" `
-        --file Dockerfile `
-        .
-    if ($LASTEXITCODE -ne 0) {
-        Write-ErrorColored "❌ ACR cloud build failed (exit $LASTEXITCODE)."
-        exit 1
+    Write-Blue 'Building image remotely via az acr build...'
+    $acrBuildArgs = @('acr','build','--registry',$values.CONTAINER_REGISTRY_NAME,'--image',"azure-gpt-rag/${imageRepository}:$tag",'--file','Dockerfile','--no-logs')
+    if ($env:ACR_TASK_AGENT_POOL) {
+        Invoke-ExternalCommand -FilePath 'az' -Arguments @('acr','agentpool','show','--registry',$values.CONTAINER_REGISTRY_NAME,'--name',$env:ACR_TASK_AGENT_POOL,'--resource-group',$values.AZURE_RESOURCE_GROUP,'--only-show-errors') -What 'validate ACR task agent pool' | Out-Null
+        $acrBuildArgs += @('--agent-pool',$env:ACR_TASK_AGENT_POOL)
     }
-    Write-Green "✅ ACR cloud build succeeded."
-}
-Write-Host ""
-#endregion
-
-#region Push Docker image (if local build used)
-if (Get-Command docker -ErrorAction SilentlyContinue) {
-    Write-Green "📤 Pushing image…"
-    docker push $fullImageName
-    if ($LASTEXITCODE -ne 0) {
-        Write-ErrorColored "❌ Docker push failed (exit $LASTEXITCODE)."
-        exit 1
-    }
-    Write-Green "✅ Image pushed."
-    Write-Host ""
-} else {
-    # If using az acr build, image is already in ACR
-    Write-Green "ℹ️  Image built in ACR; no local push needed."
-    Write-Host ""
-}
-#endregion
-
-
-#Make sure container registry is registered
-Write-Green "🔄 Updating container app registry…"
-$ids = $(az containerapp identity show `
-    --name $values.DATA_INGEST_APP_NAME `
-    --resource-group $values.AZURE_RESOURCE_GROUP `
-    --output json) | ConvertFrom-Json
-if ($LASTEXITCODE -ne 0) {
-    Write-ErrorColored "❌ Failed to retrieve container app identity (exit $LASTEXITCODE)."
-    exit 1
+    $acrBuildArgs += '.'
+    Invoke-ExternalCommand -FilePath 'az' -Arguments $acrBuildArgs -What 'ACR remote build' | Out-Null
+    Write-Green 'Remote build completed.'
 }
 
-if ($ids.type.tostring().contains("UserAssigned"))
-{
-    az containerapp registry set `
-        --name $values.DATA_INGEST_APP_NAME `
-        --resource-group $values.AZURE_RESOURCE_GROUP `
-        --server "$($values.CONTAINER_REGISTRY_NAME).azurecr.io" `
-        --identity "/subscriptions/$($values.SUBSCRIPTION_ID)/resourceGroups/$($values.AZURE_RESOURCE_GROUP)/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uai-ca-$($values.RESOURCE_TOKEN)-dataingest"
-}
-else {
-    az containerapp registry set `
-        --name $values.DATA_INGEST_APP_NAME `
-        --resource-group $values.AZURE_RESOURCE_GROUP `
-        --server "$($values.CONTAINER_REGISTRY_NAME).azurecr.io" `
-        --identity "system"
-}
-if ($LASTEXITCODE -ne 0) {
-    Write-ErrorColored "❌ Failed to update container app registry (exit $LASTEXITCODE)."
-    exit 1
-}
-Write-Green "✅ Container app registry updated."
+Write-Blue 'Updating container app registry...'
+Set-ContainerAppRegistry -AppName $values.APP_NAME -Values $values
+Write-Green 'Container app registry updated.'
 
-#region Update Container App
-Write-Green "🔄 Updating container app…"
-az containerapp update `
-    --name $values.DATA_INGEST_APP_NAME `
-    --resource-group $values.AZURE_RESOURCE_GROUP `
-    --image $fullImageName
-if ($LASTEXITCODE -ne 0) {
-    Write-ErrorColored "❌ Failed to update container app (exit $LASTEXITCODE)."
-    exit 1
+Write-Blue 'Updating container app image...'
+$latestRevisionOutput = Invoke-ExternalCommand -FilePath 'az' -Arguments @(
+    'containerapp','update',
+    '--name',$values.APP_NAME,
+    '--resource-group',$values.AZURE_RESOURCE_GROUP,
+    '--image',$fullImageName,
+    '--only-show-errors',
+    '--query','properties.latestRevisionName','-o','tsv'
+) -What 'update container app image'
+$latestRevision = Get-CliOutputValue -Output $latestRevisionOutput -Pattern '^[A-Za-z0-9][A-Za-z0-9-]*--[A-Za-z0-9-]+$'
+Write-Green 'Container app updated.'
+if (-not [string]::IsNullOrWhiteSpace($latestRevision) -and $latestRevision -ne 'null') {
+    Write-Green "Latest revision: $latestRevision"
 }
-Write-Green "✅ Container app updated."
 
-Write-Green "🌐 Updating container app ingress target port…"
-az containerapp ingress update `
-    --name $values.DATA_INGEST_APP_NAME `
-    --resource-group $values.AZURE_RESOURCE_GROUP `
-    --target-port 8080
-if ($LASTEXITCODE -ne 0) {
-    Write-ErrorColored "❌ Failed to update ingress target port (exit $LASTEXITCODE)."
-    exit 1
-}
-Write-Green "✅ Ingress target port updated."
+Write-Blue 'Ensuring container app ingress target port is 8080...'
+Invoke-ExternalCommand -FilePath 'az' -Arguments @(
+    'containerapp','ingress','update',
+    '--name',$values.APP_NAME,
+    '--resource-group',$values.AZURE_RESOURCE_GROUP,
+    '--target-port','8080',
+    '--only-show-errors'
+) -What 'update container app ingress' | Out-Null
+Write-Green 'Ingress target port updated.'
 
-#get the current revision
-Write-Blue "🔍 Fetching current revision…"
-$currentRevision = az containerapp revision list `
-    --name $values.DATA_INGEST_APP_NAME `
-    --resource-group $values.AZURE_RESOURCE_GROUP `
-    --query "[0].name" -o tsv
-
-#region Restart Container App
-Write-Green "🔄 Restarting container app revision : $currentRevision…"
-az containerapp revision restart `
-    --name $values.DATA_INGEST_APP_NAME `
-    --resource-group $values.AZURE_RESOURCE_GROUP `
-    --revision $currentRevision
-if ($LASTEXITCODE -ne 0) {
-    Write-ErrorColored "❌ Failed to restart container app revision (exit $LASTEXITCODE)."
-    exit 1
-}
-Write-Green "✅ Container app revision restarted."
-#endregion
+Write-Blue 'Verifying container app image...'
+Confirm-ContainerAppImage -AppName $values.APP_NAME -ResourceGroupName $values.AZURE_RESOURCE_GROUP -ExpectedImage $fullImageName
+Write-Green 'Container app image verified.'
