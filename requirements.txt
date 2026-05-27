@@ -39,7 +39,7 @@ tiktoken==0.7.0
 tenacity==8.5.0
 
 # Image library
-Pillow==12.1.1
+Pillow==12.2.0
 
 # PDF manipulation (page counting and splitting)
 pypdf==5.4.0
