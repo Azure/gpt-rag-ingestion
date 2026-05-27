@@ -3,7 +3,7 @@
 All notable changes to this project will be documented in this file.  
 This format follows [Keep a Changelog](https://keepachangelog.com/) and adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [v2.3.8] - 2026-05-27
 
 ### Changed
 - **Dependency refresh:** Updated `requests` to 2.33.0, `aiohttp` to 3.13.4, and `Pillow` to 12.1.1 for ingestion runtime dependencies.
