@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.  
 This format follows [Keep a Changelog](https://keepachangelog.com/) and adheres to [Semantic Versioning](https://semver.org/).
 
+## [v2.4.0] - 2026-05-27
+
+### Changed
+- **Dependency refresh:** Updated ingestion runtime dependencies to `python-dotenv` 1.2.2, `PyJWT` 2.12.0, `Pillow` 12.2.0, `pypdf` 6.10.2, and `langchain-text-splitters` 1.1.2. The PDF and text chunking upgrades were validated against page counting, PDF splitting, LangChain text chunking, and document-analysis PDF auto-split smoke tests.
+- **Frontend dependency refresh:** Updated the ingestion frontend `postcss` dependency to 8.5.15 and refreshed the npm lockfile.
+
 ## [v2.3.8] - 2026-05-27
 
 ### Changed
