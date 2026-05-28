@@ -8,7 +8,7 @@ apscheduler==3.11.0
 # Azure SDK dependencies
 azure-appconfiguration==1.7.1
 azure-appconfiguration-provider==2.1.0
-azure-identity==1.19.0
+azure-identity==1.25.1
 azure-keyvault-secrets==4.9.0
 azure-mgmt-storage==22.1.1
 azure-mgmt-web==8.0.0
