@@ -10,6 +10,7 @@ from azure.storage.blob import BlobServiceClient
 from azure.core.exceptions import ClientAuthenticationError, ResourceNotFoundError
 
 from dependencies import get_config
+from tools.credentials import get_azure_client_id
 
 app_config_client = get_config()
 
@@ -54,7 +55,7 @@ class DocumentIntelligenceClient:
 
         # Credential
         try:
-            client_id = app_config_client.get('AZURE_CLIENT_ID', None, allow_none=True) or None
+            client_id = get_azure_client_id(app_config_client)
 
             # Prefer Azure CLI locally to avoid IMDS probes; fall back to MI when available
             self.credential = ChainedTokenCredential(
