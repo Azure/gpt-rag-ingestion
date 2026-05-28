@@ -6,6 +6,11 @@
 All notable changes to this project will be documented in this file.  
 This format follows [Keep a Changelog](https://keepachangelog.com/) and adheres to [Semantic Versioning](https://semver.org/).
 
+## [v2.4.1] - 2026-05-28
+
+### Fixed
+- **Managed Identity token acquisition in Container Apps:** Updated `azure-identity` to 1.25.1 so the ingestion service can authenticate sync runtime paths such as `/ingest-documents`, Content Understanding, Azure OpenAI embeddings, and Blob Storage from Azure Container Apps using user-assigned Managed Identity.
+
 ## [v2.4.0] - 2026-05-27
 
 ### Changed
