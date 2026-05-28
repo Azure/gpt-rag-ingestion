@@ -23,6 +23,7 @@ import psutil
 import tempfile
 
 from dependencies import get_config
+from tools.credentials import get_azure_client_id
 from chunking import DocumentChunker
 from chunking.chunker_factory import ChunkerFactory
 from utils.file_utils import _safe_delete
@@ -212,7 +213,7 @@ class BlobStorageDocumentIndexer:
     # ---------- Clients ----------
     async def _ensure_clients(self):
         if not self._credential:
-            client_id = os.environ.get("AZURE_CLIENT_ID", None)
+            client_id = get_azure_client_id(self._app)
             self._credential = ChainedTokenCredential(
                 AzureCliCredential(),
                 ManagedIdentityCredential(client_id=client_id)
@@ -1558,7 +1559,7 @@ class BlobStorageDeletedItemsCleaner:
 
     async def _ensure_clients(self):
         if not self._credential:
-            client_id = os.environ.get("AZURE_CLIENT_ID", None)
+            client_id = get_azure_client_id(self._app)
             self._credential = ChainedTokenCredential(
                 AzureCliCredential(),
                 ManagedIdentityCredential(client_id=client_id)

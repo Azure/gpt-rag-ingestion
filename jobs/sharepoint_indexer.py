@@ -37,6 +37,7 @@ from .sharepoint_ingestion_config import (
     _utc_now,
 )
 from tools import AzureOpenAIClient, KeyVaultClient, CosmosDBClient
+from tools.credentials import get_azure_client_id
 
 # Elevated-read header – bypasses permission filtering for service-side queries.
 _ELEVATED_HEADERS = {"x-ms-enable-elevated-read": "true"}
@@ -125,7 +126,7 @@ class SharePointIndexer:
     # ---------- lifecycle ----------
     async def _ensure_clients(self):
         if not self._credential:
-            client_id = self._app.get("AZURE_CLIENT_ID", None, allow_none=True)
+            client_id = get_azure_client_id(self._app)
             self._credential = ChainedTokenCredential(
                 AzureCliCredential(),
                 ManagedIdentityCredential(client_id=client_id)
@@ -1839,4 +1840,3 @@ class SharePointIndexer:
             logging.warning(
                 f"[{self.cfg.indexer_name}] run summary write skipped/timeout after {self._run_summary_total_timeout_s}s: {e}"
             )
-

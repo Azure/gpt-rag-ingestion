@@ -5,6 +5,7 @@ from azure.core.exceptions import AzureError
 from azure.identity.aio import ManagedIdentityCredential, AzureCliCredential, ChainedTokenCredential
 from typing import Any, Dict, List, Optional
 from dependencies import get_config
+from tools.credentials import get_azure_client_id
 
 # Elevated-read header – bypasses permission filtering for service-side queries.
 _ELEVATED_HEADERS = {"x-ms-enable-elevated-read": "true"}
@@ -28,7 +29,7 @@ class AISearchClient:
 
         # Initialize the ChainedTokenCredential
         try:
-            client_id = app_config_client.get('AZURE_CLIENT_ID', None, allow_none=True) or None
+            client_id = get_azure_client_id(app_config_client)
 
             self.credential = ChainedTokenCredential(
                 ManagedIdentityCredential(client_id=client_id),

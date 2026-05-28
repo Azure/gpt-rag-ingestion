@@ -1,10 +1,12 @@
 # Changelog
 
-## [Unreleased]
-
-
 All notable changes to this project will be documented in this file.  
 This format follows [Keep a Changelog](https://keepachangelog.com/) and adheres to [Semantic Versioning](https://semver.org/).
+
+## [v2.4.2] - 2026-05-28
+
+### Fixed
+- **Managed Identity client ID fallback:** Preserved App Configuration precedence for `AZURE_CLIENT_ID` while falling back to the Container Apps-injected environment variable when the key is not published, fixing `/ingest-documents` and background indexing paths that authenticate with the user-assigned Managed Identity.
 
 ## [v2.4.1] - 2026-05-28
 
