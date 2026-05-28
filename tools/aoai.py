@@ -9,6 +9,7 @@ import openai
 import tiktoken
 from azure.identity import AzureCliCredential, ManagedIdentityCredential, ChainedTokenCredential, get_bearer_token_provider
 from dependencies import get_config
+from tools.credentials import get_azure_client_id
 
 app_config_client = get_config()
 
@@ -61,7 +62,7 @@ class AzureOpenAIClient:
         self.sdk_max_retries      = int(app_config_client.get("OPENAI_SDK_MAX_RETRIES", "0"))
 
         # Build token provider with preferred order: Azure CLI first, then Managed Identity (optional client_id)
-        client_id = app_config_client.get("AZURE_CLIENT_ID", None, allow_none=True) or None
+        client_id = get_azure_client_id(app_config_client)
         token_provider = get_bearer_token_provider(
             ChainedTokenCredential(
                 AzureCliCredential(),

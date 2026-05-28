@@ -13,6 +13,7 @@ from azure.core.exceptions import ResourceNotFoundError
 
 from dependencies import get_config
 from tools import AISearchClient, AzureOpenAIClient
+from tools.credentials import get_azure_client_id
 
 
 @dataclass
@@ -90,7 +91,7 @@ class NL2SQLIndexer:
 
     async def _ensure_clients(self):
         if not self._credential:
-            client_id = self._app.get("AZURE_CLIENT_ID", None, allow_none=True)
+            client_id = get_azure_client_id(self._app)
             self._credential = ChainedTokenCredential(
                 AzureCliCredential(),
                 ManagedIdentityCredential(client_id=client_id),

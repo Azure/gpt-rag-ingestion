@@ -11,6 +11,7 @@ from azure.identity import (
 )
 
 from dependencies import get_config
+from tools.credentials import get_azure_client_id
 
 app_config_client = get_config()
 
@@ -52,9 +53,7 @@ class ContentUnderstandingClient:
         self.output_content_format = "markdown"
         self.file_extensions = list(self.SUPPORTED_EXTENSIONS)
 
-        client_id = (
-            app_config_client.get("AZURE_CLIENT_ID", None, allow_none=True) or None
-        )
+        client_id = get_azure_client_id(app_config_client)
         self.credential = ChainedTokenCredential(
             AzureCliCredential(),
             ManagedIdentityCredential(client_id=client_id),

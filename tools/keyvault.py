@@ -3,6 +3,7 @@ from azure.identity.aio import ManagedIdentityCredential, AzureCliCredential, Ch
 from azure.keyvault.secrets.aio import SecretClient as AsyncSecretClient
 from azure.core.exceptions import ResourceNotFoundError, ClientAuthenticationError
 from dependencies import get_config
+from tools.credentials import get_azure_client_id
 
 app_config_client = get_config()
 
@@ -19,7 +20,7 @@ class KeyVaultClient:
         
         # Initialize the ChainedTokenCredential with ManagedIdentityCredential and AzureCliCredential
         try:
-            client_id = app_config_client.get('AZURE_CLIENT_ID', None, allow_none=True) or None
+            client_id = get_azure_client_id(app_config_client)
 
             self.credential = ChainedTokenCredential(
                 ManagedIdentityCredential(client_id=client_id),

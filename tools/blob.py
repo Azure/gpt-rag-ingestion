@@ -7,6 +7,7 @@ import time
 import json
 
 from dependencies import get_config
+from tools.credentials import get_azure_client_id
 
 app_config_client = get_config()
 
@@ -53,7 +54,7 @@ class BlobClient:
         :param credential: Credential for authentication (optional)
         :return: Credential object
         """
-        client_id = app_config_client.get('AZURE_CLIENT_ID', None, allow_none=True) or None
+        client_id = get_azure_client_id(app_config_client)
         
         if credential is None:
             try:
@@ -245,7 +246,7 @@ def upload_bytes_to_container(
         raise EnvironmentError("STORAGE_ACCOUNT_NAME is not set.")
 
     # Reuse the same credential logic as other Blob helpers
-    client_id = app_config_client.get("AZURE_CLIENT_ID", None, allow_none=True) or None
+    client_id = get_azure_client_id(app_config_client)
     credential = ChainedTokenCredential(
         ManagedIdentityCredential(client_id=client_id),
         AzureCliCredential(),
@@ -275,4 +276,3 @@ def upload_bytes_to_container(
     )
 
     return f"{account_url}/{container_name}/{blob_name}"
-

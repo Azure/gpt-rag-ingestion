@@ -23,6 +23,7 @@ from .sharepoint_ingestion_config import (
 )
 from dependencies import get_config
 from tools import KeyVaultClient
+from tools.credentials import get_azure_client_id
 
 
 PURGE_SCOPE = "[sp-purge]"
@@ -86,7 +87,7 @@ class SharePointPurger:
 	# ---------- lifecycle ----------
 	async def _ensure_clients(self) -> None:
 		if not self._credential:
-			client_id = self._app.get("AZURE_CLIENT_ID", None, allow_none=True)
+			client_id = get_azure_client_id(self._app)
 			self._credential = ChainedTokenCredential(
 				AzureCliCredential(),
 				ManagedIdentityCredential(client_id=client_id),

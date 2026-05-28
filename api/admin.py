@@ -23,6 +23,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pathlib import Path
 
 from dependencies import get_config
+from tools.credentials import get_azure_client_id
 
 router = APIRouter(prefix="/api")
 
@@ -39,7 +40,7 @@ async def _get_blob_service() -> BlobServiceClient:
     if _blob_service is None:
         cfg = get_config()
         account = cfg.get("STORAGE_ACCOUNT_NAME")
-        client_id = cfg.get("AZURE_CLIENT_ID", None, allow_none=True) or None
+        client_id = get_azure_client_id(cfg)
         credential = ChainedTokenCredential(
             ManagedIdentityCredential(client_id=client_id),
             AzureCliCredential(),
