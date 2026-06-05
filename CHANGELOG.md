@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [v2.4.3] - 2026-06-04
 
 ### Fixed
 - **Uploaded document ACLs for permission-trimmed indexes (issue #478):** `/ingest-documents` now accepts an optional `securityUserIds` array and stamps it onto each chunk's `metadata_security_user_ids` instead of always writing an empty ACL. When the search index has `permissionFilterOption` enabled, this lets the uploader retrieve their own uploaded chunks (which AI Search would otherwise trim out). Anonymous/placeholder ids are ignored, and the default empty-ACL behavior is preserved when the field is absent.
