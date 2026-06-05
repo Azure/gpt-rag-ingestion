@@ -529,6 +529,19 @@ async def ingest_documents(request: Request):
     values_list = body.get("values")
     conversation_id = body.get("conversationId")
 
+    # Optional ACL: object ids of the user uploading the documents. When the
+    # search index has permissionFilterOption enabled, chunks with empty
+    # security ids are trimmed out by AI Search and the uploader can never
+    # retrieve them (issue #478). Sanitize out anonymous/placeholder values so
+    # we never stamp a meaningless acl.
+    _ACL_PLACEHOLDERS = {"", "no-auth", "anonymous", "00000000-0000-0000-0000-000000000000"}
+    raw_security_user_ids = body.get("securityUserIds") or []
+    security_user_ids = [
+        str(uid).strip()
+        for uid in raw_security_user_ids
+        if isinstance(uid, str) and str(uid).strip().lower() not in _ACL_PLACEHOLDERS
+    ]
+
     if not values_list or not isinstance(values_list, list):
         return Response("Invalid body: missing or invalid values array", status_code=400)
 
@@ -641,7 +654,7 @@ async def ingest_documents(request: Request):
                     "metadata_storage_path": parent_id,
                     "metadata_storage_name": norm_file_name,
                     "metadata_storage_last_modified": last_modified,
-                    "metadata_security_user_ids": [],
+                    "metadata_security_user_ids": list(security_user_ids),
                     "metadata_security_group_ids": [],
                     "metadata_security_rbac_scope": "",
                     "chunk_id": chunk_id,
@@ -711,6 +724,12 @@ def get_ingest_documents_request_schema():
             "conversationId": {
                 "type": "string",
                 "minLength": 1
+            },
+            "securityUserIds": {
+                "type": "array",
+                "items": {
+                    "type": "string"
+                }
             },
             "values": {
                 "type": "array",
