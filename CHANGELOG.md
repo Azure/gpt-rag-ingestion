@@ -1,13 +1,17 @@
 # Changelog
 
-## [Unreleased]
+## [v2.4.4] - 2026-06-09
 
 ### Fixed
-- **Uploaded document ACLs for permission-trimmed indexes (issue #478):** `/ingest-documents` now accepts an optional `securityUserIds` array and stamps it onto each chunk's `metadata_security_user_ids` instead of always writing an empty ACL. When the search index has `permissionFilterOption` enabled, this lets the uploader retrieve their own uploaded chunks (which AI Search would otherwise trim out). Anonymous/placeholder ids are ignored, and the default empty-ACL behavior is preserved when the field is absent.
 - **Content Understanding multimodal ingestion regression:** Restored the format-based figure extraction path for `MultimodalChunker` when Content Understanding is used, including PDF page/region rendering and Office embedded image extraction. This brings back the behavior released in v2.3.3 without changing the `/ingest-documents` upload ACL fix.
 
 All notable changes to this project will be documented in this file.
 This format follows [Keep a Changelog](https://keepachangelog.com/) and adheres to [Semantic Versioning](https://semver.org/).
+
+## [v2.4.3] - 2026-06-04
+
+### Fixed
+- **Uploaded document ACLs for permission-trimmed indexes (issue #478):** `/ingest-documents` now accepts an optional `securityUserIds` array and stamps it onto each chunk's `metadata_security_user_ids` instead of always writing an empty ACL. When the search index has `permissionFilterOption` enabled, this lets the uploader retrieve their own uploaded chunks (which AI Search would otherwise trim out). Anonymous/placeholder ids are ignored, and the default empty-ACL behavior is preserved when the field is absent.
 
 ## [v2.4.2] - 2026-05-28
 
