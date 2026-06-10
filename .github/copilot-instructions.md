@@ -114,6 +114,9 @@ In this repository:
 - release branch names do NOT use the `v` prefix
 - the root `VERSION` file does NOT use the `v` prefix
 - tags and changelog entries DO use the `v` prefix
+- GitHub Release titles MUST be exactly the tag name (for example, `v2.4.2`);
+  never prefix release titles with the product or service name (for example,
+  do not use `GPT-RAG Ingestion v2.4.2` or `gpt-rag-ingestion v2.4.2`).
 
 Examples:
 
@@ -404,6 +407,74 @@ Do NOT:
 * mix new feature work into release branches
 * assign release versions on `develop`
 * update `VERSION` for future release planning on `develop` unless explicitly instructed
+
+---
+
+## Code Organization
+
+Source files MUST stay focused and small. These limits apply to every source
+file in the repository (Python, PowerShell, shell, Bicep, YAML pipelines, etc.).
+
+### File size limits
+
+- **Soft limit: 300 lines.** Above 300 lines, plan to split before adding
+  more code.
+- **Hard limit: 500 lines.** A PR that leaves any source file above 500
+  lines MUST split it as part of the same PR.
+- These limits exclude blank lines, comments, license headers, and
+  auto-generated content (e.g. `*_pb2.py`, vendored SDKs, generated
+  Bicep ARM JSON).
+
+### Function / method / script-block size
+
+- **Functions and methods MUST stay under ~50 lines** of executable code.
+- Long functions are a smell — extract private helpers named after what
+  they do, not after where they sit in the file.
+- PowerShell scripts under `scripts/` (e.g. `preProvision.ps1`,
+  `deploy.ps1`) follow the same rule: extract advanced functions or
+  dot-source helper `.ps1` / `.psm1` files in the same `scripts/` folder
+  rather than letting one script grow past 500 lines.
+
+### One responsibility per file
+
+- One public class per Python module (e.g. one `Strategy`, one `Connector`,
+  one `Plugin`, one chunker per file).
+- **No generic `utils.py` / `helpers.py` / `common.py` dump files.** Helpers
+  live in a module named after the responsibility (for example
+  `search_context.py`, `agent_provider_v2.py`, `chunker_factory.py`).
+- PowerShell: one top-level concern per `.ps1`. Shared helpers go in a
+  `.psm1` module under `scripts/` and are imported with `Import-Module`.
+
+### When (and how) to split
+
+- Split by **axis of change**, not by line count alone. If two sections of
+  a file change for different reasons, they belong in different modules.
+- When splitting, **mirror the change in `tests/`** — move the corresponding
+  tests into a test file that matches the new module name.
+- Re-export public names from the original module (or via `__init__.py`)
+  so external callers and other repos in the workspace do not break.
+
+### Imports & dependencies
+
+- Avoid lateral imports between sibling modules in `strategies/`,
+  `plugins/`, `chunking/`, `connectors/`, etc. Pass collaborators through
+  the constructor (dependency injection) — this is already the pattern in
+  the codebase.
+- If two modules need each other, the shared piece belongs in a third
+  module. Do not work around circular imports with deferred imports.
+
+### Configuration & secrets
+
+- Do not hard-code endpoints, deployment names, model names, or feature
+  flags. Read them from Azure App Configuration (label `gpt-rag`) and
+  Key Vault, as the rest of the codebase does.
+
+### Definition of done
+
+- A PR that touches any file currently above the 500-line hard limit MUST
+  extract at least one cohesive responsibility into a new module as part
+  of that PR. Reviewers will block PRs that grow an oversized file without
+  splitting it.
 
 ---
 
