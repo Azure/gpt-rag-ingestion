@@ -35,6 +35,44 @@ _ELEVATED_API_VERSION = "2025-11-01-preview"
 # -----------------------------------------------------------------------------
 # Helpers
 # -----------------------------------------------------------------------------
+
+# Blob metadata keys reserved for ACL/security plumbing. These are stamped onto
+# dedicated typed index fields and must never leak into the generic
+# `custom_metadata` collection.
+_RESERVED_BLOB_METADATA_KEYS = frozenset({
+    "metadata_security_user_ids",
+    "metadata_security_group_ids",
+    "metadata_security_id",
+    "metadata_security_rbac_scope",
+})
+
+
+def _extract_custom_metadata(meta: Optional[Dict[str, Any]]) -> List[Dict[str, str]]:
+    """Convert a blob metadata mapping into AI Search `custom_metadata` entries.
+
+    Skips reserved security keys, normalizes keys to trimmed lowercase, and
+    drops entries with empty keys or empty/None values. Values are kept as
+    strings without further coercion so callers see exactly what was tagged.
+    """
+    if not meta:
+        return []
+
+    pairs: List[Dict[str, str]] = []
+    for raw_key, raw_value in meta.items():
+        if raw_key is None:
+            continue
+        key = str(raw_key).strip().lower()
+        if not key or key in _RESERVED_BLOB_METADATA_KEYS:
+            continue
+        if raw_value is None:
+            continue
+        value = str(raw_value).strip()
+        if not value:
+            continue
+        pairs.append({"key": key, "value": value})
+    return pairs
+
+
 def _as_datetime(value) -> Optional[datetime]:
     """Convert a value to a timezone-aware datetime, or return None."""
     if value is None:
@@ -510,6 +548,7 @@ class BlobStorageDocumentIndexer:
             # Fetch blob metadata to capture ACL info if provided
             security_user_ids: List[str] = []
             security_group_ids: List[str] = []
+            custom_metadata: List[Dict[str, str]] = []
             rbac_scope = self._get_container_rbac_scope()
             try:
                 props = await blob_client.get_blob_properties()
@@ -545,10 +584,13 @@ class BlobStorageDocumentIndexer:
                     security_group_ids,
                     field_name="metadata_security_group_ids",
                 )
+
+                custom_metadata = _extract_custom_metadata(meta)
             except Exception as _:
-                # Non-fatal: continue without security IDs
+                # Non-fatal: continue without security IDs or custom metadata
                 security_user_ids = []
                 security_group_ids = []
+                custom_metadata = []
 
             # --- Memory guard: check blob size before downloading ---
             blob_props = await blob_client.get_blob_properties()
@@ -609,6 +651,7 @@ class BlobStorageDocumentIndexer:
                     security_user_ids=security_user_ids,
                     security_group_ids=security_group_ids,
                     rbac_scope=rbac_scope,
+                    custom_metadata=custom_metadata,
                 )
                 _timings["processingSec"] = round(time.monotonic() - _t_stage, 2)
             else:
@@ -660,6 +703,7 @@ class BlobStorageDocumentIndexer:
                         security_user_ids=security_user_ids,
                         security_group_ids=security_group_ids,
                         rbac_scope=rbac_scope,
+                        custom_metadata=custom_metadata,
                     )
                     for chunk in all_chunks
                 ]
@@ -787,6 +831,7 @@ class BlobStorageDocumentIndexer:
         security_user_ids: Optional[List[str]] = None,
         security_group_ids: Optional[List[str]] = None,
         rbac_scope: str = "",
+        custom_metadata: Optional[List[Dict[str, str]]] = None,
     ) -> Dict[str, Any]:
         # Azure Search key must be unique & stable per chunk
         chunk_id = int(chunk.get("chunk_id", 0))
@@ -800,6 +845,7 @@ class BlobStorageDocumentIndexer:
             "metadata_security_user_ids": list(security_user_ids or []),
             "metadata_security_group_ids": list(security_group_ids or []),
             "metadata_security_rbac_scope": rbac_scope or "",
+            "custom_metadata": list(custom_metadata or []),
             "chunk_id": chunk_id,
             "content": chunk.get("content", ""),
             "imageCaptions": chunk.get("imageCaptions", ""),
@@ -930,6 +976,7 @@ class BlobStorageDocumentIndexer:
         security_user_ids: Optional[List[str]] = None,
         security_group_ids: Optional[List[str]] = None,
         rbac_scope: str = "",
+        custom_metadata: Optional[List[Dict[str, str]]] = None,
     ):
         """Yield AI Search docs one-by-one (chunk -> doc), avoiding large in-memory lists."""
         for chunk in self._iter_chunks_for_data(data):
@@ -942,6 +989,7 @@ class BlobStorageDocumentIndexer:
                 security_user_ids=security_user_ids,
                 security_group_ids=security_group_ids,
                 rbac_scope=rbac_scope,
+                custom_metadata=custom_metadata,
             )
 
     async def _replace_parent_docs_stream(self, parent_id: str, docs_iter):
@@ -976,6 +1024,7 @@ class BlobStorageDocumentIndexer:
         security_user_ids: Optional[List[str]] = None,
         security_group_ids: Optional[List[str]] = None,
         rbac_scope: str = "",
+        custom_metadata: Optional[List[Dict[str, str]]] = None,
     ) -> int:
         """Stage docs in Blob then upload in batches, cleaning staging prefix afterwards.
 
@@ -1033,6 +1082,7 @@ class BlobStorageDocumentIndexer:
                 security_user_ids=security_user_ids,
                 security_group_ids=security_group_ids,
                 rbac_scope=rbac_scope,
+                custom_metadata=custom_metadata,
             ),
         )
         staged_count = 0

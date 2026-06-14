@@ -33,16 +33,19 @@ class MultimodalChunker(DocAnalysisChunker):
         # _analysis_client, supported_formats, and output_content_format are
         # already set by DocAnalysisChunker based on USE_DOCUMENT_INTELLIGENCE.
 
-        # Figure extraction requires Document Intelligence (get_figure is DI-specific).
-        # When Content Understanding is used for analysis, figures won't be in the
-        # result, so figure attachment is skipped naturally.
+        # Figure extraction strategy:
+        # - DocumentIntelligenceClient: use its get_figure API.
+        # - ContentUnderstandingClient: extract figures from source document
+        #   using format-specific methods (PDF crop, DOCX/PPTX media extraction).
         if isinstance(self._analysis_client, DocumentIntelligenceClient):
             self._docint_client = self._analysis_client
+            self._use_format_extraction = False
         else:
             self._docint_client = None
+            self._use_format_extraction = True
             logging.info(
                 f"[multimodal_chunker][{self.filename}] Using ContentUnderstandingClient; "
-                f"figure extraction is not available."
+                f"figures will be extracted from source document."
             )
         self.image_container = app_config_client.get("DOCUMENTS_IMAGES_STORAGE_CONTAINER", "documents-images")
         self.storage_account_name = app_config_client.get("STORAGE_ACCOUNT_NAME", "set-storage-account-name-env-var")
@@ -93,6 +96,12 @@ class MultimodalChunker(DocAnalysisChunker):
         Returns:
             list: A list of processed document chunks.
         """
+        # 0) Normalize Content Understanding figure references.
+        #    CU returns ![caption](figures/X.Y) markdown syntax whereas the
+        #    rest of the pipeline expects <figureX.Y> tags.
+        if self._use_format_extraction:
+            self._normalize_cu_figure_references(document)
+
         # 1) Replace <figure>...</figure> with <figure{id}> in sequence
         if "figures" in document and document["figures"]:
             document["content"] = self._replace_figures_in_sequence(
@@ -109,6 +118,41 @@ class MultimodalChunker(DocAnalysisChunker):
         return chunks  # Ensure chunks are returned
 
 
+
+    def _normalize_cu_figure_references(self, document):
+        """
+        Convert Content Understanding markdown figure references
+        ``![caption](figures/X.Y)`` into ``<figureX.Y>`` tags so the
+        downstream figure-attachment logic can find them.
+
+        If the CU response did not include a structured ``figures`` list,
+        one is synthesized from the markdown references.
+        """
+        content = document.get("content", "")
+        cu_figure_pattern = re.compile(r'!\[([^\]]*)\]\(figures/(\d+(?:\.\d+)*)\)')
+
+        matches = list(cu_figure_pattern.finditer(content))
+        if not matches:
+            return
+
+        if "figures" not in document or not document["figures"]:
+            document["figures"] = []
+            seen_ids: set = set()
+            for match in matches:
+                fig_id = match.group(2)
+                if fig_id not in seen_ids:
+                    seen_ids.add(fig_id)
+                    document["figures"].append({"id": fig_id})
+
+        def _replace_fn(match):
+            return f"<figure{match.group(2)}>"
+
+        document["content"] = cu_figure_pattern.sub(_replace_fn, content)
+
+        logging.info(
+            f"[multimodal_chunker][{self.filename}] Normalized {len(matches)} CU-style "
+            f"figure reference(s). Figures in document: {len(document['figures'])}"
+        )
 
     def _replace_figures_in_sequence(self, content, figures):
         """
@@ -137,8 +181,8 @@ class MultimodalChunker(DocAnalysisChunker):
 
             # Replace everything from <figure> to </figure> with <figure{id}>
             content = (
-                content[:start_index] 
-                + f"<figure{figure_id}>" 
+                content[:start_index]
+                + f"<figure{figure_id}>"
                 + content[end_index + len("</figure>"):]
             )
 
@@ -158,7 +202,7 @@ class MultimodalChunker(DocAnalysisChunker):
         document_content = document['content']
         document_content = self._number_pagebreaks(document_content)
         text_chunks = self._chunk_content(document_content)
-        
+
         chunk_id = 0
         skipped_chunks = 0
         current_page = 1
@@ -178,7 +222,7 @@ class MultimodalChunker(DocAnalysisChunker):
                 chunk_id += 1
             else:
                 skipped_chunks += 1
-        
+
         logging.debug(f"[multimodal_chunker][{self.filename}] {len(chunks)} chunk(s) created")
         if skipped_chunks > 0:
             logging.debug(f"[multimodal_chunker][{self.filename}] {skipped_chunks} chunk(s) skipped")
@@ -188,7 +232,7 @@ class MultimodalChunker(DocAnalysisChunker):
     def _chunk_content(self, content):
         """
         Splits the document content into chunks based on the specified format and criteria.
-        
+
         Yields:
             tuple: A tuple containing:
                    (chunked_content, number_of_tokens, chunk_offset, chunk_length)
@@ -222,17 +266,46 @@ class MultimodalChunker(DocAnalysisChunker):
             logging.info(f"[multimodal_chunker][{self.filename}] No figures to attach.")
             return
 
-        result_id = document.get("result_id")
-        model_id = document.get("model_id")
-        if not result_id or not model_id:
-            logging.warning(
-                f"[multimodal_chunker][{self.filename}] Missing 'result_id' or 'model_id' in document analysis results."
-            )
-            return
+        figure_image_map = {}
+        result_id = None
+        model_id = None
+
+        if self._use_format_extraction:
+            from tools.figure_extraction import build_figure_image_map
+
+            file_bytes = self.document_bytes
+            if not file_bytes:
+                temp_path = self.data.get("documentTempFile")
+                if temp_path:
+                    with open(temp_path, "rb") as f:
+                        file_bytes = f.read()
+
+            if file_bytes:
+                figure_image_map = build_figure_image_map(
+                    file_bytes, self.extension, document["figures"]
+                )
+                logging.info(
+                    f"[multimodal_chunker][{self.filename}] Pre-extracted "
+                    f"{len(figure_image_map)} figure image(s) from source document."
+                )
+            else:
+                logging.warning(
+                    f"[multimodal_chunker][{self.filename}] No file bytes available "
+                    f"for format-based figure extraction."
+                )
+                return
+        else:
+            result_id = document.get("result_id")
+            model_id = document.get("model_id")
+            if not result_id or not model_id:
+                logging.warning(
+                    f"[multimodal_chunker][{self.filename}] Missing 'result_id' or 'model_id' in document analysis results."
+                )
+                return
 
         logging.info(
-            f"[multimodal_chunker][{self.filename}] Attaching figures to chunks using "
-            f"result_id: {result_id} and model_id: {model_id}."
+            f"[multimodal_chunker][{self.filename}] Attaching figures to chunks "
+            f"(extraction={'format-based' if self._use_format_extraction else 'DI API'})."
         )
 
         # Create a quick-access dictionary for the figures by their ID
@@ -263,18 +336,25 @@ class MultimodalChunker(DocAnalysisChunker):
                     continue
 
                 try:
-                    # 1) Check dimensions
-                    figure_area_percentage = round(self._figure_area(figure, document['pages']), 2)
-                    if figure_area_percentage <= self.minimum_figure_area_percentage:
-                        logging.warning(
-                            f"[multimodal_chunker][{self.filename}] Image for figure {figure_id} "
-                            f"has insufficient percentual area ({figure_area_percentage}). Skipping."
-                        )
-                        chunk_content = chunk_content.replace(f"<figure{figure_id}>", "")
-                        continue
+                    # 1) Check dimensions when the analysis result includes bounds.
+                    pages = document.get('pages', [])
+                    if pages and figure.get('boundingRegions'):
+                        figure_area_percentage = round(self._figure_area(figure, pages), 2)
+                        if figure_area_percentage <= self.minimum_figure_area_percentage:
+                            logging.warning(
+                                f"[multimodal_chunker][{self.filename}] Image for figure {figure_id} "
+                                f"has insufficient percentual area ({figure_area_percentage}). Skipping."
+                            )
+                            chunk_content = chunk_content.replace(f"<figure{figure_id}>", "")
+                            continue
+                    else:
+                        figure_area_percentage = None
 
                     # 2) Fetch the figure image
-                    image_binary = self._docint_client.get_figure(model_id, result_id, figure_id)
+                    if self._use_format_extraction:
+                        image_binary = figure_image_map.get(figure_id)
+                    else:
+                        image_binary = self._docint_client.get_figure(model_id, result_id, figure_id)
                     if not image_binary:
                         logging.warning(
                             f"[multimodal_chunker][{self.filename}] No image data retrieved for figure {figure_id}."
@@ -301,7 +381,7 @@ class MultimodalChunker(DocAnalysisChunker):
                     url = self._upload_figure_blob(image_binary, blob_name)
 
                     # 4) Generate caption
-                    logging.info(f"[multimodal_chunker][{self.filename}] Generating caption for figure {figure_id}. Percent area: {figure_area_percentage}")                    
+                    logging.info(f"[multimodal_chunker][{self.filename}] Generating caption for figure {figure_id}. Percent area: {figure_area_percentage}")
                     figure_caption = self._generate_caption_for_figure(
                         {
                             "id": figure_id,
@@ -323,7 +403,7 @@ class MultimodalChunker(DocAnalysisChunker):
                     )
 
 
-            # Update the chunk content with placeholders updated 
+            # Update the chunk content with placeholders updated
             chunk["content"] = chunk_content
 
             # 5) Build the combined caption string
@@ -342,17 +422,17 @@ class MultimodalChunker(DocAnalysisChunker):
                     combined_caption,
                     caption_vector
                 )
-                logging.info(f"[multimodal_chunker][{self.filename}] Attached {len(figure_urls)} figures to chunk {chunk['chunk_id']}.") 
+                logging.info(f"[multimodal_chunker][{self.filename}] Attached {len(figure_urls)} figures to chunk {chunk['chunk_id']}.")
 
     def _figure_area(self, figure: Dict, pages: List[Dict]) -> float:
         """
         Calculate the total figure area by summing the areas of all bounding regions across pages.
-        
+
         Args:
-            figure (Dict): A dictionary representing the figure with 'boundingRegions', 
+            figure (Dict): A dictionary representing the figure with 'boundingRegions',
                         where each bounding region contains 'pageNumber' and 'polygon'.
             pages (List[Dict]): A list of page dictionaries each containing 'pageNumber', 'width', and 'height'.
-        
+
         Returns:
             float: The total area of all valid bounding regions across pages.
                 Returns 0.0 if no valid bounding regions are found or an error occurs.
@@ -466,7 +546,7 @@ class MultimodalChunker(DocAnalysisChunker):
 
         # 3) Assign the caption vector to the chunk
         chunk["captionVector"] = caption_vector
-        
+
 
     def _find_chunks_for_figure(self, figure_id, chunks):
         """
@@ -533,7 +613,7 @@ class MultimodalChunker(DocAnalysisChunker):
                 "Use no more than 200 words."
             )
             caption = self.aoai_client.get_completion(
-                prompt=caption_prompt, 
+                prompt=caption_prompt,
                 image_base64=figure["image"]
             )
             if not caption:

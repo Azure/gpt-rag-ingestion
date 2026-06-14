@@ -41,7 +41,8 @@ tenacity==8.5.0
 # Image library
 Pillow==12.2.0
 
-# PDF manipulation (page counting and splitting)
+# PDF manipulation (page counting, splitting, and figure extraction)
+PyMuPDF==1.25.4
 pypdf==6.10.2
 
 # Process and system utilities
