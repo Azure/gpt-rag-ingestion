@@ -2,15 +2,21 @@
 
 ## [Unreleased]
 
+## [v2.4.4] - 2026-06-14
+
 ### Added
 - **Blob storage metadata indexed as `custom_metadata` (issue [#487](https://github.com/Azure/GPT-RAG/issues/487)):** The blob storage indexer now extracts every user-defined tag from `blob.metadata` (skipping reserved `metadata_security_*` keys) and stamps it onto each AI Search chunk as `custom_metadata`, a `Collection(Edm.ComplexType)` with `{key, value}` pairs. Keys are normalized to trimmed lowercase, empty or whitespace-only values are dropped, and the field is filterable and facetable so retrievers can target documents by metadata. Requires the matching `custom_metadata` field to be present in the RAG index schema (shipped in `gpt-rag` via `config/search/search.j2`).
 
 ### Fixed
-- **Uploaded document ACLs for permission-trimmed indexes (issue #478):** `/ingest-documents` now accepts an optional `securityUserIds` array and stamps it onto each chunk's `metadata_security_user_ids` instead of always writing an empty ACL. When the search index has `permissionFilterOption` enabled, this lets the uploader retrieve their own uploaded chunks (which AI Search would otherwise trim out). Anonymous/placeholder ids are ignored, and the default empty-ACL behavior is preserved when the field is absent.
 - **Content Understanding multimodal ingestion regression:** Restored the format-based figure extraction path for `MultimodalChunker` when Content Understanding is used, including PDF page/region rendering and Office embedded image extraction. This brings back the behavior released in v2.3.3 without changing the `/ingest-documents` upload ACL fix.
 
 ### Changed
 - **Warn when `$env:APP_CONFIG_ENDPOINT` diverges from the azd environment during component deploy (issue [Azure/GPT-RAG#491](https://github.com/Azure/GPT-RAG/issues/491)):** `scripts/deploy.ps1` and `scripts/deploy.sh` now read both the shell `APP_CONFIG_ENDPOINT` and the azd env value and, when both are present and disagree (trimmed, case-insensitive), print a yellow warning that shows both values, states which one is being used (the shell value still wins, preserving existing precedence for jumpbox and CI flows), and tells the operator how to clear the shell override (`Remove-Item env:APP_CONFIG_ENDPOINT` in PowerShell, `unset APP_CONFIG_ENDPOINT` in bash). When only one source is set, the previous behavior is unchanged.
+
+## [v2.4.3] - 2026-06-05
+
+### Fixed
+- **Uploaded document ACLs for permission-trimmed indexes (issue #478):** `/ingest-documents` now accepts an optional `securityUserIds` array and stamps it onto each chunk's `metadata_security_user_ids` instead of always writing an empty ACL. When the search index has `permissionFilterOption` enabled, this lets the uploader retrieve their own uploaded chunks (which AI Search would otherwise trim out). Anonymous/placeholder ids are ignored, and the default empty-ACL behavior is preserved when the field is absent.
 
 All notable changes to this project will be documented in this file.
 This format follows [Keep a Changelog](https://keepachangelog.com/) and adheres to [Semantic Versioning](https://semver.org/).
