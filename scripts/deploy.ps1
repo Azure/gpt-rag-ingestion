@@ -256,12 +256,27 @@ function Confirm-ContainerAppImage {
 }
 
 Write-Host ''
+$shellAppConfigEndpoint = $null
 if ($env:APP_CONFIG_ENDPOINT -and $env:APP_CONFIG_ENDPOINT.Trim() -ne '') {
-    $APP_CONFIG_ENDPOINT = $env:APP_CONFIG_ENDPOINT.Trim()
+    $shellAppConfigEndpoint = $env:APP_CONFIG_ENDPOINT.Trim()
+}
+$azdAppConfigEndpoint = Get-AzdEnvValue -Key 'APP_CONFIG_ENDPOINT'
+
+if ($shellAppConfigEndpoint -and $azdAppConfigEndpoint -and
+    ($shellAppConfigEndpoint.ToLowerInvariant() -ne $azdAppConfigEndpoint.ToLowerInvariant())) {
+    Write-Yellow 'Warning: APP_CONFIG_ENDPOINT in your shell does not match the azd environment.'
+    Write-Yellow ("  shell  (`$env:APP_CONFIG_ENDPOINT): {0}" -f $shellAppConfigEndpoint)
+    Write-Yellow ("  azd env (APP_CONFIG_ENDPOINT)    : {0}" -f $azdAppConfigEndpoint)
+    Write-Yellow ("Using shell value: {0}" -f $shellAppConfigEndpoint)
+    Write-Yellow 'To use the azd env value instead, run: Remove-Item env:APP_CONFIG_ENDPOINT'
+}
+
+if ($shellAppConfigEndpoint) {
+    $APP_CONFIG_ENDPOINT = $shellAppConfigEndpoint
     Write-Green "Using APP_CONFIG_ENDPOINT from environment: $APP_CONFIG_ENDPOINT"
 } else {
     Write-Blue 'Fetching APP_CONFIG_ENDPOINT from azd env...'
-    $APP_CONFIG_ENDPOINT = Get-AzdEnvValue -Key 'APP_CONFIG_ENDPOINT'
+    $APP_CONFIG_ENDPOINT = $azdAppConfigEndpoint
 }
 
 if ([string]::IsNullOrWhiteSpace($APP_CONFIG_ENDPOINT)) {
