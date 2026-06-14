@@ -217,11 +217,30 @@ verify_containerapp_image() {
 }
 
 echo
+shell_app_config_endpoint=""
 if [[ -n "${APP_CONFIG_ENDPOINT:-}" ]]; then
+  shell_app_config_endpoint="$(printf "%s" "${APP_CONFIG_ENDPOINT}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+fi
+azd_app_config_endpoint="$(get_azd_value "APP_CONFIG_ENDPOINT")"
+
+if [[ -n "$shell_app_config_endpoint" && -n "$azd_app_config_endpoint" ]]; then
+  shell_lower="$(printf "%s" "$shell_app_config_endpoint" | tr '[:upper:]' '[:lower:]')"
+  azd_lower="$(printf "%s" "$azd_app_config_endpoint" | tr '[:upper:]' '[:lower:]')"
+  if [[ "$shell_lower" != "$azd_lower" ]]; then
+    warn "Warning: APP_CONFIG_ENDPOINT in your shell does not match the azd environment."
+    warn "  shell  (\$APP_CONFIG_ENDPOINT)  : ${shell_app_config_endpoint}"
+    warn "  azd env (APP_CONFIG_ENDPOINT)  : ${azd_app_config_endpoint}"
+    warn "Using shell value: ${shell_app_config_endpoint}"
+    warn "To use the azd env value instead, run: unset APP_CONFIG_ENDPOINT"
+  fi
+fi
+
+if [[ -n "$shell_app_config_endpoint" ]]; then
+  APP_CONFIG_ENDPOINT="$shell_app_config_endpoint"
   success "Using APP_CONFIG_ENDPOINT from environment: ${APP_CONFIG_ENDPOINT}"
 else
   info "Fetching APP_CONFIG_ENDPOINT from azd env..."
-  APP_CONFIG_ENDPOINT="$(get_azd_value "APP_CONFIG_ENDPOINT")"
+  APP_CONFIG_ENDPOINT="$azd_app_config_endpoint"
 fi
 
 if [[ -z "${APP_CONFIG_ENDPOINT:-}" ]]; then
