@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [v2.4.6] - 2026-06-15
+
+### Reverted
+- **`react-dom` and `@types/react-dom` major bump to 19.x ([#212](https://github.com/Azure/gpt-rag-ingestion/pull/212))** reverted back to `^18.3.1` / `^18.3.7`. The bump pulled React 19 into `frontend/` while the `@radix-ui/*` chain still pins `@types/react@^18`, which breaks `npm install` resolution in the admin dashboard frontend build. The major version bump will be re-evaluated together with a coordinated upgrade of the Radix UI and `@types/react` chain.
+
 ## [v2.4.5] - 2026-06-15
 
 ### Changed
