@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [v2.4.5] - 2026-06-15
+
+### Changed
+- **Dependency refresh:** Absorbed Dependabot bumps merged into `develop`:
+  - `@tailwindcss/typography` in `/frontend` ([#210](https://github.com/Azure/gpt-rag-ingestion/pull/210))
+  - `requests` 2.33.0 → 2.34.2 ([#211](https://github.com/Azure/gpt-rag-ingestion/pull/211))
+  - `react-dom` and `@types/react-dom` in `/frontend` ([#212](https://github.com/Azure/gpt-rag-ingestion/pull/212))
+  - `typescript-eslint` in `/frontend` ([#215](https://github.com/Azure/gpt-rag-ingestion/pull/215))
+  - `azure-appconfiguration` 1.7.1 → 1.8.1 ([#217](https://github.com/Azure/gpt-rag-ingestion/pull/217))
+  - `pymupdf` 1.25.4 → 1.27.2.3 ([#218](https://github.com/Azure/gpt-rag-ingestion/pull/218))
+  - `uvicorn` 0.34.2 → 0.49.0 ([#219](https://github.com/Azure/gpt-rag-ingestion/pull/219))
+
 ## [v2.4.4] - 2026-06-14
 
 ### Added
