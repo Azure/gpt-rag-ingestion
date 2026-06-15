@@ -12,7 +12,7 @@ azure-identity==1.25.1
 azure-keyvault-secrets==4.9.0
 azure-mgmt-storage==22.1.1
 azure-mgmt-web==8.0.0
-azure-search-documents==11.5.2
+azure-search-documents==12.0.0
 azure-storage-blob==12.24.1
 msgraph-sdk==1.5.4
 azure-ai-projects==1.0.0b10
