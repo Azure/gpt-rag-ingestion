@@ -3,10 +3,11 @@ import { ThemeProvider } from "next-themes";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { JobsTable } from "./components/JobsTable";
 import { FilesTable } from "./components/FilesTable";
+import { ConfigurationTab } from "./components/ConfigurationTab";
 import { fetchIdentity, fetchVersion, type Identity } from "./lib/api";
-import { Database, FileText } from "lucide-react";
+import { Database, FileText, Settings } from "lucide-react";
 
-type Tab = "jobs" | "files";
+type Tab = "jobs" | "files" | "config";
 
 function Dashboard() {
   const [tab, setTab] = useState<Tab>("jobs");
@@ -69,13 +70,24 @@ function Dashboard() {
           <FileText className="h-4 w-4" />
           Files
         </button>
+        <button
+          onClick={() => setTab("config")}
+          className={`flex items-center gap-1.5 border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
+            tab === "config"
+              ? "border-primary text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Settings className="h-4 w-4" />
+          Configuration
+        </button>
       </nav>
 
-      {tab === "jobs" ? (
+      {tab === "jobs" && (
         <JobsTable navigateRunId={navRunId} onNavigated={() => setNavRunId(null)} identity={identity} />
-      ) : (
-        <FilesTable />
       )}
+      {tab === "files" && <FilesTable />}
+      {tab === "config" && <ConfigurationTab identity={identity} />}
     </div>
   );
 }

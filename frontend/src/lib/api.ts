@@ -162,3 +162,114 @@ export function formatUtc(iso?: string | null): string {
     return iso;
   }
 }
+
+// ─── Configuration tab ──────────────────────────────────────────────────
+
+export type ConfigType = "int" | "bool" | "cron";
+
+export interface ConfigSetting {
+  key: string;
+  type: ConfigType;
+  value: number | boolean | string | null;
+  default?: number | boolean | string | null;
+  min?: number;
+  max?: number;
+}
+
+export interface ConfigSection {
+  id: string;
+  title: string;
+  keys: string[];
+}
+
+export interface ConfigResponse {
+  canEdit: boolean;
+  authEnabled: boolean;
+  sections: ConfigSection[];
+  settings: ConfigSetting[];
+}
+
+export interface ConfigUpdate {
+  key: string;
+  value: number | boolean | string | null;
+}
+
+export interface ConfigSaveFailure {
+  key: string;
+  error: string;
+}
+
+export interface ConfigSaveResponse {
+  applied: string[];
+  failed: ConfigSaveFailure[];
+  rescheduled: string[];
+}
+
+export class ConfigError extends Error {
+  status: number;
+  forbidden: boolean;
+  failures: ConfigSaveFailure[];
+  constructor(message: string, status: number, failures: ConfigSaveFailure[] = []) {
+    super(message);
+    this.status = status;
+    this.forbidden = status === 403;
+    this.failures = failures;
+  }
+}
+
+export async function fetchConfig(signal?: AbortSignal): Promise<ConfigResponse> {
+  const r = await fetch(`${BASE}/config`, { signal });
+  if (!r.ok) throw new ConfigError(`Failed to fetch config: ${r.status}`, r.status);
+  return r.json();
+}
+
+export async function saveConfig(updates: ConfigUpdate[]): Promise<ConfigSaveResponse> {
+  const r = await fetch(`${BASE}/config`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ updates }),
+  });
+  // 200 = full success, 207 = partial (some failed but body still describes both)
+  if (r.status === 200 || r.status === 207) return r.json();
+  let detail = `Save failed: ${r.status}`;
+  let failures: ConfigSaveFailure[] = [];
+  try {
+    const body = await r.json();
+    if (Array.isArray(body?.failed)) failures = body.failed;
+    if (typeof body?.detail === "string") detail = body.detail;
+    else if (failures.length) detail = `${failures.length} setting(s) rejected by the server`;
+  } catch {
+    /* ignore */
+  }
+  throw new ConfigError(detail, r.status, failures);
+}
+
+export async function reloadConfig(): Promise<{ status: string }> {
+  const r = await fetch(`${BASE}/config/reload`, { method: "POST" });
+  if (!r.ok) {
+    let detail = `Reload failed: ${r.status}`;
+    try {
+      const body = await r.json();
+      if (typeof body?.detail === "string") detail = body.detail;
+    } catch {
+      /* ignore */
+    }
+    throw new ConfigError(detail, r.status);
+  }
+  return r.json();
+}
+
+export async function applyConfig(): Promise<{ status: string; note?: string; rescheduled?: string[] }> {
+  const r = await fetch(`${BASE}/config/apply`, { method: "POST" });
+  if (!r.ok) {
+    let detail = `Apply failed: ${r.status}`;
+    try {
+      const body = await r.json();
+      if (typeof body?.detail === "string") detail = body.detail;
+    } catch {
+      /* ignore */
+    }
+    throw new ConfigError(detail, r.status);
+  }
+  return r.json();
+}
