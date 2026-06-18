@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Configuration tab in the operator dashboard was blank ([#242](https://github.com/Azure/gpt-rag-ingestion/issues/242)):** `GET /api/config` returned `{sections, canEdit}` but the typed `ConfigResponse` and the `ConfigurationTab` frontend also read a top-level `settings` array and an `authEnabled` flag. With `res.settings` undefined the tab crashed with `TypeError: undefined is not iterable` and rendered nothing. The endpoint now returns both the grouped `sections` and a flat `settings` list (built from the same `_read_setting(cfg, spec)` calls so the two views stay in lock-step) plus `authEnabled` derived from `_auth_enabled()`. The existing `sections` shape is unchanged, so no other callers are affected.
+
 ## [v2.4.7] - 2026-06-18
 
 ### User and operator impact
