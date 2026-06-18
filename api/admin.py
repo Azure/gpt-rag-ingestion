@@ -362,6 +362,7 @@ def _available_job_types() -> List[str]:
 def _running_job_types() -> List[str]:
     from main import _running_jobs
 
+    # `_running_jobs` is now ``dict[str, dict]``; iterating yields job_types.
     return sorted(_running_jobs)
 
 
@@ -416,9 +417,17 @@ async def run_job_now(job_type: str) -> Dict[str, Any]:
                 status_code=409,
                 detail=f"Job '{job_type}' is already running",
             )
+        # Pre-fill the slot with the actual APScheduler trigger id so the
+        # queue endpoint reports the manual ``manual-<type>-<ts>`` id rather
+        # than the generic registry key. The wrapper in main.py respects an
+        # already-filled slot and pops it on completion.
+        trigger_id = f"manual-{job_type}-{int(time.time() * 1000)}"
+        _running_jobs[job_type] = {
+            "run_id": trigger_id,
+            "started_at": datetime.now(timezone.utc),
+        }
 
     func = JOB_REGISTRY[job_type]
-    trigger_id = f"manual-{job_type}-{int(time.time() * 1000)}"
     try:
         # `trigger='date'` with no run_date defaults to "now" — APScheduler
         # picks it up on the next event loop tick.
@@ -431,11 +440,102 @@ async def run_job_now(job_type: str) -> Dict[str, Any]:
             misfire_grace_time=None,
         )
     except Exception as exc:  # pragma: no cover - depends on APScheduler state
+        # Roll back the pre-filled slot so a failed schedule does not leave
+        # the job_type permanently marked as running.
+        async with _running_jobs_lock:
+            entry = _running_jobs.get(job_type)
+            if entry and entry.get("run_id") == trigger_id:
+                _running_jobs.pop(job_type, None)
         logging.exception("Failed to enqueue manual run for %s", job_type)
         raise HTTPException(status_code=500, detail=f"Failed to schedule job: {exc}") from exc
 
     logging.info("[admin] Manual run requested for job_type=%s trigger_id=%s", job_type, trigger_id)
     return {"jobType": job_type, "triggerId": trigger_id, "status": "queued"}
+
+
+# ---------------------------------------------------------------------------
+# GET /api/jobs/queue – per-job_type view of "what is in flight and when is
+# the next cron going to fire". Read-only, network-only auth (same gate as
+# `GET /api/jobs` and `GET /api/config`). Powers the operator dashboard's
+# Queue panel so users do not have to click *Run now* to discover the answer.
+#
+# Per row:
+#   - in_flight: {run_id, started_at} from `_running_jobs`, or `null`
+#   - next_scheduled_at: ISO-8601 UTC from APScheduler, or `null` if no cron
+#     is registered or the expression is invalid
+#   - cron: the current `CRON_RUN_*` string from app config (so the UI can
+#     show the operator what is driving the schedule). `null` when the env
+#     key is unset.
+# ---------------------------------------------------------------------------
+@router.get("/jobs/queue")
+async def get_jobs_queue() -> Dict[str, Any]:
+    # Late import: keeps api.admin importable on its own (and matches the
+    # rest of this module, which avoids pulling in the full ingestion stack
+    # at module load).
+    from main import JOB_CRON_MAP, JOB_REGISTRY, _running_jobs, scheduler
+
+    # Invert JOB_CRON_MAP so we can look up the env key for a given job_id.
+    # The map is small (7 entries today) so the per-request cost is trivial.
+    cron_env_for_job: Dict[str, str] = {jid: env for env, jid in JOB_CRON_MAP.items()}
+
+    cfg = get_config()
+    items: List[Dict[str, Any]] = []
+    for job_type in sorted(JOB_REGISTRY.keys()):
+        entry = _running_jobs.get(job_type)
+        in_flight: Optional[Dict[str, Any]] = None
+        if entry:
+            started = entry.get("started_at")
+            in_flight = {
+                "run_id": entry.get("run_id"),
+                "started_at": _iso_utc(started),
+            }
+
+        # `scheduler.get_job` returns ``None`` when no cron is registered for
+        # this job_type (the operator left ``CRON_RUN_*`` blank). That is a
+        # supported configuration, so we surface ``null`` rather than 500.
+        next_scheduled_at: Optional[str] = None
+        try:
+            job = scheduler.get_job(job_type)
+        except Exception:  # pragma: no cover - defensive; depends on scheduler state
+            job = None
+        if job is not None and getattr(job, "next_run_time", None) is not None:
+            next_scheduled_at = _iso_utc(job.next_run_time)
+
+        cron_env = cron_env_for_job.get(job_type)
+        cron_value: Optional[str] = None
+        if cron_env:
+            cron_value = cfg.get(cron_env, default=None, allow_none=True) or None
+
+        items.append(
+            {
+                "job_type": job_type,
+                "in_flight": in_flight,
+                "next_scheduled_at": next_scheduled_at,
+                "cron": cron_value,
+            }
+        )
+
+    return {"items": items}
+
+
+def _iso_utc(value) -> Optional[str]:
+    """Serialize a tz-aware ``datetime`` as ISO-8601 UTC with a ``Z`` suffix.
+
+    APScheduler returns tz-aware datetimes (in the scheduler's timezone) and
+    `_track_running` always stores UTC; converting both via ``astimezone(utc)``
+    keeps the wire format stable regardless of the container's local TZ.
+    """
+    if value is None:
+        return None
+    try:
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        as_utc = value.astimezone(timezone.utc)
+        # Use millisecond precision and a literal ``Z`` so the frontend can
+        # `new Date(iso)` without surprises.
+        return as_utc.strftime("%Y-%m-%dT%H:%M:%S.") + f"{as_utc.microsecond // 1000:03d}Z"
+    except Exception:  # pragma: no cover - serialization should not break the response
+        return None
 
 
 # ---------------------------------------------------------------------------

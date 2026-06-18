@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchJobs, formatUtc, runJob, type Identity, type JobRun, type RunJobError } from "../lib/api";
+import {
+  fetchJobs,
+  formatUtc,
+  getJobsQueue,
+  runJob,
+  type Identity,
+  type JobRun,
+  type QueueRow,
+  type RunJobError,
+} from "../lib/api";
 import { StatusBadge } from "./StatusBadge";
 import { Pagination } from "./Pagination";
 import { SearchInput } from "./SearchInput";
@@ -19,6 +28,23 @@ interface AlertState {
   message: string;
 }
 
+const QUEUE_POLL_MS = 10_000;
+
+/** Format an ISO-8601 UTC timestamp as a short "in 12 min" / "2 min ago" string. */
+function formatRelative(iso: string | null | undefined, nowMs: number): string {
+  if (!iso) return "-";
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return iso;
+  const deltaSec = Math.round((t - nowMs) / 1000);
+  const abs = Math.abs(deltaSec);
+  const dir = deltaSec >= 0 ? "in " : "";
+  const suffix = deltaSec >= 0 ? "" : " ago";
+  if (abs < 60) return `${dir}${abs}s${suffix}`;
+  if (abs < 3600) return `${dir}${Math.round(abs / 60)} min${suffix}`;
+  if (abs < 86_400) return `${dir}${Math.round(abs / 3600)} h${suffix}`;
+  return `${dir}${Math.round(abs / 86_400)} d${suffix}`;
+}
+
 export function JobsTable({ navigateRunId, onNavigated, identity }: JobsTableProps) {
   const [items, setItems] = useState<JobRun[]>([]);
   const [total, setTotal] = useState(0);
@@ -34,7 +60,10 @@ export function JobsTable({ navigateRunId, onNavigated, identity }: JobsTablePro
   const [runningJobTypes, setRunningJobTypes] = useState<string[]>([]);
   const [triggering, setTriggering] = useState<string | null>(null);
   const [alert, setAlert] = useState<AlertState | null>(null);
+  const [queue, setQueue] = useState<QueueRow[]>([]);
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const abortRef = useRef<AbortController | null>(null);
+  const queueAbortRef = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
     abortRef.current?.abort();
@@ -61,6 +90,32 @@ export function JobsTable({ navigateRunId, onNavigated, identity }: JobsTablePro
     load();
     return () => { abortRef.current?.abort(); };
   }, [load]);
+
+  // Poll the queue endpoint every 10s while this tab is mounted.
+  useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      queueAbortRef.current?.abort();
+      const ctrl = new AbortController();
+      queueAbortRef.current = ctrl;
+      try {
+        const res = await getJobsQueue(ctrl.signal);
+        if (!cancelled) setQueue(res.items || []);
+      } catch (err) {
+        if ((err as Error).name === "AbortError") return;
+        // Stay silent — a transient queue poll failure should not toast the UI.
+      }
+    };
+    tick();
+    const id = window.setInterval(tick, QUEUE_POLL_MS);
+    const clockId = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+      window.clearInterval(clockId);
+      queueAbortRef.current?.abort();
+    };
+  }, []);
 
   useEffect(() => {
     if (navigateRunId) {
@@ -129,13 +184,14 @@ export function JobsTable({ navigateRunId, onNavigated, identity }: JobsTablePro
         >
           <span className="text-xs font-medium text-muted-foreground">Run now:</span>
           {availableJobTypes.map((jt) => {
-            const isRunning = runningJobTypes.includes(jt);
+            const queueRow = queue.find((q) => q.job_type === jt);
+            const isRunning = !!queueRow?.in_flight || runningJobTypes.includes(jt);
             const isPending = triggering === jt;
             const disabled = !canRun || isRunning || isPending;
             const tooltip = !canRun
               ? disabledTooltip
               : isRunning
-                ? "Job is already running"
+                ? "Job already running"
                 : `Trigger ${jt}`;
             return (
               <button
@@ -158,6 +214,60 @@ export function JobsTable({ navigateRunId, onNavigated, identity }: JobsTablePro
               </button>
             );
           })}
+        </div>
+      )}
+
+      {queue.length > 0 && (
+        <div className="rounded-lg border" aria-label="Job queue and schedule">
+          <div className="border-b bg-muted/30 px-3 py-1.5 text-xs font-medium text-muted-foreground">
+            Queue and schedule
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b text-left text-xs text-muted-foreground">
+                <th className="px-3 py-1.5 font-medium">Job</th>
+                <th className="px-3 py-1.5 font-medium">In flight</th>
+                <th className="px-3 py-1.5 font-medium">Next run</th>
+                <th className="px-3 py-1.5 font-medium">Cron</th>
+              </tr>
+            </thead>
+            <tbody>
+              {queue.map((row) => {
+                const inFlight = row.in_flight;
+                const elapsedLabel = inFlight
+                  ? formatRelative(inFlight.started_at, nowMs)
+                  : null;
+                const nextLabel = row.next_scheduled_at
+                  ? formatRelative(row.next_scheduled_at, nowMs)
+                  : "-";
+                return (
+                  <tr key={row.job_type} className="border-b last:border-b-0">
+                    <td className="px-3 py-1.5 font-mono text-xs">{row.job_type}</td>
+                    <td className="px-3 py-1.5 text-xs">
+                      {inFlight ? (
+                        <span title={`Started ${inFlight.started_at}`}>
+                          <span className="font-mono">{inFlight.run_id}</span>
+                          <span className="text-muted-foreground"> ({elapsedLabel})</span>
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-1.5 text-xs">
+                      {row.next_scheduled_at ? (
+                        <span title={row.next_scheduled_at}>{nextLabel}</span>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-1.5 font-mono text-xs">
+                      {row.cron ?? <span className="text-muted-foreground">-</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 
