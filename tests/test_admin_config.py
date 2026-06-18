@@ -224,6 +224,31 @@ def test_get_config_returns_sections_shape(monkeypatch):
     assert by_key["CRON_RUN_BLOB_INDEX"]["value"] == "0 * * * *"
 
 
+def test_get_config_sections_have_frontend_contract_fields(monkeypatch):
+    """Each section must include `title` and `keys` (the names the typed
+    frontend `ConfigSection` reads). The legacy `label` and nested `settings`
+    fields stay for backwards compatibility. Without `title`/`keys` the
+    Configuration tab crashes with a TypeError and renders blank (issue
+    https://github.com/Azure/gpt-rag-ingestion/issues/242 follow-up)."""
+    client, _, _ = _build_client(monkeypatch, tenant_id=None, claims=None)
+    body = client.get("/api/config").json()
+    settings_by_key = {s["key"]: s for s in body["settings"]}
+    for section in body["sections"]:
+        assert "title" in section, f"section {section.get('id')!r} missing `title`"
+        assert section["title"] == section["label"], "title must mirror label"
+        assert "keys" in section, f"section {section.get('id')!r} missing `keys`"
+        assert isinstance(section["keys"], list)
+        # Every key must resolve to a real entry in the flat settings list.
+        for key in section["keys"]:
+            assert key in settings_by_key, (
+                f"section {section['id']!r} references unknown key {key!r}"
+            )
+        # And keys must match the nested settings order, so the UI renders
+        # fields in the same order under both views.
+        nested_keys = [s["key"] for s in section["settings"]]
+        assert section["keys"] == nested_keys
+
+
 def test_get_config_open_when_auth_enabled_but_no_token(monkeypatch):
     client, _, _ = _build_client(monkeypatch, tenant_id="tenant-guid", claims=None)
     r = client.get("/api/config")

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [v2.4.9] - 2026-06-18
+
+### Fixed
+
+- **Configuration tab in the operator dashboard was still blank after v2.4.8 ([#242](https://github.com/Azure/gpt-rag-ingestion/issues/242) follow-up):** v2.4.8 fixed the missing top-level `settings` array, but `GET /api/config` was also emitting each section as `{id, label, settings}` while the typed frontend `ConfigSection` reads `{id, title, keys}`. `section.keys.map(...)` therefore crashed with `TypeError: undefined is not iterable` and the tab still rendered nothing. The endpoint now also emits `title` (mirror of `label`) and `keys` (the ordered list of setting keys, matching the nested `settings` order) on every section. The legacy `label` and nested `settings` fields stay, so no other callers are affected.
+
 ## [v2.4.8] - 2026-06-18
 
 ### Fixed
