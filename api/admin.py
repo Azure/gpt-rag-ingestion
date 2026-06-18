@@ -816,12 +816,20 @@ async def get_config_settings(request: Request) -> Dict[str, Any]:
     or invalid token simply yields `canEdit: false` without raising.
     """
     cfg = get_config()
+    # Build each setting exactly once, then surface it under both the grouped
+    # `sections` view (used by the section-aware UI) and a flat `settings`
+    # list (the contract the typed frontend `ConfigResponse` reads). This
+    # keeps the two views in lock-step and matches the documented API shape.
     by_section: Dict[str, List[Dict[str, Any]]] = {s["id"]: [] for s in CONFIG_SECTIONS}
+    flat_settings: List[Dict[str, Any]] = []
     for spec in SETTINGS:
-        by_section.setdefault(spec.section, []).append(_read_setting(cfg, spec))
+        setting = _read_setting(cfg, spec)
+        by_section.setdefault(spec.section, []).append(setting)
+        flat_settings.append(setting)
 
+    auth_enabled = _auth_enabled()
     can_edit = True
-    if _auth_enabled():
+    if auth_enabled:
         can_edit = False
         try:
             claims = await validate_bearer_jwt(request)
@@ -834,7 +842,9 @@ async def get_config_settings(request: Request) -> Dict[str, Any]:
             {"id": s["id"], "label": s["label"], "settings": by_section.get(s["id"], [])}
             for s in CONFIG_SECTIONS
         ],
+        "settings": flat_settings,
         "canEdit": can_edit,
+        "authEnabled": auth_enabled,
     }
 
 

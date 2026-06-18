@@ -231,6 +231,54 @@ def test_get_config_open_when_auth_enabled_but_no_token(monkeypatch):
     assert r.json()["canEdit"] is False  # auth on + no admin token = read-only
 
 
+def test_get_config_returns_flat_settings_and_auth_enabled(monkeypatch):
+    """Issue #242: the typed `ConfigResponse` contract requires a top-level
+    flat `settings` array and `authEnabled` flag in addition to `sections`.
+    The frontend reads `res.settings` directly; without it the Configuration
+    tab crashes with `TypeError: undefined is not iterable`.
+    """
+    # Auth-off case: `authEnabled` must be False, `settings` must be the
+    # flattened section settings (same objects, same order).
+    client, _, admin_module = _build_client(
+        monkeypatch,
+        tenant_id=None,
+        claims=None,
+        config_values={
+            "CRON_RUN_BLOB_INDEX": "0 * * * *",
+            "CHUNKING_NUM_TOKENS": "512",
+            "MULTIMODAL": "true",
+        },
+    )
+    r = client.get("/api/config")
+    assert r.status_code == 200, r.text
+    body = r.json()
+
+    assert "settings" in body, "top-level `settings` array missing (issue #242)"
+    assert "authEnabled" in body, "top-level `authEnabled` flag missing (issue #242)"
+    assert body["authEnabled"] is False
+
+    flat = body["settings"]
+    assert isinstance(flat, list) and flat, "`settings` must be a non-empty list"
+
+    # Flat list must equal the flattened section settings, preserving the
+    # declared `SETTINGS` order so the two views can never disagree.
+    expected = [
+        setting
+        for section in body["sections"]
+        for setting in section["settings"]
+    ]
+    assert flat == expected
+    assert sorted(s["key"] for s in flat) == sorted(admin_module.ALLOWED_KEYS)
+
+    # Auth-on case: `authEnabled` must reflect `_auth_enabled()`.
+    client_authed, _, _ = _build_client(
+        monkeypatch, tenant_id="tenant-guid", claims=None
+    )
+    body_authed = client_authed.get("/api/config").json()
+    assert body_authed["authEnabled"] is True
+    assert "settings" in body_authed and body_authed["settings"]
+
+
 # ---------------------------------------------------------------------------
 # PUT /api/config — auth gate
 # ---------------------------------------------------------------------------
