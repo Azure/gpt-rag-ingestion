@@ -56,21 +56,43 @@ scheduler = AsyncIOScheduler(timezone=local_tz)
 # It is consulted both by the manual `POST /api/jobs/{job_type}/run` endpoint to
 # return 409 on concurrent triggers, and by the scheduler wrapper so cron-triggered
 # runs participate in the same mutual exclusion as manual runs.
-_running_jobs: set[str] = set()
+#
+# Each entry is keyed by `job_type` and holds:
+#   - ``run_id``: APScheduler job id of the currently executing trigger
+#     (e.g. ``"manual-blob_index-1735592812345"`` or the cron ``job_id``)
+#   - ``started_at``: tz-aware UTC datetime when the wrapper acquired the slot
+#
+# The shape is exposed verbatim by ``GET /api/jobs/queue`` so the operator
+# dashboard can show "what is in flight right now and since when".
+_running_jobs: dict[str, dict] = {}
 _running_jobs_lock = asyncio.Lock()
 
 
 def _track_running(job_id: str, func):
-    """Wrap an async job function so its execution is reflected in `_running_jobs`."""
+    """Wrap an async job function so its execution is reflected in `_running_jobs`.
+
+    The wrapper records the APScheduler trigger id and the wall-clock UTC
+    start time so the queue endpoint can report both back to the dashboard.
+    Cron and manual runs share this same path because they both call the
+    wrapped function.
+    """
 
     async def _wrapped():
+        # The manual endpoint may have pre-filled this slot with the actual
+        # APScheduler trigger id (e.g. ``manual-blob_index-<ts>``) before the
+        # event loop picked up the date trigger. Only fall back to the
+        # registry `job_id` (the cron path) when the slot is empty.
         async with _running_jobs_lock:
-            _running_jobs.add(job_id)
+            if job_id not in _running_jobs:
+                _running_jobs[job_id] = {
+                    "run_id": job_id,
+                    "started_at": datetime.datetime.now(tz=datetime.timezone.utc),
+                }
         try:
             return await func()
         finally:
             async with _running_jobs_lock:
-                _running_jobs.discard(job_id)
+                _running_jobs.pop(job_id, None)
 
     _wrapped.__name__ = getattr(func, "__name__", job_id)
     return _wrapped

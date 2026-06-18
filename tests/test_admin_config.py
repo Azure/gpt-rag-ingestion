@@ -102,7 +102,7 @@ def _install_stubs(
         "CRON_RUN_NL2SQL_INDEX": "nl2sql_index",
         "CRON_RUN_NL2SQL_PURGE": "nl2sql_purge",
     }
-    main_stub._running_jobs = set()
+    main_stub._running_jobs = {}
     main_stub._running_jobs_lock = asyncio.Lock()
 
     class _FakeScheduler:
