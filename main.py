@@ -79,6 +79,20 @@ def _track_running(job_id: str, func):
 # Populated inside lifespan once the job functions are defined.
 JOB_REGISTRY: dict[str, "object"] = {}
 
+# Maps CRON_RUN_* App Configuration keys to the APScheduler `job_id` they drive.
+# Exposed at module scope so `api.admin` (Configuration tab) can reschedule the
+# right job after a PUT /api/config that updates a cron expression — without
+# having to mirror the mapping inside `lifespan` and risk drift.
+JOB_CRON_MAP: dict[str, str] = {
+    "CRON_RUN_SHAREPOINT_INDEX": "sharepoint_index",
+    "CRON_RUN_SHAREPOINT_PURGE": "sharepoint_purge",
+    "CRON_RUN_IMAGES_PURGE": "multimodality_images_purge",
+    "CRON_RUN_BLOB_INDEX": "blob_index",
+    "CRON_RUN_BLOB_PURGE": "blob_purge",
+    "CRON_RUN_NL2SQL_INDEX": "nl2sql_index",
+    "CRON_RUN_NL2SQL_PURGE": "nl2sql_purge",
+}
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
 
