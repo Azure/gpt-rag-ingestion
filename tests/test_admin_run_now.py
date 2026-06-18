@@ -63,7 +63,7 @@ def _install_stubs(monkeypatch, *, tenant_id: str | None, claims: dict | Excepti
         return None
 
     main_stub.JOB_REGISTRY = {"blob_index": _noop_job}
-    main_stub._running_jobs = set()
+    main_stub._running_jobs = {}
     main_stub._running_jobs_lock = asyncio.Lock()
 
     class _FakeScheduler:
@@ -141,7 +141,12 @@ def test_run_now_unknown_job_type_returns_404(monkeypatch):
 
 def test_run_now_already_running_returns_409(monkeypatch):
     client, main_stub = _build_client(monkeypatch, tenant_id=None, claims=None)
-    main_stub._running_jobs.add("blob_index")
+    main_stub._running_jobs["blob_index"] = {
+        "run_id": "blob_index",
+        "started_at": __import__("datetime").datetime.now(
+            tz=__import__("datetime").timezone.utc
+        ),
+    }
     r = client.post("/api/jobs/blob_index/run")
     assert r.status_code == 409
     assert main_stub.scheduler.jobs == []

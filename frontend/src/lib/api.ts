@@ -135,6 +135,33 @@ export interface RunJobError extends Error {
   forbidden: boolean;
 }
 
+// ─── Jobs queue (Queue panel above the Jobs table) ──────────────────────
+
+export interface QueueInFlight {
+  run_id: string;
+  /** ISO-8601 UTC timestamp with `Z` suffix, e.g. "2026-06-18T20:05:30.123Z". */
+  started_at: string;
+}
+
+export interface QueueRow {
+  job_type: string;
+  in_flight: QueueInFlight | null;
+  /** ISO-8601 UTC timestamp, or null when no cron is registered. */
+  next_scheduled_at: string | null;
+  /** Cron expression from app config, or null when the CRON_RUN_* key is unset. */
+  cron: string | null;
+}
+
+export interface QueueResponse {
+  items: QueueRow[];
+}
+
+export async function getJobsQueue(signal?: AbortSignal): Promise<QueueResponse> {
+  const r = await fetch(`${BASE}/jobs/queue`, { signal });
+  if (!r.ok) throw new Error(`Failed to fetch jobs queue: ${r.status}`);
+  return r.json();
+}
+
 export async function runJob(jobType: string): Promise<{ jobType: string; triggerId: string; status: string }> {
   const r = await fetch(`${BASE}/jobs/${encodeURIComponent(jobType)}/run`, { method: "POST" });
   if (r.ok) return r.json();

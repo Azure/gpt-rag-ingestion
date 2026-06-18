@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [v2.4.10] - 2026-06-18
+
+### Added
+
+- **Operator dashboard now shows queued jobs and the next-run ETA per `job_type` ([#247](https://github.com/Azure/gpt-rag-ingestion/issues/247)):** Before this release, the *Run now* button (added in v2.4.7) was fire-and-forget — clicking it queued a job and showed a toast, then disappeared. Operators had no way to see what was in flight or when the next cron would fire without tailing container logs. This release adds a compact *Queue and schedule* panel above the Jobs table that answers both questions.
+  - A new read-only endpoint `GET /api/jobs/queue` returns one row per `job_type` with `in_flight` (`{run_id, started_at}` or `null`), `next_scheduled_at` (ISO-8601 UTC from APScheduler's `next_run_time`, or `null` if no cron is registered), and the current `cron` string from app config. Same network-only auth posture as `GET /api/jobs` and `GET /api/config` — no `Admin` role required to view.
+  - The existing in-process `_running_jobs` registry (introduced in v2.4.7 for mutual exclusion between manual and cron runs) was extended to also record `started_at` at the same insertion sites, so manual and cron runs continue to share one lock — no parallel registry was added.
+  - The frontend Queue panel polls `GET /api/jobs/queue` every 10 seconds while the Jobs tab is mounted (plain `setInterval`, no new data-fetching library). Columns: Job, In flight (run id + elapsed), Next run (relative like "in 12 min" with the absolute ISO timestamp in a tooltip), Cron.
+  - When a job is reported as in flight, the matching *Run now* button is rendered disabled with the tooltip "Job already running", so operators learn before they click and get a `409 Conflict`.
+  - The cron string is read from the same config source used by the *Configuration* tab, so a *Run-now-then-edit-CRON* cycle reflects the new schedule on the next poll without requiring a refresh.
+
+### Validation
+
+- Full pytest suite: 34 passed (7 new in `tests/test_admin_jobs_queue.py`, covering empty queue with crons, in-flight reporting, naive-datetime normalization, missing cron registration, and cron set but no `next_run_time`).
+- Frontend: `npm run lint` clean, `npm run build` clean.
+- No persistent queue (Service Bus, Storage Queue, etc.) was added — explicitly out of scope per the issue.
+
 ## [v2.4.9] - 2026-06-18
 
 ### Fixed
