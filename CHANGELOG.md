@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Added
+- **Run now button for ingestion jobs ([#510](https://github.com/Azure/GPT-RAG/issues/510)).** The ingestion dashboard now exposes a per-`job_type` "Run now" control above the Jobs table, backed by a new `POST /api/jobs/{job_type}/run` endpoint that enqueues the matching scheduler function as a one-shot `date` trigger. A shared in-process registry (`_running_jobs`) is consulted by both the manual endpoint and the scheduler wrapper, so cron-triggered and manually triggered runs share the same mutual exclusion — concurrent manual triggers for an already-running job get `409 Conflict`. The endpoint is gated by the new `require_admin` dependency, which is a no-op when `OAUTH_AZURE_AD_TENANT_ID` is unset and otherwise requires a bearer token carrying the `Admin` Entra app role (mirroring the orchestrator dashboard pattern from `gpt-rag-orchestrator#236`). A companion `GET /api/identity` returns `{authEnabled, isAdmin}` so the frontend can disable the buttons with an accessible tooltip ("Admin role required") when the caller lacks the role; read-only dashboard endpoints remain network-only as before.
+
 ## [v2.4.6] - 2026-06-15
 
 ### Reverted

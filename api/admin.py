@@ -19,13 +19,43 @@ from azure.identity.aio import (
     ManagedIdentityCredential,
 )
 from azure.storage.blob.aio import BlobServiceClient
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pathlib import Path
 
-from dependencies import get_config
+from dependencies import get_config, validate_bearer_jwt
 from tools.credentials import get_azure_client_id
 
 router = APIRouter(prefix="/api")
+
+
+# ---------------------------------------------------------------------------
+# Admin gate – mirrors the orchestrator dashboard pattern.
+#
+# Read endpoints stay open (network-only auth, same as today). Only mutating
+# routes — currently `POST /api/jobs/{job_type}/run` — get the gate. When
+# `OAUTH_AZURE_AD_TENANT_ID` is not configured the gate is a no-op so local
+# dev keeps working without an Entra app registration.
+# ---------------------------------------------------------------------------
+
+
+def _auth_enabled() -> bool:
+    cfg = get_config()
+    tenant_id = cfg.get("OAUTH_AZURE_AD_TENANT_ID", default=None, allow_none=True)
+    return bool(tenant_id)
+
+
+async def require_admin(request: Request) -> None:
+    """Raise 403 unless the caller has the ``Admin`` Entra app role.
+
+    No-op when auth is not configured. The token must be issued for this API's
+    scope (``api://<client_id>/...``) so the ``roles`` claim is present.
+    """
+    if not _auth_enabled():
+        return
+    claims = await validate_bearer_jwt(request)
+    roles = claims.get("roles") or []
+    if "Admin" not in roles:
+        raise HTTPException(status_code=403, detail="Admin role required")
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -317,7 +347,95 @@ async def list_jobs(
         "page": page,
         "pageSize": pageSize,
         "indexerTypes": all_types,
+        "availableJobTypes": _available_job_types(),
+        "runningJobTypes": _running_job_types(),
     }
+
+
+def _available_job_types() -> List[str]:
+    """Return the canonical job_type identifiers accepted by ``/api/jobs/{job_type}/run``."""
+    from main import JOB_REGISTRY  # local import to avoid circular import at module load
+
+    return sorted(JOB_REGISTRY.keys())
+
+
+def _running_job_types() -> List[str]:
+    from main import _running_jobs
+
+    return sorted(_running_jobs)
+
+
+# ---------------------------------------------------------------------------
+# GET /api/identity – tells the frontend whether auth is on and if the caller
+# has the Admin role. Always returns 200; never logs or raises on invalid
+# tokens — it's a state-probe endpoint, not an access check.
+# ---------------------------------------------------------------------------
+@router.get("/identity")
+async def get_identity(request: Request) -> Dict[str, Any]:
+    auth_enabled = _auth_enabled()
+    if not auth_enabled:
+        return {"authEnabled": False, "isAdmin": True}
+
+    is_admin = False
+    try:
+        claims = await validate_bearer_jwt(request)
+        is_admin = "Admin" in (claims.get("roles") or [])
+    except Exception:
+        # Silent by design: a missing or invalid token here just means the
+        # caller isn't admin. Failing loudly would spam logs on every page load.
+        is_admin = False
+
+    return {"authEnabled": True, "isAdmin": is_admin}
+
+
+# ---------------------------------------------------------------------------
+# POST /api/jobs/{job_type}/run – manually trigger a scheduled ingestion job.
+# Requires Admin when auth is enabled; idempotent guard returns 409 if a run
+# of the same job_type is already in flight (manual or cron-triggered).
+# ---------------------------------------------------------------------------
+_JOB_TYPE_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+
+
+@router.post("/jobs/{job_type}/run", status_code=202, dependencies=[Depends(require_admin)])
+async def run_job_now(job_type: str) -> Dict[str, Any]:
+    if not _JOB_TYPE_RE.match(job_type):
+        raise HTTPException(status_code=400, detail="Invalid job_type")
+
+    # Late import keeps api/admin import-time light and avoids circular import.
+    from main import JOB_REGISTRY, _running_jobs, _running_jobs_lock, scheduler
+
+    if job_type not in JOB_REGISTRY:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unknown job_type '{job_type}'. Known: {sorted(JOB_REGISTRY.keys())}",
+        )
+
+    async with _running_jobs_lock:
+        if job_type in _running_jobs:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Job '{job_type}' is already running",
+            )
+
+    func = JOB_REGISTRY[job_type]
+    trigger_id = f"manual-{job_type}-{int(time.time() * 1000)}"
+    try:
+        # `trigger='date'` with no run_date defaults to "now" — APScheduler
+        # picks it up on the next event loop tick.
+        scheduler.add_job(
+            func,
+            trigger="date",
+            id=trigger_id,
+            name=f"manual:{job_type}",
+            replace_existing=False,
+            misfire_grace_time=None,
+        )
+    except Exception as exc:  # pragma: no cover - depends on APScheduler state
+        logging.exception("Failed to enqueue manual run for %s", job_type)
+        raise HTTPException(status_code=500, detail=f"Failed to schedule job: {exc}") from exc
+
+    logging.info("[admin] Manual run requested for job_type=%s trigger_id=%s", job_type, trigger_id)
+    return {"jobType": job_type, "triggerId": trigger_id, "status": "queued"}
 
 
 # ---------------------------------------------------------------------------
