@@ -3,7 +3,7 @@ import { ThemeProvider } from "next-themes";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { JobsTable } from "./components/JobsTable";
 import { FilesTable } from "./components/FilesTable";
-import { fetchVersion } from "./lib/api";
+import { fetchIdentity, fetchVersion, type Identity } from "./lib/api";
 import { Database, FileText } from "lucide-react";
 
 type Tab = "jobs" | "files";
@@ -12,9 +12,11 @@ function Dashboard() {
   const [tab, setTab] = useState<Tab>("jobs");
   const [version, setVersion] = useState("");
   const [navRunId, setNavRunId] = useState<string | null>(null);
+  const [identity, setIdentity] = useState<Identity>({ authEnabled: false, isAdmin: true });
 
   useEffect(() => {
     fetchVersion().then(setVersion);
+    fetchIdentity().then(setIdentity);
   }, []);
 
   useEffect(() => {
@@ -70,7 +72,7 @@ function Dashboard() {
       </nav>
 
       {tab === "jobs" ? (
-        <JobsTable navigateRunId={navRunId} onNavigated={() => setNavRunId(null)} />
+        <JobsTable navigateRunId={navRunId} onNavigated={() => setNavRunId(null)} identity={identity} />
       ) : (
         <FilesTable />
       )}

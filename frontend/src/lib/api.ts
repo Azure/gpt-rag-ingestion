@@ -6,6 +6,8 @@ export interface PaginatedResponse<T> {
   page: number;
   pageSize: number;
   indexerTypes?: string[];
+  availableJobTypes?: string[];
+  runningJobTypes?: string[];
 }
 
 export interface JobRun {
@@ -108,6 +110,46 @@ export async function fetchVersion(): Promise<string> {
   if (!r.ok) return "unknown";
   const data = await r.json();
   return data.version ?? "unknown";
+}
+
+export interface Identity {
+  authEnabled: boolean;
+  isAdmin: boolean;
+}
+
+export async function fetchIdentity(signal?: AbortSignal): Promise<Identity> {
+  try {
+    const r = await fetch(`${BASE}/identity`, { signal });
+    if (!r.ok) return { authEnabled: true, isAdmin: false };
+    return (await r.json()) as Identity;
+  } catch {
+    return { authEnabled: true, isAdmin: false };
+  }
+}
+
+export interface RunJobError extends Error {
+  status: number;
+  /** True when the backend returned 409 (job already running). */
+  conflict: boolean;
+  /** True when the backend returned 403 (admin required). */
+  forbidden: boolean;
+}
+
+export async function runJob(jobType: string): Promise<{ jobType: string; triggerId: string; status: string }> {
+  const r = await fetch(`${BASE}/jobs/${encodeURIComponent(jobType)}/run`, { method: "POST" });
+  if (r.ok) return r.json();
+  let detail = `Failed to run job: ${r.status}`;
+  try {
+    const body = await r.json();
+    if (body && typeof body.detail === "string") detail = body.detail;
+  } catch {
+    /* ignore */
+  }
+  const err = new Error(detail) as RunJobError;
+  err.status = r.status;
+  err.conflict = r.status === 409;
+  err.forbidden = r.status === 403;
+  throw err;
 }
 
 /** Format ISO timestamp to readable UTC string */
