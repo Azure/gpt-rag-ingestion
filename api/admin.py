@@ -839,7 +839,20 @@ async def get_config_settings(request: Request) -> Dict[str, Any]:
 
     return {
         "sections": [
-            {"id": s["id"], "label": s["label"], "settings": by_section.get(s["id"], [])}
+            {
+                "id": s["id"],
+                # `label` is the original field name; `title` is the name the
+                # typed frontend `ConfigSection` reads. Emit both so legacy
+                # consumers and the dashboard render the same string.
+                "label": s["label"],
+                "title": s["label"],
+                # `settings` keeps the full nested objects for any non-UI
+                # consumer; `keys` is the flat list the frontend uses to
+                # index into the top-level `settings` array per the typed
+                # contract in `frontend/src/lib/api.ts`.
+                "settings": by_section.get(s["id"], []),
+                "keys": [item["key"] for item in by_section.get(s["id"], [])],
+            }
             for s in CONFIG_SECTIONS
         ],
         "settings": flat_settings,
