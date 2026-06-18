@@ -1,18 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchJobs, formatUtc, type JobRun } from "../lib/api";
+import { fetchJobs, formatUtc, runJob, type Identity, type JobRun, type RunJobError } from "../lib/api";
 import { StatusBadge } from "./StatusBadge";
 import { Pagination } from "./Pagination";
 import { SearchInput } from "./SearchInput";
 import { SortHeader } from "./SortHeader";
 import { DetailDialog } from "./DetailDialog";
-import { RefreshCw } from "lucide-react";
+import { Play, RefreshCw } from "lucide-react";
 
 interface JobsTableProps {
   navigateRunId?: string | null;
   onNavigated?: () => void;
+  identity: Identity;
 }
 
-export function JobsTable({ navigateRunId, onNavigated }: JobsTableProps) {
+type AlertKind = "success" | "error";
+interface AlertState {
+  kind: AlertKind;
+  message: string;
+}
+
+export function JobsTable({ navigateRunId, onNavigated, identity }: JobsTableProps) {
   const [items, setItems] = useState<JobRun[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -23,6 +30,10 @@ export function JobsTable({ navigateRunId, onNavigated }: JobsTableProps) {
   const [indexerType, setIndexerType] = useState("");
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<JobRun | null>(null);
+  const [availableJobTypes, setAvailableJobTypes] = useState<string[]>([]);
+  const [runningJobTypes, setRunningJobTypes] = useState<string[]>([]);
+  const [triggering, setTriggering] = useState<string | null>(null);
+  const [alert, setAlert] = useState<AlertState | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
@@ -36,6 +47,8 @@ export function JobsTable({ navigateRunId, onNavigated }: JobsTableProps) {
       setItems(res.items);
       setTotal(res.total);
       if (res.indexerTypes) setIndexerTypes(res.indexerTypes);
+      if (res.availableJobTypes) setAvailableJobTypes(res.availableJobTypes);
+      if (res.runningJobTypes) setRunningJobTypes(res.runningJobTypes);
     } catch (err) {
       if ((err as Error).name === "AbortError") return;
       console.error(err);
@@ -69,6 +82,26 @@ export function JobsTable({ navigateRunId, onNavigated }: JobsTableProps) {
 
   const handleSearch = useCallback((v: string) => { setSearch(v); setPage(1); }, []);
 
+  const canRun = !identity.authEnabled || identity.isAdmin;
+  const disabledTooltip = !canRun ? "Admin role required" : undefined;
+
+  const handleRun = async (jobType: string) => {
+    if (!canRun) return;
+    setTriggering(jobType);
+    setAlert(null);
+    try {
+      await runJob(jobType);
+      setAlert({ kind: "success", message: `Queued ${jobType}.` });
+      // Refresh immediately; the backend already reports the job as running.
+      load();
+    } catch (err) {
+      const e = err as RunJobError;
+      setAlert({ kind: "error", message: e.message || `Failed to run ${jobType}` });
+    } finally {
+      setTriggering(null);
+    }
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-3">
@@ -88,6 +121,58 @@ export function JobsTable({ navigateRunId, onNavigated }: JobsTableProps) {
           <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
         </button>
       </div>
+
+      {availableJobTypes.length > 0 && (
+        <div
+          className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2"
+          aria-label="Run jobs on demand"
+        >
+          <span className="text-xs font-medium text-muted-foreground">Run now:</span>
+          {availableJobTypes.map((jt) => {
+            const isRunning = runningJobTypes.includes(jt);
+            const isPending = triggering === jt;
+            const disabled = !canRun || isRunning || isPending;
+            const tooltip = !canRun
+              ? disabledTooltip
+              : isRunning
+                ? "Job is already running"
+                : `Trigger ${jt}`;
+            return (
+              <button
+                key={jt}
+                type="button"
+                onClick={() => handleRun(jt)}
+                disabled={disabled}
+                title={tooltip}
+                aria-label={tooltip}
+                aria-disabled={disabled}
+                className="inline-flex items-center gap-1.5 rounded-md border bg-background px-2.5 py-1 text-xs font-medium hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isPending ? (
+                  <RefreshCw className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Play className="h-3 w-3" />
+                )}
+                {jt}
+                {isRunning && <span className="text-[10px] text-muted-foreground">(running)</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {alert && (
+        <div
+          role="alert"
+          className={`rounded-md border px-3 py-2 text-sm ${
+            alert.kind === "error"
+              ? "border-destructive/50 bg-destructive/10 text-destructive"
+              : "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+          }`}
+        >
+          {alert.message}
+        </div>
+      )}
 
       <div className="rounded-lg border">
         <table className="w-full text-sm">

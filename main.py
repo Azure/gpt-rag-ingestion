@@ -49,6 +49,50 @@ def _resolve_timezone():
 local_tz = _resolve_timezone()
 scheduler = AsyncIOScheduler(timezone=local_tz)
 
+# -------------------------------
+# Manual run-now coordination
+# -------------------------------
+# `_running_jobs` is the source of truth for "is this job_type executing right now?".
+# It is consulted both by the manual `POST /api/jobs/{job_type}/run` endpoint to
+# return 409 on concurrent triggers, and by the scheduler wrapper so cron-triggered
+# runs participate in the same mutual exclusion as manual runs.
+_running_jobs: set[str] = set()
+_running_jobs_lock = asyncio.Lock()
+
+
+def _track_running(job_id: str, func):
+    """Wrap an async job function so its execution is reflected in `_running_jobs`."""
+
+    async def _wrapped():
+        async with _running_jobs_lock:
+            _running_jobs.add(job_id)
+        try:
+            return await func()
+        finally:
+            async with _running_jobs_lock:
+                _running_jobs.discard(job_id)
+
+    _wrapped.__name__ = getattr(func, "__name__", job_id)
+    return _wrapped
+
+
+# Populated inside lifespan once the job functions are defined.
+JOB_REGISTRY: dict[str, "object"] = {}
+
+# Maps CRON_RUN_* App Configuration keys to the APScheduler `job_id` they drive.
+# Exposed at module scope so `api.admin` (Configuration tab) can reschedule the
+# right job after a PUT /api/config that updates a cron expression — without
+# having to mirror the mapping inside `lifespan` and risk drift.
+JOB_CRON_MAP: dict[str, str] = {
+    "CRON_RUN_SHAREPOINT_INDEX": "sharepoint_index",
+    "CRON_RUN_SHAREPOINT_PURGE": "sharepoint_purge",
+    "CRON_RUN_IMAGES_PURGE": "multimodality_images_purge",
+    "CRON_RUN_BLOB_INDEX": "blob_index",
+    "CRON_RUN_BLOB_PURGE": "blob_purge",
+    "CRON_RUN_NL2SQL_INDEX": "nl2sql_index",
+    "CRON_RUN_NL2SQL_PURGE": "nl2sql_purge",
+}
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
 
@@ -145,13 +189,30 @@ async def lifespan(app: FastAPI):
     logging.info(f"Scheduler timezone: {local_tz}")
 
     now = datetime.datetime.now(tz=local_tz)
-    s_sharepoint_index = _schedule("CRON_RUN_SHAREPOINT_INDEX", run_sharepoint_index, "sharepoint_index", "sharepoint-indexer")
-    s_sharepoint_purge = _schedule("CRON_RUN_SHAREPOINT_PURGE", run_sharepoint_purge, "sharepoint_purge", "sharepoint-purger")
-    s_images_purge = _schedule("CRON_RUN_IMAGES_PURGE", run_images_purge, "multimodality_images_purge", "multimodality-images-purger")
-    s_blob_index = _schedule("CRON_RUN_BLOB_INDEX", run_blob_index, "blob_index", "blob-storage-indexer", default_cron="0 * * * *")
-    s_blob_purge = _schedule("CRON_RUN_BLOB_PURGE", run_blob_purge, "blob_purge", "blob-storage-indexer-purger", default_cron="10 * * * *")
-    s_nl2sql_index = _schedule("CRON_RUN_NL2SQL_INDEX", run_nl2sql_index, "nl2sql_index", "nl2sql-indexer")
-    s_nl2sql_purge = _schedule("CRON_RUN_NL2SQL_PURGE", run_nl2sql_purge, "nl2sql_purge", "nl2sql-indexer-purger")
+
+    # Wrap every run_* function so manual and cron-triggered executions share
+    # the same _running_jobs set. The wrapper is the value stored in JOB_REGISTRY
+    # and the callable passed to APScheduler, so cron runs also block manual
+    # 409 collisions and vice-versa.
+    _wrapped_jobs: dict[str, object] = {
+        "sharepoint_index": _track_running("sharepoint_index", run_sharepoint_index),
+        "sharepoint_purge": _track_running("sharepoint_purge", run_sharepoint_purge),
+        "multimodality_images_purge": _track_running("multimodality_images_purge", run_images_purge),
+        "blob_index": _track_running("blob_index", run_blob_index),
+        "blob_purge": _track_running("blob_purge", run_blob_purge),
+        "nl2sql_index": _track_running("nl2sql_index", run_nl2sql_index),
+        "nl2sql_purge": _track_running("nl2sql_purge", run_nl2sql_purge),
+    }
+    JOB_REGISTRY.clear()
+    JOB_REGISTRY.update(_wrapped_jobs)
+
+    s_sharepoint_index = _schedule("CRON_RUN_SHAREPOINT_INDEX", _wrapped_jobs["sharepoint_index"], "sharepoint_index", "sharepoint-indexer")
+    s_sharepoint_purge = _schedule("CRON_RUN_SHAREPOINT_PURGE", _wrapped_jobs["sharepoint_purge"], "sharepoint_purge", "sharepoint-purger")
+    s_images_purge = _schedule("CRON_RUN_IMAGES_PURGE", _wrapped_jobs["multimodality_images_purge"], "multimodality_images_purge", "multimodality-images-purger")
+    s_blob_index = _schedule("CRON_RUN_BLOB_INDEX", _wrapped_jobs["blob_index"], "blob_index", "blob-storage-indexer", default_cron="0 * * * *")
+    s_blob_purge = _schedule("CRON_RUN_BLOB_PURGE", _wrapped_jobs["blob_purge"], "blob_purge", "blob-storage-indexer-purger", default_cron="10 * * * *")
+    s_nl2sql_index = _schedule("CRON_RUN_NL2SQL_INDEX", _wrapped_jobs["nl2sql_index"], "nl2sql_index", "nl2sql-indexer")
+    s_nl2sql_purge = _schedule("CRON_RUN_NL2SQL_PURGE", _wrapped_jobs["nl2sql_purge"], "nl2sql_purge", "nl2sql-indexer-purger")
 
     # Log cleanup: runs immediately then every hour (not shown in dashboard)
     from api.admin import _cleanup_old_runs
@@ -186,25 +247,25 @@ async def lifespan(app: FastAPI):
         try:
             if s_blob_index:
                 logging.info("[startup] Running blob-storage-indexer immediately")
-                await run_blob_index()
+                await _wrapped_jobs["blob_index"]()
             if s_blob_purge:
                 logging.info("[startup] Running blob-purge immediately")
-                await run_blob_purge()
+                await _wrapped_jobs["blob_purge"]()
             if s_nl2sql_index:
                 logging.info("[startup] Running nl2sql-indexer immediately")
-                await run_nl2sql_index()
+                await _wrapped_jobs["nl2sql_index"]()
             if s_nl2sql_purge:
                 logging.info("[startup] Running nl2sql-purge immediately")
-                await run_nl2sql_purge()
+                await _wrapped_jobs["nl2sql_purge"]()
             if s_sharepoint_index:
                 logging.info("[startup] Running sharepoint-indexer immediately")
-                await run_sharepoint_index()
+                await _wrapped_jobs["sharepoint_index"]()
             if s_sharepoint_purge:
                 logging.info("[startup] Running sharepoint-purger immediately")
-                await run_sharepoint_purge()
+                await _wrapped_jobs["sharepoint_purge"]()
             if s_images_purge:
                 logging.info("[startup] Running multimodality-images-purger immediately")
-                await run_images_purge()
+                await _wrapped_jobs["multimodality_images_purge"]()
         except asyncio.CancelledError:
             logging.info("[startup] Startup jobs cancelled")
             raise
