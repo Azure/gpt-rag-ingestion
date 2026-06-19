@@ -2,12 +2,13 @@ import { useEffect, useState } from "react";
 import { ThemeProvider } from "next-themes";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { JobsTable } from "./components/JobsTable";
+import { SchedulesTab } from "./components/SchedulesTab";
 import { FilesTable } from "./components/FilesTable";
 import { ConfigurationTab } from "./components/ConfigurationTab";
 import { fetchIdentity, fetchVersion, type Identity } from "./lib/api";
-import { Database, FileText, Settings } from "lucide-react";
+import { Calendar, Database, FileText, Settings } from "lucide-react";
 
-type Tab = "jobs" | "files" | "config";
+type Tab = "jobs" | "schedules" | "files" | "config";
 
 function Dashboard() {
   const [tab, setTab] = useState<Tab>("jobs");
@@ -60,6 +61,17 @@ function Dashboard() {
           Jobs
         </button>
         <button
+          onClick={() => setTab("schedules")}
+          className={`flex items-center gap-1.5 border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
+            tab === "schedules"
+              ? "border-primary text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Calendar className="h-4 w-4" />
+          Schedules
+        </button>
+        <button
           onClick={() => setTab("files")}
           className={`flex items-center gap-1.5 border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
             tab === "files"
@@ -86,6 +98,7 @@ function Dashboard() {
       {tab === "jobs" && (
         <JobsTable navigateRunId={navRunId} onNavigated={() => setNavRunId(null)} identity={identity} />
       )}
+      {tab === "schedules" && <SchedulesTab identity={identity} />}
       {tab === "files" && <FilesTable />}
       {tab === "config" && <ConfigurationTab identity={identity} />}
     </div>

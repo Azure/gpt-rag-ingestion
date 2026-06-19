@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [v2.4.13] - 2026-06-19
+
+### Fixed
+
+- **Operator dashboard Jobs tab: "Run now" strip and "Queue and schedule" panel moved to a new Schedules tab.** The Jobs tab top half stacked two operator-control panels (the 7-button *Run now* strip and the *Queue and schedule* table) above the actual recent-runs list, so the tab tried to be both a control surface and a history view at the same time. The two panels now live on a dedicated **Schedules** tab inserted between *Jobs* and *Files* (new tab order: *Jobs | Schedules | Files | Configuration*). The Jobs tab is now focused on watching what is running right now: search box, type filter, refresh, and the recent-runs table. All existing functionality is preserved (manual triggering, burst polling on click, cron/last-run display) — the panels are simply relocated. Clicking *Run now* on the Schedules tab keeps the operator on Schedules so they can watch the queue table update; the success toast is the confirmation. The *Queue and schedule* panel on its own tab no longer needs a collapse chevron and defaults to expanded.
+- **Operator dashboard: success toast on *Run now* stayed visible forever ([#254](https://github.com/Azure/gpt-rag-ingestion/issues/254)).** After clicking a job button the green `"Started <job_type>."` toast had no auto-dismiss path and no manual close button, so it sat on screen until the operator reloaded the page. Toasts now auto-dismiss 4 seconds after they are raised, each toast gets its own timer (a fresh trigger does not extend an older toast), the toast also has a manual `×` button so operators can close it early, and the dismiss timer is cleared on tab unmount so it cannot leak into another view. Same behavior applies to the warning toast (`"<job_type> is already running."`) and error toasts.
+
+### Validation
+
+- Frontend: `npm run lint` clean, `npm run build` clean, `npm test` green (`SchedulesTab` auto-dismiss test asserts the toast is removed from the DOM after the timeout).
+- Sandbox validation: image deployed to `ca-4oa7xxpgqecaa-dataingest` in `rg-gptrag-sandbox-2606181758`; `GET /api/version` returns `2.4.13`; new Schedules tab visible between Jobs and Files; *Run now* trigger toast disappears within ~5s without operator action.
+
 ## [v2.4.12] - 2026-06-18
 
 ### Fixed
