@@ -454,31 +454,128 @@ async def run_job_now(job_type: str) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# GET /api/jobs/queue – per-job_type view of "what is in flight and when is
-# the next cron going to fire". Read-only, network-only auth (same gate as
-# `GET /api/jobs` and `GET /api/config`). Powers the operator dashboard's
-# Queue panel so users do not have to click *Run now* to discover the answer.
+# Queue panel helpers (cron formatting + last-run lookup)
+# ---------------------------------------------------------------------------
+
+# Canonical 5-field cron order, in the same sequence operators write crontab
+# expressions ("minute hour day month day_of_week"). Looking up trigger fields
+# by name (rather than positional slicing) is required because APScheduler's
+# ``CronTrigger.fields`` also carries ``year``, ``week`` and ``second`` —
+# positional slicing would pick the wrong subset.
+_CRON_FIELD_ORDER = ("minute", "hour", "day", "month", "day_of_week")
+
+
+def _cron_trigger_to_string(trigger: Any) -> Optional[str]:
+    """Render an APScheduler ``CronTrigger`` as a 5-field crontab string.
+
+    Returns ``None`` for any other trigger kind (``DateTrigger``,
+    ``IntervalTrigger``, ``None``) so callers can keep the dashboard column
+    blank instead of inventing a schedule.
+    """
+    try:
+        from apscheduler.triggers.cron import CronTrigger
+    except Exception:  # pragma: no cover - apscheduler always installed in prod
+        return None
+    if not isinstance(trigger, CronTrigger):
+        return None
+    by_name = {getattr(f, "name", ""): f for f in getattr(trigger, "fields", [])}
+    parts: List[str] = []
+    for name in _CRON_FIELD_ORDER:
+        field = by_name.get(name)
+        if field is None:
+            return None
+        parts.append(str(field))
+    return " ".join(parts)
+
+
+# Maps ``job_type`` (the key used by /api/jobs/{job_type}/run and the Queue
+# panel) to the ``indexerType`` written into each run-summary blob's JSON
+# body. Default indexer names match the dataclass defaults in ``jobs/``;
+# operators who override ``BLOB_INDEXER_NAME`` / ``SP_INDEXER_NAME`` etc.
+# will see ``last_run: null`` for that row until they revert the override.
+# Listed explicitly so an unknown ``job_type`` cannot accidentally match a
+# run blob written by a different job.
+_JOB_TYPE_TO_INDEXER_TYPE: Dict[str, Optional[str]] = {
+    "sharepoint_index": "sharepoint-indexer",
+    "sharepoint_purge": "sharepoint-purger",
+    "blob_index": "blob-storage-indexer",
+    "blob_purge": "blob-storage-purger",
+    "nl2sql_index": "nl2sql-indexer",
+    "nl2sql_purge": "nl2sql-purger",
+    # The multimodality images purger does not write run-summary blobs.
+    "multimodality_images_purge": None,
+}
+
+
+def _latest_run_for_indexer(runs: List[dict], indexer_type: str) -> Optional[dict]:
+    """Return the most recent finished/failed run for ``indexer_type``.
+
+    "Most recent" means the largest ``runFinishedAt`` if present, falling
+    back to ``runStartedAt`` for runs that recorded a start but no finish
+    (e.g. ``interrupted``). Returns ``None`` when no run matches.
+    """
+    matches = [r for r in runs if r.get("indexerType") == indexer_type]
+    if not matches:
+        return None
+
+    def _key(run: dict) -> str:
+        # ISO-8601 strings sort lexicographically; missing values sort last.
+        return run.get("runFinishedAt") or run.get("runStartedAt") or ""
+
+    matches.sort(key=_key, reverse=True)
+    return matches[0]
+
+
+def _last_run_payload(run: Optional[dict]) -> Optional[Dict[str, Any]]:
+    """Project a run-summary blob into the small shape the Queue panel needs."""
+    if run is None:
+        return None
+    indexed = (
+        run.get("indexedItems")
+        if run.get("indexedItems") is not None
+        else run.get("indexParentsPurged")
+    )
+    return {
+        "started_at": run.get("runStartedAt") or None,
+        "finished_at": run.get("runFinishedAt") or None,
+        "status": run.get("status") or None,
+        "indexed_count": int(indexed) if isinstance(indexed, (int, float)) else None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# GET /api/jobs/queue – per-job_type view of "what is in flight, when is the
+# next cron going to fire, and how did the last run go". Read-only,
+# network-only auth (same gate as `GET /api/jobs` and `GET /api/config`).
+# Powers the operator dashboard's Queue panel.
 #
 # Per row:
 #   - in_flight: {run_id, started_at} from `_running_jobs`, or `null`
 #   - next_scheduled_at: ISO-8601 UTC from APScheduler, or `null` if no cron
 #     is registered or the expression is invalid
-#   - cron: the current `CRON_RUN_*` string from app config (so the UI can
-#     show the operator what is driving the schedule). `null` when the env
-#     key is unset.
+#   - cron: the 5-field crontab string read directly from the registered
+#     APScheduler trigger (single source of truth — matches what is actually
+#     firing). `null` when no cron job is registered or the trigger is not a
+#     `CronTrigger`.
+#   - last_run: {started_at, finished_at, status, indexed_count} for the most
+#     recent run-summary blob of this job_type, or `null` when no run has
+#     been recorded yet. Derived from the same blob store the `/api/jobs`
+#     endpoint reads (cached for 60s).
 # ---------------------------------------------------------------------------
 @router.get("/jobs/queue")
 async def get_jobs_queue() -> Dict[str, Any]:
     # Late import: keeps api.admin importable on its own (and matches the
     # rest of this module, which avoids pulling in the full ingestion stack
     # at module load).
-    from main import JOB_CRON_MAP, JOB_REGISTRY, _running_jobs, scheduler
+    from main import JOB_REGISTRY, _running_jobs, scheduler
 
-    # Invert JOB_CRON_MAP so we can look up the env key for a given job_id.
-    # The map is small (7 entries today) so the per-request cost is trivial.
-    cron_env_for_job: Dict[str, str] = {jid: env for env, jid in JOB_CRON_MAP.items()}
+    # Reuse the cached runs list so a poll every 10s does not hammer blob
+    # storage; the underlying cache TTL is 60s.
+    try:
+        all_runs, _ = await _cached_load("runs", _load_all_runs)
+    except Exception:  # pragma: no cover - blob outages should not 500 the queue
+        all_runs = []
 
-    cfg = get_config()
     items: List[Dict[str, Any]] = []
     for job_type in sorted(JOB_REGISTRY.keys()):
         entry = _running_jobs.get(job_type)
@@ -494,17 +591,20 @@ async def get_jobs_queue() -> Dict[str, Any]:
         # this job_type (the operator left ``CRON_RUN_*`` blank). That is a
         # supported configuration, so we surface ``null`` rather than 500.
         next_scheduled_at: Optional[str] = None
+        cron_value: Optional[str] = None
         try:
             job = scheduler.get_job(job_type)
         except Exception:  # pragma: no cover - defensive; depends on scheduler state
             job = None
-        if job is not None and getattr(job, "next_run_time", None) is not None:
-            next_scheduled_at = _iso_utc(job.next_run_time)
+        if job is not None:
+            if getattr(job, "next_run_time", None) is not None:
+                next_scheduled_at = _iso_utc(job.next_run_time)
+            cron_value = _cron_trigger_to_string(getattr(job, "trigger", None))
 
-        cron_env = cron_env_for_job.get(job_type)
-        cron_value: Optional[str] = None
-        if cron_env:
-            cron_value = cfg.get(cron_env, default=None, allow_none=True) or None
+        indexer_type = _JOB_TYPE_TO_INDEXER_TYPE.get(job_type)
+        last_run: Optional[Dict[str, Any]] = None
+        if indexer_type:
+            last_run = _last_run_payload(_latest_run_for_indexer(all_runs, indexer_type))
 
         items.append(
             {
@@ -512,6 +612,7 @@ async def get_jobs_queue() -> Dict[str, Any]:
                 "in_flight": in_flight,
                 "next_scheduled_at": next_scheduled_at,
                 "cron": cron_value,
+                "last_run": last_run,
             }
         )
 
