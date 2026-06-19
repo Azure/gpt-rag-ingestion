@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [v2.4.12] - 2026-06-18
+
+### Fixed
+
+- **Misleading placeholders on the Configuration tab.** Operator-reported follow-up to v2.4.11: every text/number input on the Configuration tab used its own example or default as the placeholder, styled close enough to a real entered value that operators could not tell empty fields apart from configured ones (e.g. the Scheduling section showed `0 * * * *`, `0 2 * * *`, `*/15 * * * *` inside the inputs). The same examples were also repeated as helper text below the input, so the placeholder added nothing but confusion. Placeholders now describe what an empty field means at runtime: `"Not configured"` when empty disables the feature (5 cron inputs and all 8 numeric inputs), `"Default: <value>"` for the two inputs (`CRON_RUN_BLOB_INDEX`, `CRON_RUN_BLOB_PURGE`) where the backend `SettingSpec.default` actually applies when empty. The example moves to (or stays in) the helper line below the input, so it is never duplicated. No backend, schema, or styling changes — placeholder rendering keeps using the existing `placeholder:text-muted-foreground` token from `SettingField.tsx`. 15 inputs updated in total.
+
+### Validation
+
+- Frontend: `npm run lint` clean, `npm run build` clean.
+- Sandbox validation: image deployed to `ca-4oa7xxpgqecaa-dataingest` in `rg-gptrag-sandbox-2606181758`; `GET /api/version` returns `2.4.12`.
+
 ## [v2.4.11] - 2026-06-18
 
 ### Fixed
