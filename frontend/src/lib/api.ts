@@ -143,13 +143,26 @@ export interface QueueInFlight {
   started_at: string;
 }
 
+export interface QueueLastRun {
+  /** ISO-8601 UTC timestamp, or null. */
+  started_at: string | null;
+  /** ISO-8601 UTC timestamp, or null when the run is still in flight / interrupted. */
+  finished_at: string | null;
+  /** "finished", "failed", "interrupted", "running", ... */
+  status: string | null;
+  /** Items indexed/purged; null when the job does not report a count. */
+  indexed_count: number | null;
+}
+
 export interface QueueRow {
   job_type: string;
   in_flight: QueueInFlight | null;
   /** ISO-8601 UTC timestamp, or null when no cron is registered. */
   next_scheduled_at: string | null;
-  /** Cron expression from app config, or null when the CRON_RUN_* key is unset. */
+  /** Crontab expression from the registered APScheduler trigger, or null when no cron is registered. */
   cron: string | null;
+  /** Most recent finished/failed run for this job_type, or null when no runs have been recorded. */
+  last_run: QueueLastRun | null;
 }
 
 export interface QueueResponse {
