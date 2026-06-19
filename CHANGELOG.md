@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+## [v2.4.11] - 2026-06-18
+
+### Fixed
+
+- **Operator dashboard Queue panel rough edges from v2.4.10 ([#247](https://github.com/Azure/gpt-rag-ingestion/issues/247) follow-up):** Five small but visible issues bundled into one release so operators get the polish in one container update.
+  - *Run now* toast wording. The success toast said `"Queued <job_type>."` but APScheduler fires the job immediately, so operators already saw it running in the runs table before they finished reading the toast. The toast now says `"Started <job_type>."` on success, `"<job_type> is already running."` (warning variant) on `409 Conflict`, and keeps the existing error toast for other failures.
+  - `cron` field on `GET /api/jobs/queue` was `null` for every `job_type`. The endpoint was reading from app config keys with a pattern that did not match what `main.py` writes, so the *Cron* column was empty for the whole panel. The endpoint now reads cron directly from `scheduler.get_job(job_id).trigger` — single source of truth, identical to what APScheduler is actually firing. A small helper inside `api/admin.py` walks `trigger.fields` **by field name** (`minute`, `hour`, `day`, `month`, `day_of_week`) instead of positional slicing, because APScheduler's `fields` also includes `year`, `week`, and `second`, which would have produced a wrong 5-field string. Non-`CronTrigger` triggers (`DateTrigger`, `IntervalTrigger`, or no job registered) keep returning `null`.
+  - Queue panel polling cadence after *Run now*. The panel polled every 10 seconds, so a *Run now* click could take up to a full poll cycle before the new in-flight state showed up. After any *Run now* click the panel now bursts to a 1-second poll for 15 seconds, then reverts to 10 seconds. A single `setTimeout` + `setInterval` ref pair is cleared and reset on every click (does not stack) and cleared on unmount.
+
+### Added
+
+- **Collapsible Queue panel.** The 7-row Queue table was pushing the runs table down ~250 px on every page load even when operators were not actively watching the queue. The *Queue and schedule* header is now a chevron toggle (`▸` collapsed, `▾` expanded) and defaults to **collapsed**. The preference is persisted in `localStorage` under the key `gpt-rag-ingestion.queuePanel.expanded` and hydrated on mount. When collapsed, the header still shows a compact summary line: `"Queue and schedule — N jobs scheduled, M in flight"` where `N` counts items with `next_scheduled_at != null` and `M` counts items with `in_flight != null`, so the panel earns its space even when not expanded.
+- **"Last run" column in the Queue panel.** The panel previously only showed `Next run`, so it felt static and never reflected manual *Run now* activity. A new `last_run` field on each `GET /api/jobs/queue` item carries `{started_at, finished_at, status, indexed_count}` (or `null`), derived from the same cached runs store the `/api/jobs/runs` endpoint reads — no second frontend request per poll. The column renders as `"<relative time> · <status> · <indexed> indexed"` (for example `"3s ago · finished · 0 indexed"` or `"5m ago · failed"`). Column order in the table is now: `Job | In flight | Last run | Next run | Cron`.
+
+### Validation
+
+- Full pytest suite: 37 passed (3 new in `tests/test_admin_jobs_queue.py`: `test_queue_cron_is_read_from_trigger_not_app_config`, `test_queue_last_run_populated_from_runs_store`, `test_queue_last_run_handles_failed_run_without_indexed_count`).
+- Frontend: `npm run lint` clean, `npm run build` clean.
+- Sandbox validation: image deployed to `ca-4oa7xxpgqecaa-dataingest` in `rg-gptrag-sandbox-2606181758`; `GET /api/version` returns `2.4.11`; `GET /api/jobs/queue` returns non-null `cron` for `blob_index` and `blob_purge` and populated `last_run` for `blob_index`.
+
 ## [v2.4.10] - 2026-06-18
 
 ### Added
