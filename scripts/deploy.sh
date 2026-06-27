@@ -16,11 +16,42 @@ label="gpt-rag"
 imageRepository="data-ingestion"
 appConfigKey="DATA_INGEST_APP_NAME"
 identitySuffix="dataingest"
+acr_build_max_attempts=3
+acr_build_retry_delay_seconds=30
 
 info() { echo -e "${BLUE}$*${NC}" >&2; }
 success() { echo -e "${GREEN}$*${NC}" >&2; }
 warn() { echo -e "${YELLOW}$*${NC}" >&2; }
 error() { echo -e "${RED}$*${NC}" >&2; }
+
+run_with_retry() {
+  local what="$1"
+  local max_attempts="$2"
+  local delay_seconds="$3"
+  shift 3
+
+  local attempt status
+  for ((attempt = 1; attempt <= max_attempts; attempt++)); do
+    info "${what}: attempt ${attempt}/${max_attempts}..."
+    set +e
+    "$@"
+    status=$?
+    set -e
+
+    if [[ $status -eq 0 ]]; then
+      return 0
+    fi
+
+    if ((attempt < max_attempts)); then
+      warn "${what} failed (exit ${status}). Retrying in ${delay_seconds} seconds..."
+      sleep "$delay_seconds"
+      continue
+    fi
+
+    error "Failed: ${what} after ${max_attempts} attempts (exit ${status}). Remote ACR build did not complete; rerun this script or inspect the Azure CLI and ACR task output."
+    return "$status"
+  done
+}
 
 select_cli_value() {
   local expected="${1:-}"
@@ -303,7 +334,7 @@ else
     acr_build_args+=(--agent-pool "$ACR_TASK_AGENT_POOL")
   fi
   acr_build_args+=(.)
-  az "${acr_build_args[@]}"
+  run_with_retry "ACR remote build" "$acr_build_max_attempts" "$acr_build_retry_delay_seconds" az "${acr_build_args[@]}"
   success "Remote build completed."
 fi
 
