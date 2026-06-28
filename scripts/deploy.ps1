@@ -14,6 +14,8 @@ $label = 'gpt-rag'
 $imageRepository = 'data-ingestion'
 $appConfigKey = 'DATA_INGEST_APP_NAME'
 $identitySuffix = 'dataingest'
+$acrBuildMaxAttempts = 3
+$acrBuildRetryDelaySeconds = 30
 
 function Write-Green($msg) { Write-Host $msg -ForegroundColor Green }
 function Write-Blue($msg) { Write-Host $msg -ForegroundColor Cyan }
@@ -35,6 +37,35 @@ function Invoke-ExternalCommand {
         exit 1
     }
     return $output
+}
+
+function Invoke-ExternalCommandWithRetry {
+    param(
+        [Parameter(Mandatory=$true)][string]$FilePath,
+        [Parameter()][string[]]$Arguments = @(),
+        [Parameter(Mandatory=$true)][string]$What,
+        [Parameter(Mandatory=$true)][int]$MaxAttempts,
+        [Parameter(Mandatory=$true)][int]$DelaySeconds
+    )
+
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        Write-Blue ("{0}: attempt {1}/{2}..." -f $What, $attempt, $MaxAttempts)
+        $output = & $FilePath @Arguments 2>&1
+        $exitCode = $LASTEXITCODE
+        if ($exitCode -eq 0) {
+            return $output
+        }
+
+        if ($output) { Write-Host ($output | Out-String) }
+        if ($attempt -lt $MaxAttempts) {
+            Write-Yellow ("{0} failed (exit {1}). Retrying in {2} seconds..." -f $What, $exitCode, $DelaySeconds)
+            Start-Sleep -Seconds $DelaySeconds
+            continue
+        }
+
+        Write-ErrorColored ("Failed: {0} after {1} attempts (exit {2}). Remote ACR build did not complete; rerun this script or inspect the Azure CLI and ACR task output." -f $What, $MaxAttempts, $exitCode)
+        exit $exitCode
+    }
 }
 
 function Get-CliOutputValue {
@@ -344,7 +375,7 @@ if ($buildMode -eq 'local') {
         $acrBuildArgs += @('--agent-pool',$env:ACR_TASK_AGENT_POOL)
     }
     $acrBuildArgs += '.'
-    Invoke-ExternalCommand -FilePath 'az' -Arguments $acrBuildArgs -What 'ACR remote build' | Out-Null
+    Invoke-ExternalCommandWithRetry -FilePath 'az' -Arguments $acrBuildArgs -What 'ACR remote build' -MaxAttempts $acrBuildMaxAttempts -DelaySeconds $acrBuildRetryDelaySeconds | Out-Null
     Write-Green 'Remote build completed.'
 }
 

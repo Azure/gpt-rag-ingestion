@@ -1,5 +1,5 @@
 # ---- Stage 1: Build the frontend ----
-FROM node:20-slim AS frontend-build
+FROM mcr.microsoft.com/devcontainers/javascript-node:20-bookworm AS frontend-build
 WORKDIR /build
 COPY frontend/package*.json ./frontend/
 RUN cd frontend && npm ci

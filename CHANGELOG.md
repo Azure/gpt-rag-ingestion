@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Remote ACR build resilience and Docker Hub independence:** The frontend build stage now uses the Microsoft Container Registry Node 20 devcontainer image instead of Docker Hub's `node:20-slim`, and both deployment scripts retry transient `az acr build` failures with visible attempt counts, retry delays, and a final actionable error message.
+
 ## [v2.4.13] - 2026-06-19
 
 ### Fixed
