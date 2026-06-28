@@ -2,9 +2,17 @@
 
 ## [Unreleased]
 
+## [v2.4.14] - 2026-06-28
+
 ### Fixed
 
-- **Remote ACR build resilience and Docker Hub independence:** The frontend build stage now uses the Microsoft Container Registry Node 20 devcontainer image instead of Docker Hub's `node:20-slim`, and both deployment scripts retry transient `az acr build` failures with visible attempt counts, retry delays, and a final actionable error message.
+- **Zero Trust ACR builds no longer depend on Docker Hub:** The frontend build stage now uses the Microsoft Container Registry Node 20 devcontainer image instead of Docker Hub's `node:20-slim`, so remote ACR builds no longer pull the frontend base image from `registry-1.docker.io`.
+- **Remote ACR build retry is bounded and visible:** Both deployment scripts now retry transient `az acr build` failures with visible attempt counts, retry delays, and a final actionable error message instead of failing once without guidance.
+
+### Validation
+
+- Full GPT-RAG Zero Trust validation passed in Switzerland North using the PR head (`gptrag-zt-che06272059` / `rg-gptrag-zt-che06272059`): provision, postProvision, deploy, ACR, and readiness all passed.
+- ACR logs from that validation showed no `registry-1.docker.io` pulls.
 
 ## [v2.4.13] - 2026-06-19
 
