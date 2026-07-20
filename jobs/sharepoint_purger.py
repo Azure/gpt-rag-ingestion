@@ -24,6 +24,7 @@ from .sharepoint_ingestion_config import (
 from dependencies import get_config
 from tools import KeyVaultClient
 from tools.credentials import get_azure_client_id
+from telemetry import audit
 
 
 PURGE_SCOPE = "[sp-purge]"
@@ -183,7 +184,7 @@ class SharePointPurger:
 		delay = 1.0
 		for _ in range(8):
 			try:
-				return await func(**kwargs)
+				result = await func(**kwargs)
 			except HttpResponseError as exc:
 				retry = exc.response.headers.get("retry-after-ms") if exc.response else None
 				if retry is None and exc.response:
@@ -200,6 +201,14 @@ class SharePointPurger:
 				logging.warning(f"{PURGE_SCOPE} network error; retry in {delay}s: {exc}")
 				await asyncio.sleep(delay)
 				delay = min(delay * 2, 30)
+			else:
+				audit.record_search_batch_result(
+					operation=getattr(func, "__name__", ""),
+					documents=kwargs.get("documents"),
+					result=result,
+					source_type=self.cfg.indexer_name,
+				)
+				return result
 
 	async def _delete_docs_by_id(self, run_id: str, docs: List[Dict[str, Any]]) -> Tuple[int, int]:
 		deleted = 0

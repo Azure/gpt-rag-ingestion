@@ -6,6 +6,7 @@ from azure.identity.aio import ManagedIdentityCredential, AzureCliCredential, Ch
 from typing import Any, Dict, List, Optional
 from dependencies import get_config
 from tools.credentials import get_azure_client_id
+from telemetry import audit
 
 # Elevated-read header – bypasses permission filtering for service-side queries.
 _ELEVATED_HEADERS = {"x-ms-enable-elevated-read": "true"}
@@ -78,6 +79,12 @@ class AISearchClient:
 
         try:
             result = await client.upload_documents(documents=[document])
+            audit.record_search_batch_result(
+                operation="upload_documents",
+                documents=[document],
+                result=result,
+                source_type=index_name,
+            )
             if result and result[0].succeeded:
                 logging.info(f"[aisearch] Successfully indexed document into '{index_name}'.")
                 return True
@@ -109,6 +116,13 @@ class AISearchClient:
 
         try:
             result = await client.delete_documents(key_field, [key_value])
+            audit.record_search_batch_result(
+                operation="delete_documents",
+                documents=[{key_field: key_value}],
+                result=result,
+                source_type=index_name,
+                key_field=key_field,
+            )
             logging.info(f"[aisearch] Successfully deleted document with {key_field}='{key_value}' from '{index_name}'.")
         except AzureError as e:
             logging.error(f"[aisearch] AzureError while deleting document from '{index_name}': {e}")
@@ -137,6 +151,14 @@ class AISearchClient:
             # Azure AI Search supports batch operations, but there might be limits on batch size.
             # Here, we assume that the list is within acceptable limits. For very large lists, consider batching.
             result = await client.upload_documents(documents=actions)
+
+            audit.record_search_batch_result(
+                operation="delete_documents",
+                documents=[{key_field: key_value} for key_value in key_values],
+                result=result,
+                source_type=index_name,
+                key_field=key_field,
+            )
 
             # Check results
             succeeded = 0
