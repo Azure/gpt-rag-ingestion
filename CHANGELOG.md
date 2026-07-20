@@ -1,6 +1,26 @@
 # Changelog
 
-## [Unreleased]
+## [v2.5.0] - 2026-07-20
+
+### Added
+
+- **Always-emitted ingestion audit base events ([Azure/GPT-RAG#571](https://github.com/Azure/GPT-RAG/issues/571), [PR #261](https://github.com/Azure/gpt-rag-ingestion/pull/261)).** Operators now receive metadata-only audit events for every ingestion run and confirmed document outcome even with provenance disabled. The service emits `ingestion.run.started/completed/failed/cancelled` and `ingestion.document.indexed/rejected/deleted` through the existing OpenTelemetry/Application Insights pipeline. Every run has exactly one started and one terminal event, cancellation is preserved, and document events are emitted only from confirmed Azure AI Search results. Audit emission is bounded and best-effort, so telemetry failures do not turn successful ingestion work into failures.
+- **Opt-in provenance and governance controls.** `INGESTION_PROVENANCE_ENABLED` defaults to `false`, so base audit events are always emitted while richer provenance fields remain absent unless explicitly enabled. `INGESTION_REQUIRE_GOVERNANCE_METADATA` defaults to `false`; when enabled with provenance, strict governance fails closed for documents that do not explicitly provide both classification and right-to-use, and it never substitutes configured defaults as evidence. Enabling strict governance while provenance is disabled fails startup. Non-strict provenance uses `INGESTION_DEFAULT_CLASSIFICATION=unclassified` and `INGESTION_DEFAULT_RIGHT_TO_USE=not_asserted` when documents omit those values.
+
+### Changed
+
+- **Shared orchestrator v3.8.0 contract.** The ingestion service vendors the same `audit-event-v1` logical schema and Application Insights wire schema used by `gpt-rag-orchestrator` v3.8.0. The pinned SHA-256 hashes are `825db8ef40a81e2c19e5d80d37c565b6b47fc9a6540e9881d35cc12b8fde5aab` for the logical schema and `066c8f5408610ab839d5121d06ca5bc59e8797e551d5c47c875c5ba52f7e0588` for the wire schema. Exported records use queryable `customEvents.name` values under `gptrag.audit.ingestion.*`, and logical root events retain the required parent property through the contract root sentinel.
+
+### Privacy and retention
+
+- **Opaque hashes are limited traceability aids.** `source_uri_id` and `source_version_id` are unsalted SHA-256 references rather than raw paths, URLs, or filenames. They are deterministic and may be dictionary-matched for small candidate sets, so they are not secrets, proof of source or custody, or evidence of regulatory compliance. Checksums and audit metadata can also reveal document relationships; protect Application Insights with access controls appropriate for the ingested content.
+- **`delete_after` expresses policy intent, not automatic purge.** Setting `delete_after` does not schedule or trigger deletion. Only a confirmed Azure AI Search deletion emits `ingestion.document.deleted`; downstream retention enforcement remains an operator responsibility.
+
+### Validation
+
+- The exact reviewed PR head, `5cfbd180bdf2fd1dcd816dbee483894a43c22cac`, was merged after all reported CI checks completed successfully.
+- Independent final review found no blockers and validated actual Azure Monitor exporter envelopes against the pinned Application Insights wire schema for all seven event types.
+- All 47 focused audit contract, sanitizer, and emitter tests passed, including logical/wire hash pinning, strict-governance failure paths, sanitization, correlation, cancellation, and exported event names and parent properties.
 
 ## [v2.4.14] - 2026-06-28
 
