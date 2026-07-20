@@ -27,6 +27,7 @@ from tools.credentials import get_azure_client_id
 from chunking import DocumentChunker
 from chunking.chunker_factory import ChunkerFactory
 from utils.file_utils import _safe_delete
+from telemetry import audit
 
 # Elevated-read header – bypasses permission filtering for service-side queries.
 _ELEVATED_HEADERS = {"x-ms-enable-elevated-read": "true"}
@@ -1389,7 +1390,7 @@ class BlobStorageDocumentIndexer:
         delay = 1.0
         for attempt in range(8):
             try:
-                return await func(**kwargs)
+                result = await func(**kwargs)
             except HttpResponseError as e:
                 ra = None
                 try:
@@ -1408,6 +1409,14 @@ class BlobStorageDocumentIndexer:
                 logging.warning(f"[{self.cfg.indexer_name}] network error; retrying in {delay}s: {e}")
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 30)
+            else:
+                audit.record_search_batch_result(
+                    operation=getattr(func, "__name__", ""),
+                    documents=kwargs.get("documents"),
+                    result=result,
+                    source_type=self.cfg.indexer_name,
+                )
+                return result
 
     # ---------- Logging helpers ----------
     async def _ensure_container(self, name: str):
@@ -1925,7 +1934,7 @@ class BlobStorageDeletedItemsCleaner:
         delay = 1.0
         for attempt in range(8):
             try:
-                return await func(**kwargs)
+                result = await func(**kwargs)
             except HttpResponseError as e:
                 ra = None
                 try:
@@ -1940,6 +1949,14 @@ class BlobStorageDeletedItemsCleaner:
                 logging.warning(f"[blob-storage-purger] backoff {delay}s on {type(e).__name__}: {e}")
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 30)
+            else:
+                audit.record_search_batch_result(
+                    operation=getattr(func, "__name__", ""),
+                    documents=kwargs.get("documents"),
+                    result=result,
+                    source_type=self.cfg.indexer_name,
+                )
+                return result
 
     async def _ensure_container(self, name: str):
         try:

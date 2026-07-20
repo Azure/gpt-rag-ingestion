@@ -1,2 +1,10 @@
 # Normalize line endings for scripts to avoid shebang issues in Linux containers
 *.sh text eol=lf
+
+# The audit-event-v1 contract is pinned by SHA-256 over its raw bytes (see
+# contracts/audit-event-v1.sha256 and tests/test_audit_contract.py). Mark it
+# binary so Git never applies line-ending or encoding conversion on any
+# platform, keeping the pinned hashes stable on Windows, Linux, and in Docker.
+contracts/audit-event-v1.schema.json -text
+contracts/audit-event-v1.application-insights.schema.json -text
+contracts/audit-event-v1.sha256 -text

@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "event_id": "evt_33333333333333333333333333333333",
+  "event_type": "ingestion.document.indexed",
+  "event_time_utc": "2026-07-20T12:19:45.000000Z",
+  "correlation_id": "req_22222222222222222222222222222222",
+  "trace_id": "22222222222222222222222222222222",
+  "span_id": "3333333333333333",
+  "parent_event_id": "evt_11111111111111111111111111111111",
+  "service_name": "gpt-rag-ingestion",
+  "service_version": "1.0.0",
+  "environment": "test",
+  "operation": "ingestion.document",
+  "status": "completed",
+  "reason_code": "request_completed",
+  "capture_mode": "metadata_only",
+  "redaction_applied": false,
+  "omitted_fields": [],
+  "truncated_fields": [],
+  "source_id": "hmac-sha256:v1:document",
+  "output_count": 1
+}

@@ -38,6 +38,7 @@ from .sharepoint_ingestion_config import (
 )
 from tools import AzureOpenAIClient, KeyVaultClient, CosmosDBClient
 from tools.credentials import get_azure_client_id
+from telemetry import audit
 
 # Elevated-read header – bypasses permission filtering for service-side queries.
 _ELEVATED_HEADERS = {"x-ms-enable-elevated-read": "true"}
@@ -654,7 +655,7 @@ class SharePointIndexer:
         delay = 1.0
         for _ in range(8):
             try:
-                return await func(**kw)
+                result = await func(**kw)
             except HttpResponseError as e:
                 ra = None
                 try:
@@ -673,6 +674,14 @@ class SharePointIndexer:
                 logging.warning(f"[sp-ingest] network error; retry in {delay}s: {e}")
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 30)
+            else:
+                audit.record_search_batch_result(
+                    operation=getattr(func, "__name__", ""),
+                    documents=kw.get("documents"),
+                    result=result,
+                    source_type=self.cfg.indexer_name,
+                )
+                return result
 
     async def _delete_parent_docs(self, parent_id: str):
         sanitized = parent_id.replace("'", "''")
