@@ -24,6 +24,7 @@ from typing import Any, AsyncIterator, Iterable
 from opentelemetry import trace
 
 from .audit_contract import (
+    AUDIT_EVENT_PREFIX,
     AUDIT_LOG_BODY,
     AUDIT_LOGGER_NAME,
     AUDIT_WARNING_LOGGER_NAME,
@@ -36,6 +37,7 @@ from .audit_contract import (
     GovernanceSettings,
     ReasonCode,
     format_utc,
+    logical_parent_to_wire,
     new_correlation_id,
     new_event_id,
     utc_now,
@@ -199,7 +201,20 @@ def _emit(event: dict[str, Any]) -> None:
         )
         return
     try:
-        _logger.info(AUDIT_LOG_BODY, extra=result.attributes)
+        event_type = EventType(result.attributes["event_type"])
+        wire_attributes = dict(result.attributes)
+        wire_attributes["parent_event_id"] = logical_parent_to_wire(
+            wire_attributes["parent_event_id"]
+        )
+        _logger.info(
+            AUDIT_LOG_BODY,
+            extra={
+                "microsoft.custom_event.name": (
+                    f"{AUDIT_EVENT_PREFIX}{event_type.value}"
+                ),
+                **wire_attributes,
+            },
+        )
     except Exception:
         _warning_logger.warning(
             "Audit event export failed and was dropped (event_type=%s).",

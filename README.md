@@ -55,6 +55,27 @@ Audit emission is **best-effort and never blocking**: a failure to build,
 sanitize, or export an audit event is logged as a warning and dropped — it
 never turns a successful index, delete, or run into a failure.
 
+### Querying events in Application Insights
+
+Events appear in the `customEvents` table. Filter the `name` column to find
+ingestion audit events:
+
+```kusto
+customEvents
+| where name startswith "gptrag.audit.ingestion"
+| project timestamp, name, tostring(customDimensions.event_id),
+    tostring(customDimensions.correlation_id),
+    tostring(customDimensions.parent_event_id),
+    tostring(customDimensions.source_type),
+    tostring(customDimensions.status)
+| order by timestamp desc
+```
+
+A `parent_event_id` value of
+`evt_00000000000000000000000000000000` represents a root event with no
+logical parent. Treat the sentinel as null when correlating events; do not
+attempt to join it as an event ID.
+
 ### Provenance flags
 
 | Setting | Default | Effect |

@@ -9,11 +9,31 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
+from pathlib import Path
 
+import jsonschema
 import pytest
+from azure.monitor.opentelemetry.exporter.export.logs._exporter import (
+    _convert_log_to_envelope,
+    _log_data_is_event,
+)
+from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+from opentelemetry.sdk._logs.export import (
+    InMemoryLogExporter,
+    SimpleLogRecordProcessor,
+)
 
 from telemetry import audit
+from telemetry.audit_contract import (
+    AUDIT_EVENT_PREFIX,
+    AUDIT_LOG_BODY,
+    ROOT_PARENT_EVENT_ID,
+    AuditStatus,
+    EventType,
+    ReasonCode,
+)
 
 
 AUDIT_LOGGER = "gptrag.audit"
@@ -70,7 +90,117 @@ def test_successful_run_emits_exactly_one_started_and_one_completed_event(caplog
     event_types = [record.event_type for record in events]
     assert event_types == ["ingestion.run.started", "ingestion.run.completed"]
     assert events[0].correlation_id == events[1].correlation_id
+    assert events[0].parent_event_id == ROOT_PARENT_EVENT_ID
     assert events[1].parent_event_id == events[0].event_id
+    assert (
+        getattr(events[0], "microsoft.custom_event.name")
+        == "gptrag.audit.ingestion.run.started"
+    )
+    assert (
+        getattr(events[1], "microsoft.custom_event.name")
+        == "gptrag.audit.ingestion.run.completed"
+    )
+
+
+@pytest.mark.parametrize(
+    ("event_type", "status", "reason_code", "operation"),
+    [
+        (
+            EventType.RUN_STARTED,
+            AuditStatus.STARTED,
+            ReasonCode.REQUEST_RECEIVED,
+            "ingestion.run",
+        ),
+        (
+            EventType.RUN_COMPLETED,
+            AuditStatus.COMPLETED,
+            ReasonCode.REQUEST_COMPLETED,
+            "ingestion.run",
+        ),
+        (
+            EventType.RUN_FAILED,
+            AuditStatus.FAILED,
+            ReasonCode.REQUEST_FAILED,
+            "ingestion.run",
+        ),
+        (
+            EventType.RUN_CANCELLED,
+            AuditStatus.CANCELLED,
+            ReasonCode.REQUEST_CANCELLED,
+            "ingestion.run",
+        ),
+        (
+            EventType.DOCUMENT_INDEXED,
+            AuditStatus.COMPLETED,
+            ReasonCode.OUTCOME_PRODUCED,
+            "ingestion.document",
+        ),
+        (
+            EventType.DOCUMENT_REJECTED,
+            AuditStatus.REJECTED,
+            ReasonCode.VALIDATION_FAILED,
+            "ingestion.document",
+        ),
+        (
+            EventType.DOCUMENT_DELETED,
+            AuditStatus.COMPLETED,
+            ReasonCode.OUTCOME_PRODUCED,
+            "ingestion.document",
+        ),
+    ],
+)
+def test_all_event_types_export_with_valid_application_insights_wire_shape(
+    event_type,
+    status,
+    reason_code,
+    operation,
+):
+    log_provider = LoggerProvider()
+    log_exporter = InMemoryLogExporter()
+    log_provider.add_log_record_processor(SimpleLogRecordProcessor(log_exporter))
+    handler = LoggingHandler(logger_provider=log_provider)
+    previous_level = audit._logger.level
+    audit._logger.setLevel(logging.INFO)
+    audit._logger.addHandler(handler)
+
+    try:
+        event = audit._base_event(
+            event_type,
+            status=status,
+            reason_code=reason_code,
+            operation=operation,
+            correlation_id="req_" + ("1" * 32),
+            parent_event_id=None,
+        )
+        audit._emit(event)
+    finally:
+        audit._logger.removeHandler(handler)
+        audit._logger.setLevel(previous_level)
+
+    readable = log_exporter.get_finished_logs()[0]
+    assert readable.log_record.body == AUDIT_LOG_BODY
+    assert _log_data_is_event(readable) is True
+
+    envelope = _convert_log_to_envelope(readable)
+    assert envelope.data.base_data.name == f"{AUDIT_EVENT_PREFIX}{event_type.value}"
+    assert (
+        envelope.data.base_data.properties["parent_event_id"]
+        == ROOT_PARENT_EVENT_ID
+    )
+
+    wire_schema = json.loads(
+        (
+            Path(__file__).resolve().parents[1]
+            / "contracts"
+            / "audit-event-v1.application-insights.schema.json"
+        ).read_bytes()
+    )
+    jsonschema.Draft202012Validator(wire_schema).validate(
+        {
+            "name": envelope.data.base_data.name,
+            "properties": dict(envelope.data.base_data.properties),
+        }
+    )
 
 
 def test_marked_failed_run_emits_failed_terminal_event_without_raising(caplog):
@@ -296,6 +426,7 @@ def test_document_events_correlate_to_the_active_run(caplog):
     indexed = next(r for r in events if r.event_type == "ingestion.document.indexed")
     assert indexed.correlation_id == started.correlation_id == run.correlation_id
     assert indexed.parent_event_id == started.event_id
+    assert indexed.parent_event_id != ROOT_PARENT_EVENT_ID
 
 
 def test_document_audit_never_raises_even_with_a_malformed_result(caplog):
