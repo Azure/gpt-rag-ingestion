@@ -1,543 +1,626 @@
-"""Contract tests for the ``POST /retrieve`` Foundry Toolbox endpoint.
-
-Validates the security contract introduced by the hosted-agent retrieval path:
-
-* ``X-API-KEY`` is required — missing key → 401.
-* ``userContext.oid`` is required and must be non-empty — missing or blank
-  OID → 422 (Pydantic validation) rather than a silent success.
-* An empty OID string that passes the type check is rejected by the
-  ``oid_not_blank`` validator with a clear message.
-* Valid requests are forwarded to AI Search with a user-scoped OData filter
-  and ``use_elevated_read=False``.
-* The OData filter treats a document as public only when BOTH
-  ``metadata_security_user_ids`` AND ``metadata_security_group_ids`` are
-  empty — a document with a non-empty group ACL must not appear as public.
-* The response shape is bounded: ``results`` array + ``count`` integer;
-  no vectors, security IDs, or authorization metadata.
-* Output is capped at ``top`` results (≤ ``_MAX_TOP``).
-* ``top`` outside the valid range is rejected before any downstream call.
-* A missing/misconfigured ``SEARCH_RAG_INDEX_NAME`` returns HTTP 500.
-* Caller-supplied ``indexName`` is not accepted (field removed from model).
-* Search backend errors are surfaced as HTTP 503, not empty 200.
-
-Mirrors the stubbing pattern in ``tests/test_admin_run_now.py`` so this
-file never imports ``main`` or the full ingestion stack.
-"""
+"""Security contract tests for the fail-closed hosted retrieval endpoint."""
 
 from __future__ import annotations
 
 import importlib
-import re
+import importlib.util
 import sys
 import types
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Callable, Dict, Optional
 
 import pytest
-from fastapi import Depends, FastAPI, HTTPException
-from fastapi.security import APIKeyHeader
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
 
+import dependencies as real_dependencies
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
-# APIKeyHeader instance used by the stub — mirrors the real dependency so
-# FastAPI's parameter analysis produces the same route signature shape.
-_KEY_SCHEME = APIKeyHeader(name="X-API-KEY", auto_error=False)
+@pytest.mark.asyncio
+async def test_delegated_user_bearer_requires_oid(monkeypatch):
+    async def _claims(_request, expected_audiences=None):
+        assert expected_audiences == ["https://search.azure.com"]
+        return {"scp": "access_as_user"}
+
+    monkeypatch.setattr(real_dependencies, "validate_bearer_jwt", _claims)
+    monkeypatch.setattr(
+        real_dependencies,
+        "get_config",
+        lambda: types.SimpleNamespace(
+            get=lambda key, **_: (
+                "https://search.azure.com"
+                if key == "HOSTED_RETRIEVAL_TOKEN_AUDIENCE"
+                else None
+            )
+        ),
+    )
+    request = Request(
+        {
+            "type": "http",
+            "headers": [(b"authorization", b"Bearer opaque-token")],
+        }
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await real_dependencies.validate_delegated_user_bearer(request)
+
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_delegated_user_bearer_rejects_app_only_token(monkeypatch):
+    async def _claims(_request, expected_audiences=None):
+        assert expected_audiences == ["https://search.azure.com"]
+        return {"oid": "service-principal", "roles": ["retrieve"], "idtyp": "app"}
+
+    monkeypatch.setattr(real_dependencies, "validate_bearer_jwt", _claims)
+    monkeypatch.setattr(
+        real_dependencies,
+        "get_config",
+        lambda: types.SimpleNamespace(
+            get=lambda key, **_: (
+                "https://search.azure.com"
+                if key == "HOSTED_RETRIEVAL_TOKEN_AUDIENCE"
+                else None
+            )
+        ),
+    )
+    request = Request(
+        {
+            "type": "http",
+            "headers": [(b"authorization", b"Bearer opaque-token")],
+        }
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await real_dependencies.validate_delegated_user_bearer(request)
+
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_delegated_user_bearer_preserves_validated_token(monkeypatch):
+    async def _claims(_request, expected_audiences=None):
+        assert expected_audiences == ["https://search.azure.com"]
+        return {"oid": "user-a", "scp": "access_as_user", "idtyp": "user"}
+
+    monkeypatch.setattr(real_dependencies, "validate_bearer_jwt", _claims)
+    monkeypatch.setattr(
+        real_dependencies,
+        "get_config",
+        lambda: types.SimpleNamespace(
+            get=lambda key, **_: (
+                "https://search.azure.com"
+                if key == "HOSTED_RETRIEVAL_TOKEN_AUDIENCE"
+                else None
+            )
+        ),
+    )
+    request = Request(
+        {
+            "type": "http",
+            "headers": [(b"authorization", b"Bearer opaque-token")],
+        }
+    )
+
+    bearer = await real_dependencies.validate_delegated_user_bearer(request)
+
+    assert bearer.access_token == "opaque-token"
+    assert bearer.claims["oid"] == "user-a"
+    assert "opaque-token" not in repr(bearer)
+
+
+@pytest.mark.asyncio
+async def test_delegated_user_bearer_requires_configured_audience(monkeypatch):
+    monkeypatch.setattr(
+        real_dependencies,
+        "get_config",
+        lambda: types.SimpleNamespace(get=lambda _key, **_: None),
+    )
+    request = Request(
+        {
+            "type": "http",
+            "headers": [(b"authorization", b"Bearer opaque-token")],
+        }
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await real_dependencies.validate_delegated_user_bearer(request)
+
+    assert exc.value.status_code == 500
+    assert "HOSTED_RETRIEVAL_TOKEN_AUDIENCE" in exc.value.detail
+
+
+@dataclass(frozen=True)
+class _ValidatedUserBearer:
+    access_token: str
+    claims: Dict[str, Any]
 
 
 def _install_stubs(
     monkeypatch,
     *,
-    api_key: str = "test-key",
     config_values: Optional[Dict[str, str]] = None,
-    search_documents_result: Optional[Dict[str, Any]] = None,
+    token_claims: Optional[Dict[str, Dict[str, Any]]] = None,
+    search_result: Optional[Dict[str, Any]] = None,
+    search_behavior: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
 ):
-    """Wire fake ``dependencies``, ``tools``, and ``tools.aisearch``."""
-
-    cfg_values = dict(config_values or {})
+    config = dict(config_values or {})
+    claims_by_token = token_claims or {
+        "user-a-token": {
+            "oid": "user-a",
+            "scp": "access_as_user",
+            "idtyp": "user",
+        }
+    }
 
     class _FakeConfig:
         def get(self, key, default=None, allow_none=True, **_):
-            return cfg_values.get(key, default)
+            return config.get(key, default)
 
-    def _get_config(action=None):
-        return _FakeConfig()
-
-    # Stub dependency mirrors the real validate_api_key_header signature so
-    # FastAPI correctly registers it as a header-based dependency.
-    _api_key_ref = api_key
-
-    def _validate_api_key_header(
-        x_api_key: Optional[str] = Depends(_KEY_SCHEME),
-    ) -> None:
-        if not x_api_key or x_api_key != _api_key_ref:
-            raise HTTPException(status_code=401, detail="Invalid API key.")
+    async def _validate_delegated_user_bearer(request: Request):
+        authorization = request.headers.get("Authorization", "")
+        if not authorization.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Missing Authorization header.")
+        token = authorization.removeprefix("Bearer ").strip()
+        claims = claims_by_token.get(token)
+        if claims is None:
+            raise HTTPException(status_code=401, detail="Invalid token.")
+        if not claims.get("oid") or not claims.get("scp"):
+            raise HTTPException(status_code=403, detail="Delegated user token required.")
+        return _ValidatedUserBearer(access_token=token, claims=claims)
 
     dependencies_stub = types.ModuleType("dependencies")
-    dependencies_stub.get_config = _get_config
-    dependencies_stub.validate_api_key_header = _validate_api_key_header
+    dependencies_stub.ValidatedUserBearer = _ValidatedUserBearer
+    dependencies_stub.get_config = lambda action=None: _FakeConfig()
+    dependencies_stub.validate_delegated_user_bearer = (
+        _validate_delegated_user_bearer
+    )
     monkeypatch.setitem(sys.modules, "dependencies", dependencies_stub)
 
-    # tools stubs
     tools_pkg = types.ModuleType("tools")
     tools_pkg.__path__ = []
     monkeypatch.setitem(sys.modules, "tools", tools_pkg)
 
-    credentials_stub = types.ModuleType("tools.credentials")
-    credentials_stub.get_azure_client_id = lambda cfg=None: "fake-client-id"
-    monkeypatch.setitem(sys.modules, "tools.credentials", credentials_stub)
-
-    # Track calls to AISearchClient.search_documents
-    search_calls: List[dict] = []
-    _result = search_documents_result if search_documents_result is not None else {"documents": [], "count": 0}
+    search_calls = []
+    close_calls = []
+    default_result = (
+        search_result
+        if search_result is not None
+        else {"documents": [], "count": 0}
+    )
 
     class _FakeAISearchClient:
-        def __init__(self):
-            pass
-
         async def search_documents(self, **kwargs):
             search_calls.append(kwargs)
-            return _result
+            if search_behavior is not None:
+                return search_behavior(kwargs)
+            return default_result
+
+        async def close(self):
+            close_calls.append(True)
 
     aisearch_stub = types.ModuleType("tools.aisearch")
     aisearch_stub.AISearchClient = _FakeAISearchClient
     monkeypatch.setitem(sys.modules, "tools.aisearch", aisearch_stub)
+    return {"search_calls": search_calls, "close_calls": close_calls}
 
-    return {"search_calls": search_calls}
 
+def _build_client(
+    monkeypatch,
+    *,
+    enabled: bool = True,
+    inv_002_validated: bool = True,
+    config_values: Optional[Dict[str, str]] = None,
+    token_claims: Optional[Dict[str, Dict[str, Any]]] = None,
+    search_result: Optional[Dict[str, Any]] = None,
+    search_behavior: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
+):
+    config = {
+        "SEARCH_RAG_INDEX_NAME": "rag-index",
+        "HOSTED_RETRIEVAL_TOKEN_AUDIENCE": "https://search.azure.com",
+        "HOSTED_RETRIEVAL_ENABLED": str(enabled).lower(),
+        "HOSTED_RETRIEVAL_INV_002_VALIDATED": str(inv_002_validated).lower(),
+    }
+    if config_values:
+        config.update(config_values)
 
-def _build_client(monkeypatch, *, api_key="test-key", config_values=None, search_result=None):
     state = _install_stubs(
         monkeypatch,
-        api_key=api_key,
-        config_values=config_values,
-        search_documents_result=search_result,
+        config_values=config,
+        token_claims=token_claims,
+        search_result=search_result,
+        search_behavior=search_behavior,
     )
 
-    # Re-import api.retrieval so it picks up the stubs.
-    for mod in list(sys.modules):
-        if mod in ("api.retrieval", "api"):
-            del sys.modules[mod]
-
-    from pathlib import Path
-
+    sys.modules.pop("api.retrieval", None)
     api_pkg = types.ModuleType("api")
     api_pkg.__path__ = [str(Path(__file__).resolve().parents[1] / "api")]
-    sys.modules["api"] = api_pkg
-
-    retrieval_module = importlib.import_module("api.retrieval")
+    monkeypatch.setitem(sys.modules, "api", api_pkg)
+    retrieval = importlib.import_module("api.retrieval")
 
     app = FastAPI()
-    app.include_router(retrieval_module.router)
+    app.include_router(retrieval.router)
     return TestClient(app, raise_server_exceptions=True), state
 
 
-# ---------------------------------------------------------------------------
-# Auth contract
-# ---------------------------------------------------------------------------
-
-
-def test_missing_api_key_returns_401(monkeypatch):
-    client, _ = _build_client(
-        monkeypatch,
-        config_values={"SEARCH_RAG_INDEX_NAME": "rag-index"},
-    )
-    r = client.post(
+def _post(
+    client: TestClient,
+    body: Optional[Dict[str, Any]] = None,
+    token: Optional[str] = "user-a-token",
+):
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    return client.post(
         "/retrieve",
-        json={"query": "hello", "userContext": {"oid": "user-oid-123"}},
+        json=body or {"query": "hello"},
+        headers=headers,
     )
-    assert r.status_code == 401, r.text
 
 
-def test_wrong_api_key_returns_401(monkeypatch):
-    client, _ = _build_client(
-        monkeypatch,
-        api_key="correct-key",
-        config_values={"SEARCH_RAG_INDEX_NAME": "rag-index"},
-    )
-    r = client.post(
-        "/retrieve",
-        json={"query": "hello", "userContext": {"oid": "user-oid-123"}},
-        headers={"X-API-KEY": "wrong-key"},
-    )
-    assert r.status_code == 401, r.text
+def test_missing_identity_fails_closed(monkeypatch):
+    client, state = _build_client(monkeypatch)
+
+    response = _post(client, token=None)
+
+    assert response.status_code == 401
+    assert state["search_calls"] == []
 
 
-# ---------------------------------------------------------------------------
-# User-context contract — fail closed
-# ---------------------------------------------------------------------------
+def test_openapi_contract_exposes_bearer_schema_and_statuses(monkeypatch):
+    client, _ = _build_client(monkeypatch)
+
+    schema = client.get("/openapi.json").json()
+    operation = schema["paths"]["/retrieve"]["post"]
+    request_schema = schema["components"]["schemas"]["RetrieveRequest"]
+
+    assert set(request_schema["properties"]) == {"query", "top"}
+    assert operation["security"] == [{"HTTPBearer": []}]
+    assert set(operation["responses"]) >= {
+        "200",
+        "401",
+        "403",
+        "422",
+        "500",
+        "502",
+        "503",
+    }
+    assert schema["components"]["securitySchemes"]["HTTPBearer"] == {
+        "type": "http",
+        "description": (
+            "Delegated UserEntraToken validated and forwarded to Azure AI Search."
+        ),
+        "scheme": "bearer",
+    }
 
 
-def test_missing_user_context_returns_422(monkeypatch):
-    """Omitting userContext entirely is a schema violation → 422."""
-    client, _ = _build_client(
-        monkeypatch,
-        config_values={"SEARCH_RAG_INDEX_NAME": "rag-index"},
-    )
-    r = client.post(
-        "/retrieve",
-        json={"query": "hello"},
-        headers={"X-API-KEY": "test-key"},
-    )
-    # Pydantic rejects the missing required field before auth runs only when
-    # the dependency ordering places schema validation first; in FastAPI the
-    # body model is validated before dependencies so 422 is expected.
-    assert r.status_code in (401, 422), r.text
-
-
-def test_missing_oid_returns_422(monkeypatch):
-    """userContext present but oid missing → 422."""
-    client, _ = _build_client(
-        monkeypatch,
-        config_values={"SEARCH_RAG_INDEX_NAME": "rag-index"},
-    )
-    r = client.post(
-        "/retrieve",
-        json={"query": "hello", "userContext": {}},
-        headers={"X-API-KEY": "test-key"},
-    )
-    assert r.status_code == 422, r.text
-
-
-def test_blank_oid_returns_422(monkeypatch):
-    """oid present but whitespace-only → 422 (oid_not_blank validator)."""
-    client, _ = _build_client(
-        monkeypatch,
-        config_values={"SEARCH_RAG_INDEX_NAME": "rag-index"},
-    )
-    r = client.post(
-        "/retrieve",
-        json={"query": "hello", "userContext": {"oid": "   "}},
-        headers={"X-API-KEY": "test-key"},
-    )
-    assert r.status_code == 422, r.text
-
-
-# ---------------------------------------------------------------------------
-# Query validation
-# ---------------------------------------------------------------------------
-
-
-def test_blank_query_returns_422(monkeypatch):
-    client, _ = _build_client(
-        monkeypatch,
-        config_values={"SEARCH_RAG_INDEX_NAME": "rag-index"},
-    )
-    r = client.post(
-        "/retrieve",
-        json={"query": "  ", "userContext": {"oid": "user-oid-123"}},
-        headers={"X-API-KEY": "test-key"},
-    )
-    assert r.status_code == 422, r.text
-
-
-def test_query_too_long_returns_422(monkeypatch):
-    client, _ = _build_client(
-        monkeypatch,
-        config_values={"SEARCH_RAG_INDEX_NAME": "rag-index"},
-    )
-    r = client.post(
-        "/retrieve",
-        json={"query": "x" * 1001, "userContext": {"oid": "user-oid-123"}},
-        headers={"X-API-KEY": "test-key"},
-    )
-    assert r.status_code == 422, r.text
-
-
-# ---------------------------------------------------------------------------
-# top bounds
-# ---------------------------------------------------------------------------
-
-
-def test_top_zero_returns_422(monkeypatch):
-    client, _ = _build_client(
-        monkeypatch,
-        config_values={"SEARCH_RAG_INDEX_NAME": "rag-index"},
-    )
-    r = client.post(
-        "/retrieve",
-        json={"query": "hello", "userContext": {"oid": "user-oid-123"}, "top": 0},
-        headers={"X-API-KEY": "test-key"},
-    )
-    assert r.status_code == 422, r.text
-
-
-def test_top_above_max_returns_422(monkeypatch):
-    client, _ = _build_client(
-        monkeypatch,
-        config_values={"SEARCH_RAG_INDEX_NAME": "rag-index"},
-    )
-    r = client.post(
-        "/retrieve",
-        json={"query": "hello", "userContext": {"oid": "user-oid-123"}, "top": 11},
-        headers={"X-API-KEY": "test-key"},
-    )
-    assert r.status_code == 422, r.text
-
-
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
-
-
-def test_missing_index_name_returns_500(monkeypatch):
-    """No SEARCH_RAG_INDEX_NAME in config → 500."""
-    client, _ = _build_client(monkeypatch, config_values={})
-    r = client.post(
-        "/retrieve",
-        json={"query": "hello", "userContext": {"oid": "user-oid-123"}},
-        headers={"X-API-KEY": "test-key"},
-    )
-    assert r.status_code == 500, r.text
-
-
-def test_index_name_in_body_is_ignored(monkeypatch):
-    """``indexName`` is not a valid request field — callers may not select arbitrary indexes.
-
-    The request still succeeds but the body-supplied value must be silently
-    ignored; search must always target the configured index.
-    """
+def test_disabled_mode_does_not_require_hosted_identity_configuration(monkeypatch):
     client, state = _build_client(
         monkeypatch,
-        config_values={"SEARCH_RAG_INDEX_NAME": "config-index"},
-        search_result={"documents": []},
+        enabled=False,
+        inv_002_validated=False,
+        config_values={"HOSTED_RETRIEVAL_TOKEN_AUDIENCE": ""},
     )
-    r = client.post(
-        "/retrieve",
-        json={
-            "query": "hello",
-            "userContext": {"oid": "user-oid-123"},
-            "indexName": "attacker-index",
-        },
-        headers={"X-API-KEY": "test-key"},
+
+    response = _post(client, token=None)
+
+    assert response.status_code == 503
+    assert state["search_calls"] == []
+
+
+def test_spoofed_user_context_is_rejected(monkeypatch):
+    client, state = _build_client(monkeypatch)
+
+    response = _post(
+        client,
+        {"query": "hello", "userContext": {"oid": "victim-user"}},
     )
-    # Request succeeds and search must target only the configured index.
-    assert r.status_code == 200, r.text
-    assert state["search_calls"][0]["index_name"] == "config-index"
+
+    assert response.status_code == 422
+    assert state["search_calls"] == []
 
 
-# ---------------------------------------------------------------------------
-# Happy path — shape and filter contract
-# ---------------------------------------------------------------------------
+def test_spoofed_group_context_is_rejected(monkeypatch):
+    client, state = _build_client(monkeypatch)
+
+    response = _post(
+        client,
+        {"query": "hello", "groupIds": ["victim-group"]},
+    )
+
+    assert response.status_code == 422
+    assert state["search_calls"] == []
 
 
-def test_successful_retrieval_returns_bounded_shape(monkeypatch):
-    docs = [
-        {
-            "id": f"doc-{i}",
-            "content": f"content {i}",
-            "title": f"Title {i}",
-            "url": f"https://example.com/{i}",
-            "category": "general",
-            "source": "blob",
-            "@search.score": 0.9 - i * 0.1,
-        }
-        for i in range(3)
-    ]
+def test_caller_selected_index_is_rejected(monkeypatch):
+    client, state = _build_client(monkeypatch)
+
+    response = _post(
+        client,
+        {"query": "hello", "indexName": "other-index"},
+    )
+
+    assert response.status_code == 422
+    assert state["search_calls"] == []
+
+
+@pytest.mark.parametrize(
+    ("enabled", "validated"),
+    [(False, False), (True, False), (False, True)],
+)
+def test_native_retrieval_gate_defaults_fail_closed(
+    monkeypatch, enabled, validated
+):
     client, state = _build_client(
         monkeypatch,
-        config_values={"SEARCH_RAG_INDEX_NAME": "rag-index"},
-        search_result={"documents": docs},
+        enabled=enabled,
+        inv_002_validated=validated,
     )
-    r = client.post(
-        "/retrieve",
-        json={"query": "test query", "userContext": {"oid": "abc-oid"}, "top": 3},
-        headers={"X-API-KEY": "test-key"},
-    )
-    assert r.status_code == 200, r.text
-    body = r.json()
 
-    assert "results" in body
-    assert "count" in body
-    assert body["count"] == 3
-    assert len(body["results"]) == 3
+    response = _post(client)
 
-    first = body["results"][0]
-    # Allowed fields only
-    assert set(first.keys()) == {"id", "content", "title", "url", "category", "source", "score"}
-    # No vectors, no security fields
-    assert "contentVector" not in first
-    assert "captionVector" not in first
-    assert "metadata_security_user_ids" not in first
-    assert "metadata_security_group_ids" not in first
+    assert response.status_code == 503
+    assert "INV-002" in response.json()["detail"]
+    assert state["search_calls"] == []
 
 
-def test_search_called_with_user_oid_filter_and_no_elevation(monkeypatch):
-    """The OData filter must include the user OID, the group-empty check, and elevated read must be off."""
+def test_missing_server_owned_index_is_explicit_failure(monkeypatch):
     client, state = _build_client(
         monkeypatch,
-        config_values={"SEARCH_RAG_INDEX_NAME": "rag-index"},
-        search_result={"documents": []},
+        config_values={"SEARCH_RAG_INDEX_NAME": ""},
     )
-    user_oid = "test-user-oid-9999"
-    r = client.post(
-        "/retrieve",
-        json={"query": "some query", "userContext": {"oid": user_oid}},
-        headers={"X-API-KEY": "test-key"},
-    )
-    assert r.status_code == 200, r.text
+
+    response = _post(client)
+
+    assert response.status_code == 500
+    assert state["search_calls"] == []
+
+
+def test_native_search_receives_only_validated_bearer(monkeypatch):
+    client, state = _build_client(monkeypatch)
+
+    response = _post(client, {"query": "  hello  ", "top": 3})
+
+    assert response.status_code == 200
     assert len(state["search_calls"]) == 1
-
     call = state["search_calls"][0]
-    # Elevated read must be disabled for permission filtering to apply.
-    assert call.get("use_elevated_read") is False
-
-    filter_str = call.get("filter_str", "")
-    # OData filter must contain the user OID.
-    assert user_oid in filter_str, f"OID not found in filter: {filter_str!r}"
-
-    # Public-document clause must require BOTH user and group lists to be empty.
-    assert "not metadata_security_user_ids/any()" in filter_str
-    assert "not metadata_security_group_ids/any()" in filter_str
+    assert call["index_name"] == "rag-index"
+    assert call["search_text"] == "hello"
+    assert call["top"] == 3
+    assert call["filter_str"] is None
+    assert call["use_elevated_read"] is False
+    assert call["query_source_authorization"] == "user-a-token"
+    assert state["close_calls"] == [True]
 
 
-def test_filter_excludes_group_only_restricted_docs(monkeypatch):
-    """A document with non-empty group ACL but empty user ACL must not be treated as public.
-
-    The OData filter must include ``not metadata_security_group_ids/any()``
-    as a conjunct in the public-document clause so that group-restricted
-    documents never pass through when the requesting user is not listed in
-    ``metadata_security_user_ids``.
-    """
+def test_search_failure_is_not_success_shaped(monkeypatch):
     client, state = _build_client(
         monkeypatch,
-        config_values={"SEARCH_RAG_INDEX_NAME": "rag-index"},
-        search_result={"documents": []},
-    )
-    r = client.post(
-        "/retrieve",
-        json={"query": "sensitive doc", "userContext": {"oid": "user-a"}},
-        headers={"X-API-KEY": "test-key"},
-    )
-    assert r.status_code == 200, r.text
-    filter_str = state["search_calls"][0]["filter_str"]
-
-    # The public clause must be a conjunction: both user AND group lists empty.
-    assert (
-        "not metadata_security_group_ids/any()" in filter_str
-    ), f"Group ACL check missing from filter: {filter_str!r}"
-
-    # The two empty-list checks must appear together (AND), not as independent OR branches.
-    and_pattern = re.compile(
-        r"not metadata_security_user_ids/any\(\)\s+and\s+not metadata_security_group_ids/any\(\)",
-        re.IGNORECASE,
-    )
-    assert and_pattern.search(filter_str), (
-        f"Public clause must AND both ACL fields; got: {filter_str!r}"
+        search_result={
+            "documents": [],
+            "count": 0,
+            "error": "sensitive downstream detail",
+        },
     )
 
+    response = _post(client)
 
-def test_oid_single_quote_is_escaped_in_filter(monkeypatch):
-    """OData injection: a single quote in the OID must be doubled."""
+    assert response.status_code == 502
+    assert response.json()["detail"] == "Azure AI Search query failed."
+    assert "sensitive downstream detail" not in response.text
+    assert state["close_calls"] == [True]
+
+
+def test_search_exception_is_sanitized_and_client_is_closed(monkeypatch):
+    def _raise(_kwargs):
+        raise RuntimeError("secret-bearing downstream failure")
+
     client, state = _build_client(
         monkeypatch,
-        config_values={"SEARCH_RAG_INDEX_NAME": "rag-index"},
-        search_result={"documents": []},
+        search_behavior=_raise,
     )
-    r = client.post(
-        "/retrieve",
-        json={"query": "q", "userContext": {"oid": "o'id"}},
-        headers={"X-API-KEY": "test-key"},
-    )
-    assert r.status_code == 200, r.text
-    filter_str = state["search_calls"][0]["filter_str"]
-    # Single quote must be escaped as ''
-    assert "o''id" in filter_str
+
+    response = _post(client)
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "Azure AI Search query failed."
+    assert "secret-bearing downstream failure" not in response.text
+    assert state["close_calls"] == [True]
 
 
-def test_empty_search_result_returns_empty_list(monkeypatch):
+@pytest.mark.asyncio
+async def test_search_client_builds_native_authorization_header(monkeypatch):
+    config_stub = types.SimpleNamespace(
+        get=lambda key, default=None, **_: (
+            "search-service" if key == "SEARCH_SERVICE_NAME" else default
+        )
+    )
+    dependencies_stub = types.ModuleType("dependencies")
+    dependencies_stub.get_config = lambda: config_stub
+    monkeypatch.setitem(sys.modules, "dependencies", dependencies_stub)
+
+    credentials_stub = types.ModuleType("tools.credentials")
+    credentials_stub.get_azure_client_id = lambda _config: None
+    monkeypatch.setitem(sys.modules, "tools.credentials", credentials_stub)
+
+    telemetry_stub = types.ModuleType("telemetry")
+    telemetry_stub.audit = types.SimpleNamespace()
+    monkeypatch.setitem(sys.modules, "telemetry", telemetry_stub)
+
+    module_path = Path(__file__).resolve().parents[1] / "tools" / "aisearch.py"
+    spec = importlib.util.spec_from_file_location(
+        "aisearch_native_header_under_test",
+        module_path,
+    )
+    assert spec and spec.loader
+    aisearch = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(aisearch)
+
+    captured = {}
+
+    class _Results:
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            raise StopAsyncIteration
+
+    class _SearchClient:
+        async def search(self, **kwargs):
+            captured.update(kwargs)
+            return _Results()
+
+    instance = object.__new__(aisearch.AISearchClient)
+
+    async def _get_search_client(_index_name):
+        return _SearchClient()
+
+    instance.get_search_client = _get_search_client
+
+    result = await instance.search_documents(
+        index_name="rag-index",
+        search_text="hello",
+        use_elevated_read=False,
+        query_source_authorization="validated-token",
+    )
+
+    assert result == {"count": 0, "documents": []}
+    assert captured["headers"] == {
+        "x-ms-query-source-authorization": "Bearer validated-token"
+    }
+    assert "x-ms-enable-elevated-read" not in captured["headers"]
+    assert captured["filter"] is None
+
+
+def test_group_only_document_does_not_cross_to_nonmember(monkeypatch):
+    documents_by_token = {
+        "group-a-token": [
+            {"id": "group-a-doc", "content": "allowed for group A"}
+        ],
+        "group-b-token": [],
+    }
+
+    def _native_trim(kwargs):
+        token = kwargs["query_source_authorization"]
+        docs = documents_by_token[token]
+        return {"documents": docs, "count": len(docs)}
+
+    claims = {
+        "group-a-token": {
+            "oid": "user-a",
+            "scp": "access_as_user",
+            "idtyp": "user",
+        },
+        "group-b-token": {
+            "oid": "user-b",
+            "scp": "access_as_user",
+            "idtyp": "user",
+        },
+    }
+    client, state = _build_client(
+        monkeypatch,
+        token_claims=claims,
+        search_behavior=_native_trim,
+    )
+
+    allowed = _post(client, token="group-a-token")
+    denied = _post(client, token="group-b-token")
+
+    assert [item["id"] for item in allowed.json()["results"]] == ["group-a-doc"]
+    assert denied.json() == {"results": [], "count": 0}
+    assert [
+        call["query_source_authorization"] for call in state["search_calls"]
+    ] == ["group-a-token", "group-b-token"]
+
+
+def test_user_only_document_does_not_cross_to_other_user(monkeypatch):
+    documents_by_token = {
+        "user-a-token": [{"id": "user-a-doc", "content": "private A"}],
+        "user-b-token": [],
+    }
+
+    def _native_trim(kwargs):
+        docs = documents_by_token[kwargs["query_source_authorization"]]
+        return {"documents": docs, "count": len(docs)}
+
+    claims = {
+        "user-a-token": {
+            "oid": "user-a",
+            "scp": "access_as_user",
+            "idtyp": "user",
+        },
+        "user-b-token": {
+            "oid": "user-b",
+            "scp": "access_as_user",
+            "idtyp": "user",
+        },
+    }
     client, _ = _build_client(
         monkeypatch,
-        config_values={"SEARCH_RAG_INDEX_NAME": "rag-index"},
-        search_result={"documents": []},
+        token_claims=claims,
+        search_behavior=_native_trim,
     )
-    r = client.post(
-        "/retrieve",
-        json={"query": "nothing here", "userContext": {"oid": "user-oid"}},
-        headers={"X-API-KEY": "test-key"},
-    )
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["results"] == []
-    assert body["count"] == 0
+
+    allowed = _post(client, token="user-a-token")
+    denied = _post(client, token="user-b-token")
+
+    assert [item["id"] for item in allowed.json()["results"]] == ["user-a-doc"]
+    assert denied.json() == {"results": [], "count": 0}
 
 
-def test_default_top_is_applied(monkeypatch):
-    """When ``top`` is not supplied, the default value is forwarded to search."""
-    from api.retrieval import _DEFAULT_TOP
-
-    client, state = _build_client(
-        monkeypatch,
-        config_values={"SEARCH_RAG_INDEX_NAME": "rag-index"},
-        search_result={"documents": []},
-    )
-    r = client.post(
-        "/retrieve",
-        json={"query": "test", "userContext": {"oid": "user-oid"}},
-        headers={"X-API-KEY": "test-key"},
-    )
-    assert r.status_code == 200, r.text
-    assert state["search_calls"][0]["top"] == _DEFAULT_TOP
-
-
-# ---------------------------------------------------------------------------
-# Error handling
-# ---------------------------------------------------------------------------
-
-
-def test_search_backend_error_returns_503(monkeypatch):
-    """A Search backend error must surface as HTTP 503, not an empty 200."""
+def test_response_fields_and_strings_are_bounded(monkeypatch):
+    oversized = {
+        "id": "i" * 300,
+        "content": "c" * 9_000,
+        "title": "t" * 700,
+        "url": "u" * 3_000,
+        "category": "g" * 300,
+        "source": "s" * 300,
+        "contentVector": [1.0],
+        "metadata_security_user_ids": ["secret"],
+        "metadata_security_group_ids": ["secret-group"],
+        "@search.score": 0.75,
+    }
     client, _ = _build_client(
         monkeypatch,
-        config_values={"SEARCH_RAG_INDEX_NAME": "rag-index"},
-        search_result={"documents": [], "error": "Service unavailable", "count": 0},
+        search_result={"documents": [oversized], "count": 1},
     )
-    r = client.post(
-        "/retrieve",
-        json={"query": "test", "userContext": {"oid": "user-oid"}},
-        headers={"X-API-KEY": "test-key"},
-    )
-    assert r.status_code == 503, r.text
+
+    response = _post(client)
+
+    assert response.status_code == 200
+    result = response.json()["results"][0]
+    assert set(result) == {
+        "id",
+        "content",
+        "title",
+        "url",
+        "category",
+        "source",
+        "score",
+    }
+    assert len(result["id"]) == 256
+    assert len(result["content"]) == 8_000
+    assert len(result["title"]) == 512
+    assert len(result["url"]) == 2_048
+    assert len(result["category"]) == 256
+    assert len(result["source"]) == 256
 
 
-# ---------------------------------------------------------------------------
-# Cross-user isolation
-# ---------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"query": ""},
+        {"query": "   "},
+        {"query": "x" * 1_001},
+        {"query": "hello", "top": 0},
+        {"query": "hello", "top": 11},
+    ],
+)
+def test_request_limits_are_enforced_before_search(monkeypatch, body):
+    client, state = _build_client(monkeypatch)
 
+    response = _post(client, body)
 
-def test_two_users_receive_different_filters(monkeypatch):
-    """Each user must see only a filter scoped to their own OID.
-
-    Protected content must never cross user boundaries.
-    """
-    client_a, state_a = _build_client(
-        monkeypatch,
-        config_values={"SEARCH_RAG_INDEX_NAME": "rag-index"},
-        search_result={"documents": []},
-    )
-    r_a = client_a.post(
-        "/retrieve",
-        json={"query": "q", "userContext": {"oid": "user-alpha"}},
-        headers={"X-API-KEY": "test-key"},
-    )
-    assert r_a.status_code == 200, r_a.text
-    filter_a = state_a["search_calls"][0]["filter_str"]
-    assert "user-alpha" in filter_a
-    assert "user-beta" not in filter_a
-
-    client_b, state_b = _build_client(
-        monkeypatch,
-        config_values={"SEARCH_RAG_INDEX_NAME": "rag-index"},
-        search_result={"documents": []},
-    )
-    r_b = client_b.post(
-        "/retrieve",
-        json={"query": "q", "userContext": {"oid": "user-beta"}},
-        headers={"X-API-KEY": "test-key"},
-    )
-    assert r_b.status_code == 200, r_b.text
-    filter_b = state_b["search_calls"][0]["filter_str"]
-    assert "user-beta" in filter_b
-    assert "user-alpha" not in filter_b
+    assert response.status_code == 422
+    assert state["search_calls"] == []

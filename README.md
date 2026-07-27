@@ -31,6 +31,65 @@ document outcomes, sharing the `audit-event-v1` contract owned by
 Insights pipeline — no separate audit backend, queue, or export path is
 introduced.
 
+## Hosted retrieval through Foundry Toolbox
+
+`POST /retrieve` is a preview-only OpenAPI tool boundary for hosted mode. It is
+disabled by default and has no effect on classic ingestion. The request schema
+is intentionally small:
+
+```json
+{
+  "query": "bounded string, 1-1000 characters",
+  "top": "optional integer, 1-10; default 5"
+}
+```
+
+Identity, groups, and index selection are not request fields. Configure the
+Toolbox connection for `UserEntraToken` identity passthrough so it sends a
+delegated bearer in `Authorization`. Configure the connection audience and
+`HOSTED_RETRIEVAL_TOKEN_AUDIENCE` to the same Azure AI Search query-token
+audience proven by INV-002. The service validates the signature, issuer, tenant,
+exact audience, expiry, delegated scope, identity type, and user object ID, then
+forwards the unchanged token to the configured `SEARCH_RAG_INDEX_NAME` through
+Azure AI Search's `x-ms-query-source-authorization` header. Never configure this
+tool with a static API key, project managed identity, caller-supplied object ID,
+or caller-supplied group list as the authorization boundary.
+
+The feature requires both App Configuration settings below (label `gpt-rag`):
+
+| Setting | Default | Contract |
+| --- | --- | --- |
+| `HOSTED_RETRIEVAL_ENABLED` | `false` | Enables the hosted retrieval route. |
+| `HOSTED_RETRIEVAL_INV_002_VALIDATED` | `false` | Operator attestation that ADR-0001 INV-002 passed in an isolated non-production topology without a group-filter fallback. |
+| `HOSTED_RETRIEVAL_TOKEN_AUDIENCE` | unset | Exact audience accepted from the Toolbox `UserEntraToken` connection and forwarded unchanged to Search; record the validated value in INV-002. |
+
+Keep the second setting false until two users in different groups prove that a
+restricted user cannot retrieve another user's or group's content. The bounded
+INV-002 evidence must also record the Toolbox connection auth type and audience,
+the Search index permission-filter configuration, and the exact negative-test
+results. There is no manual user/group fallback in this service. Do not infer
+that a document is public from an empty user-ID field: Search evaluates user,
+group, and RBAC-scope permission fields independently. Only Search's native
+permission-filter semantics determine whether a document is public.
+
+Required access handoff:
+
+- Grant each end user the **Foundry User** role on the project for the
+  `UserEntraToken` identity-passthrough flow.
+- Grant the ingestion service managed identity **Search Index Data Reader** on
+  the configured Search service for query access. Existing ingestion deployments
+  may already hold the broader **Search Index Data Contributor** role for writes.
+- Enable native permission filters on the configured index fields for user IDs,
+  group IDs, and RBAC scope before setting the INV-002 gate.
+
+Failure contract: `401` for a missing/invalid bearer, `403` for a non-delegated
+or non-user token, `422` for schema/bounds violations, `500` for missing server
+configuration, `502` for Search failures, and `503` while hosted retrieval or
+the INV-002 evidence gate is disabled. Responses contain at most 10 results;
+content is capped at 8,000 characters per result, URLs at 2,048, titles at 512,
+and other string metadata at 256. Vectors, ACL fields, tokens, and raw
+authorization claims are never returned or logged.
+
 ### Event taxonomy
 
 This service emits exactly these seven event types (no aliases):

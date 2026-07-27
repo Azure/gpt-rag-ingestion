@@ -893,7 +893,7 @@ FastAPIInstrumentor.instrument_app(app)
 from api.admin import router as admin_router
 app.include_router(admin_router)
 
-# Retrieval API router (Foundry Toolbox / hosted-agent path)
+# Fail-closed retrieval API router (disabled until hosted INV-002 validation)
 from api.retrieval import router as retrieval_router
 app.include_router(retrieval_router)
 

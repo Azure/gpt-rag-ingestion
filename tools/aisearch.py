@@ -10,6 +10,7 @@ from telemetry import audit
 
 # Elevated-read header – bypasses permission filtering for service-side queries.
 _ELEVATED_HEADERS = {"x-ms-enable-elevated-read": "true"}
+_QUERY_SOURCE_AUTHORIZATION_HEADER = "x-ms-query-source-authorization"
 _ELEVATED_API_VERSION = "2025-11-01-preview"
 
 app_config_client = get_config()
@@ -193,11 +194,17 @@ class AISearchClient:
         top: int = 10,
         skip: int = 0,
         order_by: Optional[str] = None,
-        filter_str: Optional[str] = None,  # <-- Add this
+        filter_str: Optional[str] = None,
         use_elevated_read: bool = True,
+        query_source_authorization: Optional[str] = None,
     ) -> Dict[str, Any]:
         client = await self.get_search_client(index_name)
         try:
+            if use_elevated_read and query_source_authorization:
+                raise ValueError(
+                    "Elevated read and query-source authorization are mutually exclusive."
+                )
+
             # Construct the filter string only if filter_str is not provided
             if filter_str is None and filter_field and filter_value is not None:
                 if isinstance(filter_value, str):
@@ -206,9 +213,19 @@ class AISearchClient:
                 else:
                     filter_str = f"{filter_field} {filter_operator} {filter_value}"
 
+            headers: Dict[str, str] = {}
+            if use_elevated_read:
+                headers = _ELEVATED_HEADERS
+            elif query_source_authorization:
+                headers = {
+                    _QUERY_SOURCE_AUTHORIZATION_HEADER: (
+                        f"Bearer {query_source_authorization}"
+                    )
+                }
+
             search_kwargs = {
                 "search_text": search_text,
-                "headers": _ELEVATED_HEADERS if use_elevated_read else {},
+                "headers": headers,
                 "filter": filter_str,
                 "order_by": order_by,
                 "search_mode": SearchMode.ALL,
