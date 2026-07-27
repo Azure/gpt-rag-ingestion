@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Foundry Toolbox retrieval endpoint (`POST /retrieve`) for hosted-agent path ([Azure/GPT-RAG#596](https://github.com/Azure/GPT-RAG/issues/596)).** Exposes document retrieval as a bounded, MCP-compatible endpoint so the hosted orchestrator can retrieve chunks through the Foundry path without the `Authorization` header that the Foundry gateway strips. Authentication uses the existing `X-API-KEY` service-to-service credential. User identity is carried explicitly in the request body via `userContext.oid` (the caller's Entra Object ID); the endpoint **fails closed** — missing or blank OID returns HTTP 403 rather than silently falling back to an elevated or unfiltered query. Document-level security is enforced via an OData filter: results are scoped to documents where the caller's OID appears in `metadata_security_user_ids`, plus documents with no security restriction (empty list = public access). The elevated-read bypass header (`x-ms-enable-elevated-read`) is intentionally omitted so Azure AI Search applies its own permission semantics on top of the OData filter. Output is bounded at 10 results per request and exposes only safe fields (`id`, `content`, `title`, `url`, `category`, `source`, `score`); embedding vectors and security metadata are never included in the response. No bearer tokens, raw OIDs, or authorization payloads appear in logs — only correlation metadata (query length, index name, result count) is emitted. The `AISearchClient.search_documents` method gained an optional `use_elevated_read` parameter (default `True`) that is set to `False` by the retrieval endpoint, leaving all other callers unchanged.
+
 ## [v2.5.0] - 2026-07-20
 
 ### Added

@@ -193,7 +193,8 @@ class AISearchClient:
         top: int = 10,
         skip: int = 0,
         order_by: Optional[str] = None,
-        filter_str: Optional[str] = None  # <-- Add this
+        filter_str: Optional[str] = None,  # <-- Add this
+        use_elevated_read: bool = True,
     ) -> Dict[str, Any]:
         client = await self.get_search_client(index_name)
         try:
@@ -207,7 +208,7 @@ class AISearchClient:
 
             search_kwargs = {
                 "search_text": search_text,
-                "headers": _ELEVATED_HEADERS,
+                "headers": _ELEVATED_HEADERS if use_elevated_read else {},
                 "filter": filter_str,
                 "order_by": order_by,
                 "search_mode": SearchMode.ALL,

@@ -893,6 +893,10 @@ FastAPIInstrumentor.instrument_app(app)
 from api.admin import router as admin_router
 app.include_router(admin_router)
 
+# Retrieval API router (Foundry Toolbox / hosted-agent path)
+from api.retrieval import router as retrieval_router
+app.include_router(retrieval_router)
+
 # Serve frontend static files (built by Vite into ./static)
 _static_dir = Path(__file__).resolve().parent / "static"
 if _static_dir.is_dir():
