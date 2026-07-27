@@ -13,6 +13,7 @@ import hashlib
 import json
 import logging
 import re
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -171,7 +172,10 @@ def _find_jwk(jwks: Dict[str, Any], kid: Optional[str], x5t: Optional[str]) -> O
     return sig_matches[0] if sig_matches else matches[0]
 
 
-async def validate_bearer_jwt(request: Request) -> Dict[str, Any]:
+async def validate_bearer_jwt(
+    request: Request,
+    expected_audiences: Optional[List[str]] = None,
+) -> Dict[str, Any]:
     """
     Validate Azure AD access token from `Authorization: Bearer <token>`.
     Handles v2 and (some) v1 issuers.
@@ -181,7 +185,18 @@ async def validate_bearer_jwt(request: Request) -> Dict[str, Any]:
     _token_integrity_diagnostics(token)
 
     tenant_id, client_id = _config_oauth()
-    expected_audiences = [client_id, f"api://{client_id}"]
+    if expected_audiences is None:
+        expected_audiences = [client_id, f"api://{client_id}"]
+    expected_audiences = [
+        str(audience).strip()
+        for audience in expected_audiences
+        if str(audience).strip()
+    ]
+    if not expected_audiences:
+        raise HTTPException(
+            status_code=500,
+            detail="Authentication not configured (missing token audience).",
+        )
     issuer_candidates = [
         f"https://login.microsoftonline.com/{tenant_id}/v2.0",
         f"https://sts.windows.net/{tenant_id}/",
@@ -281,6 +296,51 @@ def get_user_id_from_claims(claims: Dict[str, Any]) -> str:
     if not user_id:
         raise HTTPException(status_code=403, detail="Token missing user identifier (oid/sub).")
     return user_id
+
+
+@dataclass(frozen=True)
+class ValidatedUserBearer:
+    """A validated delegated-user bearer kept out of repr and logs."""
+
+    access_token: str = field(repr=False)
+    claims: Dict[str, Any] = field(repr=False)
+
+
+async def validate_delegated_user_bearer(request: Request) -> ValidatedUserBearer:
+    """Validate and return a delegated user token for native downstream trimming."""
+
+    config = get_config()
+    token_audience = config.get(
+        "HOSTED_RETRIEVAL_TOKEN_AUDIENCE",
+        default=None,
+        allow_none=True,
+    )
+    if not isinstance(token_audience, str) or not token_audience.strip():
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Hosted retrieval authentication not configured "
+                "(missing HOSTED_RETRIEVAL_TOKEN_AUDIENCE)."
+            ),
+        )
+
+    access_token = _get_bearer_token(request)
+    claims = await validate_bearer_jwt(
+        request,
+        expected_audiences=[token_audience.strip()],
+    )
+
+    oid = claims.get("oid")
+    scopes = claims.get("scp")
+    identity_type = claims.get("idtyp")
+    if not isinstance(oid, str) or not oid.strip():
+        raise HTTPException(status_code=403, detail="Token missing user object identifier.")
+    if not isinstance(scopes, str) or not scopes.strip():
+        raise HTTPException(status_code=403, detail="Delegated user token required.")
+    if identity_type is not None and identity_type != "user":
+        raise HTTPException(status_code=403, detail="Delegated user token required.")
+
+    return ValidatedUserBearer(access_token=access_token, claims=claims)
 
 
 def handle_exception(exception: Exception, status_code: int = 500):
