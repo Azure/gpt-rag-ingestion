@@ -15,9 +15,17 @@ Security contract
   is no success-shaped fallback to an elevated or unfiltered query.
 * Document-level filtering: an OData filter scopes results to documents
   that carry the caller's OID in ``metadata_security_user_ids``, plus
-  documents with no security restriction (empty list = public access).
+  documents that are truly unrestricted (BOTH ``metadata_security_user_ids``
+  AND ``metadata_security_group_ids`` are empty).  A document with a
+  non-empty group ACL but empty user ACL is **not** classified as public.
   The elevated-read bypass header is intentionally omitted so AI Search
   applies its own permission semantics on top of the OData filter.
+* Caller-supplied index selection is not supported; the index is always
+  taken from ``SEARCH_RAG_INDEX_NAME`` configuration so the service
+  identity cannot be directed at arbitrary indexes.
+* Search failures are surfaced as HTTP 503 rather than silently returning
+  an empty result set — the caller must not mistake a backend error for a
+  legitimate "no documents found" response.
 * No bearer tokens, raw OIDs, or authorization payloads appear in logs.
   Correlation metadata (query length, index name, result count) is emitted
   at INFO level; the OID is never written to a log record.
@@ -97,11 +105,6 @@ class RetrieveRequest(BaseModel):
         le=_MAX_TOP,
         description=f"Maximum number of results to return (1–{_MAX_TOP}).",
     )
-    indexName: Optional[str] = Field(
-        default=None,
-        max_length=256,
-        description="AI Search index to query.  Defaults to SEARCH_RAG_INDEX_NAME.",
-    )
 
     @field_validator("query")
     @classmethod
@@ -148,7 +151,7 @@ async def retrieve(
     """
     cfg = get_config()
 
-    index_name: Optional[str] = (body.indexName or "").strip() or cfg.get(
+    index_name: Optional[str] = cfg.get(
         "SEARCH_RAG_INDEX_NAME", default=None, allow_none=True
     )
     if not index_name:
@@ -168,13 +171,20 @@ async def retrieve(
     )
 
     # OData permission filter:
-    #   Return documents where either the user's OID appears in the security
-    #   list (user-specific doc) OR the list is empty (public/unrestricted doc).
+    #   Return documents where:
+    #     (a) the user's OID appears in the user security list, OR
+    #     (b) the document is truly unrestricted — BOTH the user and group
+    #         security lists are empty.
+    #
+    # A document with an empty user ACL but a non-empty group ACL is
+    # group-restricted and must NOT be classified as public.
+    #
     # Escape single quotes to prevent OData injection.
     escaped_oid = user_oid.replace("'", "''")
     filter_str = (
         f"metadata_security_user_ids/any(uid: uid eq '{escaped_oid}')"
-        f" or not metadata_security_user_ids/any()"
+        f" or (not metadata_security_user_ids/any()"
+        f" and not metadata_security_group_ids/any())"
     )
 
     from tools.aisearch import AISearchClient
@@ -188,6 +198,13 @@ async def retrieve(
         top=body.top,
         use_elevated_read=False,
     )
+
+    if search_result.get("error"):
+        logging.error("[retrieve] search error index=%s", index_name)
+        raise HTTPException(
+            status_code=503,
+            detail="Search service unavailable or index error.",
+        )
 
     results: List[Dict[str, Any]] = []
     for doc in search_result.get("documents", []):
