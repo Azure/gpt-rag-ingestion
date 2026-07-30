@@ -1,5 +1,11 @@
 # Changelog
 
+## [v2.6.0] - 2026-07-30
+
+### Added
+
+- **Fail-closed Foundry Toolbox retrieval boundary (`POST /retrieve`) for the hosted-agent path ([Azure/GPT-RAG#596](https://github.com/Azure/GPT-RAG/issues/596)).** Retrieval now accepts only a cryptographically validated delegated-user bearer supplied by a Toolbox `UserEntraToken` identity-passthrough flow; caller/model-supplied user IDs, group IDs, and index names are schema violations. The token must match the separately configured `HOSTED_RETRIEVAL_TOKEN_AUDIENCE` and is passed unchanged to Azure AI Search through `x-ms-query-source-authorization`, allowing native user, group, and RBAC-scope trimming instead of application-authored ACL filters. The configured `SEARCH_RAG_INDEX_NAME` is the only query target, elevated read is disabled, Search failures return HTTP 502, and response strings and result counts are bounded. The endpoint is disabled by default and returns HTTP 503 unless both `HOSTED_RETRIEVAL_ENABLED` and `HOSTED_RETRIEVAL_INV_002_VALIDATED` are true; operators may set the evidence gate only after ADR-0001 INV-002 passes two-user negative authorization in the isolated topology. Existing AI Search callers retain elevated-read behavior by default, so classic ingestion behavior is unchanged.
+
 ## [v2.5.0] - 2026-07-20
 
 ### Added
@@ -21,6 +27,15 @@
 - The exact reviewed PR head, `5cfbd180bdf2fd1dcd816dbee483894a43c22cac`, was merged after all reported CI checks completed successfully.
 - Independent final review found no blockers and validated actual Azure Monitor exporter envelopes against the pinned Application Insights wire schema for all seven event types.
 - All 47 focused audit contract, sanitizer, and emitter tests passed, including logical/wire hash pinning, strict-governance failure paths, sanitization, correlation, cancellation, and exported event names and parent properties.
+
+### Added
+
+- **Governance baseline and audit-event trail for ingestion (Azure/GPT-RAG#571).** Introduces the ingestion side of the shared, versioned `audit-event-v1` contract also implemented by `gpt-rag-orchestrator`: a new `contracts/` directory vendors the schema and its SHA-256 pin byte-for-byte, and a new `telemetry.audit` module emits `ingestion.run.started/completed/failed/cancelled` (exactly one started and one terminal event per run, with `asyncio.CancelledError` preserved and re-raised) and `ingestion.document.indexed/rejected/deleted` (derived from confirmed Azure AI Search batch results, never fabricated). Reuses the existing OpenTelemetry/Application Insights pipeline; emission is bounded and best-effort and can never turn a successful index, delete, or run into a failure.
+- **Optional provenance fields, off by default.** New `INGESTION_PROVENANCE_ENABLED` (default `false`), `INGESTION_REQUIRE_GOVERNANCE_METADATA` (default `false`), `INGESTION_DEFAULT_CLASSIFICATION` (default `unclassified`), and `INGESTION_DEFAULT_RIGHT_TO_USE` (default `not_asserted`) flags control whether `provenance_id`, `source_uri_id`, `source_version_id`, `content_checksum_sha256`, `ingested_at`, `ingest_run_id`, `data_classification`, `right_to_use`, `retention_class`, and `delete_after` are attached to document events. `source_uri_id`/`source_version_id` are opaque SHA-256 references — never the raw path, URL, or filename. Setting `INGESTION_REQUIRE_GOVERNANCE_METADATA=true` while `INGESTION_PROVENANCE_ENABLED=false` fails startup with an actionable error; strict mode never substitutes the configured defaults for a document that didn't explicitly supply its own classification and right-to-use. See the README's new "Governance and audit events" section for the full flag matrix and known evidence-gap caveats.
+
+### Fixed
+
+- **Application Insights audit event wire shape.** Ingestion audit records now populate `customEvents.name` as `gptrag.audit.ingestion.*` and encode a missing logical `parent_event_id` with the contract's root sentinel, so all seven event types remain queryable and root events retain the required parent property after Azure Monitor export.
 
 ## [v2.4.14] - 2026-06-28
 
