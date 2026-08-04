@@ -113,7 +113,30 @@ def test_validate_panel_resources_noop_for_hosted_no_panel():
 
 
 def test_validate_panel_resources_passes_when_configured():
-    cfg = _FakeConfig({"DATABASE_ACCOUNT_NAME": "acct", "DATABASE_NAME": "db"})
+    cfg = _FakeConfig(
+        {
+            "DATABASE_ACCOUNT_NAME": "acct",
+            "DATABASE_NAME": "db",
+            "OAUTH_AZURE_AD_TENANT_ID": "tenant-1",
+            "OAUTH_AZURE_AD_CLIENT_ID": "client-1",
+        }
+    )
+    validate_panel_resources(cfg, DeploymentMode.HOSTED_PANEL)  # must not raise
+
+
+def test_validate_panel_resources_passes_with_legacy_client_id_fallback():
+    """`dependencies.py`'s `_config_oauth()` falls back to the legacy
+    `CLIENT_ID` key when `OAUTH_AZURE_AD_CLIENT_ID` is unset — startup
+    validation must accept the same fallback instead of failing closed on
+    deployments that only set the legacy key."""
+    cfg = _FakeConfig(
+        {
+            "DATABASE_ACCOUNT_NAME": "acct",
+            "DATABASE_NAME": "db",
+            "OAUTH_AZURE_AD_TENANT_ID": "tenant-1",
+            "CLIENT_ID": "legacy-client-1",
+        }
+    )
     validate_panel_resources(cfg, DeploymentMode.HOSTED_PANEL)  # must not raise
 
 
@@ -131,3 +154,45 @@ def test_validate_panel_resources_fails_closed_when_missing(values):
     with pytest.raises(PanelResourceError) as exc_info:
         validate_panel_resources(_FakeConfig(values), DeploymentMode.HOSTED_PANEL)
     assert "DEPLOY_ADMINISTRATIVE_PANEL" in str(exc_info.value)
+
+
+_COSMOS_ONLY_VALUES = {"DATABASE_ACCOUNT_NAME": "acct", "DATABASE_NAME": "db"}
+
+
+@pytest.mark.parametrize(
+    "values, expected_missing_key",
+    [
+        # Regression (Azure/GPT-RAG#592 re-review): hosted/panel previously
+        # started and mounted routes with no Entra tenant/client configured
+        # at all, deferring the failure to first request via
+        # `require_panel_admin`'s per-request 500 — despite the ADR-0001
+        # "no development-mode auth bypass" invariant being a startup-time
+        # contract, not a runtime one.
+        ({**_COSMOS_ONLY_VALUES}, "OAUTH_AZURE_AD_TENANT_ID"),
+        ({**_COSMOS_ONLY_VALUES, "OAUTH_AZURE_AD_TENANT_ID": ""}, "OAUTH_AZURE_AD_TENANT_ID"),
+        ({**_COSMOS_ONLY_VALUES, "OAUTH_AZURE_AD_TENANT_ID": "   "}, "OAUTH_AZURE_AD_TENANT_ID"),
+        ({**_COSMOS_ONLY_VALUES, "OAUTH_AZURE_AD_TENANT_ID": "tenant-1"}, "OAUTH_AZURE_AD_CLIENT_ID"),
+        (
+            {
+                **_COSMOS_ONLY_VALUES,
+                "OAUTH_AZURE_AD_TENANT_ID": "tenant-1",
+                "OAUTH_AZURE_AD_CLIENT_ID": "",
+                "CLIENT_ID": "",
+            },
+            "OAUTH_AZURE_AD_CLIENT_ID",
+        ),
+    ],
+)
+def test_validate_panel_resources_fails_closed_when_entra_missing(values, expected_missing_key):
+    with pytest.raises(PanelResourceError) as exc_info:
+        validate_panel_resources(_FakeConfig(values), DeploymentMode.HOSTED_PANEL)
+    message = str(exc_info.value)
+    assert "DEPLOY_ADMINISTRATIVE_PANEL" in message
+    assert expected_missing_key in message
+
+
+def test_validate_panel_resources_noop_for_hosted_no_panel_never_requires_entra():
+    """HOSTED_NO_PANEL exposes no admin/panel surface, so it must never
+    require Entra ID configuration either — only panel Cosmos resources are
+    gated, and only for HOSTED_PANEL."""
+    validate_panel_resources(_FakeConfig(), DeploymentMode.HOSTED_NO_PANEL)  # must not raise

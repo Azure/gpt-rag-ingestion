@@ -15,9 +15,13 @@ restart, matching the frozen ADR-0001 contract:
 * **Hosted / panel** — both flags ``true``. The admin dashboard and the new
   ADR-0001 panel surface (``/api/panel/*``: feedback/curation metadata and a
   dashboard overview) are mounted. Panel Cosmos resources
-  (``DATABASE_ACCOUNT_NAME``/``DATABASE_NAME``) are validated eagerly and the
-  process exits if they are missing, since ADR-0001 treats that as a
-  release-blocking misconfiguration rather than a soft fallback.
+  (``DATABASE_ACCOUNT_NAME``/``DATABASE_NAME``) and Entra ID authorization
+  resources (``OAUTH_AZURE_AD_TENANT_ID``/``OAUTH_AZURE_AD_CLIENT_ID``) are
+  validated eagerly and the process exits if any are missing, since
+  ADR-0001 treats that as a release-blocking misconfiguration rather than a
+  soft fallback — there is no development-mode auth bypass for panel
+  endpoints, so starting without Entra configured would otherwise mount
+  routes that can only ever 500.
 
 Chat itself is never routed through this Container App in any mode — that
 stays owned by Foundry-managed Conversations (see ADR-0001 and
@@ -46,6 +50,23 @@ _PANEL_FLAG = "DEPLOY_ADMINISTRATIVE_PANEL"
 # feedback/curation container (see `api/panel.py`).
 PANEL_COSMOS_ACCOUNT_KEY = "DATABASE_ACCOUNT_NAME"
 PANEL_COSMOS_DATABASE_KEY = "DATABASE_NAME"
+
+# Entra ID (Azure AD) keys required when the panel surface is enabled.
+# `api/panel.py`'s `require_panel_admin` and `dependencies.py`'s
+# `validate_bearer_jwt` both need these to authorize every panel request —
+# without them, panel auth has no development-mode bypass and instead fails
+# every request with a 500 (see `require_panel_admin`). That per-request
+# failure mode is correct as a defense in depth, but it must never be the
+# *first* signal: hosted/panel is a "no auth bypass" surface by contract, so
+# a missing Entra tenant/client is a startup-fatal misconfiguration exactly
+# like a missing panel Cosmos resource, not something that should let the
+# process start and mount routes it can never successfully serve.
+PANEL_OAUTH_TENANT_KEY = "OAUTH_AZURE_AD_TENANT_ID"
+PANEL_OAUTH_CLIENT_KEY = "OAUTH_AZURE_AD_CLIENT_ID"
+# `dependencies.py`'s `_config_oauth()` falls back to the legacy `CLIENT_ID`
+# key when `OAUTH_AZURE_AD_CLIENT_ID` is unset; mirrored here so startup
+# validation doesn't fail closed on deployments that only set the legacy key.
+_PANEL_OAUTH_CLIENT_FALLBACK_KEY = "CLIENT_ID"
 
 
 class PanelResourceError(RuntimeError):
@@ -101,10 +122,22 @@ def panel_surface_enabled(mode: DeploymentMode) -> bool:
 
 
 def validate_panel_resources(config: Any, mode: DeploymentMode) -> None:
-    """Fail closed if hosted/panel mode is selected without its Cosmos resources.
+    """Fail closed if hosted/panel mode is selected without its required
+    Cosmos and Entra ID resources.
 
     No-op for CLASSIC and HOSTED_NO_PANEL — HOSTED_NO_PANEL must never
-    require (or contact) panel Cosmos resources at all.
+    require (or contact) panel Cosmos resources at all, and must never
+    require Entra ID configuration either (it exposes no admin/panel
+    surface, so there is nothing for Entra to authorize).
+
+    Validates both:
+    * the panel's Cosmos account/database (existing check), and
+    * Entra ID tenant/client IDs, since `api/panel.py`'s `require_panel_admin`
+      and `dependencies.py`'s `validate_bearer_jwt` cannot authorize any
+      panel request without them. Hosted/panel has no development-mode auth
+      bypass by contract, so a missing Entra tenant/client must be a
+      startup-fatal misconfiguration — not something that lets the process
+      start, mount the panel routes, and 500 every request at first use.
     """
     if mode is not DeploymentMode.HOSTED_PANEL:
         return
@@ -114,10 +147,21 @@ def validate_panel_resources(config: Any, mode: DeploymentMode) -> None:
         for key in (PANEL_COSMOS_ACCOUNT_KEY, PANEL_COSMOS_DATABASE_KEY)
         if not str(config.get(key, default=None, allow_none=True) or "").strip()
     ]
+
+    if not str(config.get(PANEL_OAUTH_TENANT_KEY, default=None, allow_none=True) or "").strip():
+        missing.append(PANEL_OAUTH_TENANT_KEY)
+
+    client_id = config.get(PANEL_OAUTH_CLIENT_KEY, default=None, allow_none=True)
+    if not str(client_id or "").strip():
+        client_id = config.get(_PANEL_OAUTH_CLIENT_FALLBACK_KEY, default=None, allow_none=True)
+    if not str(client_id or "").strip():
+        missing.append(PANEL_OAUTH_CLIENT_KEY)
+
     if missing:
         raise PanelResourceError(
             "DEPLOY_ADMINISTRATIVE_PANEL=true requires the panel's Cosmos "
-            f"resources, but the following App Configuration keys are "
-            f"missing or blank: {', '.join(missing)}. Set them (label "
-            "'gpt-rag') or disable DEPLOY_ADMINISTRATIVE_PANEL."
+            f"and Entra ID resources, but the following App Configuration "
+            f"keys are missing or blank: {', '.join(missing)}. Set them "
+            "(label 'gpt-rag') or disable DEPLOY_ADMINISTRATIVE_PANEL. "
+            "Hosted/panel has no development-mode auth bypass."
         )
