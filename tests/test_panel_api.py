@@ -50,6 +50,7 @@ class _FakeCosmosDBClient:
 
     list_error: Exception | None = None
     create_returns_none: bool = False
+    create_error: Exception | None = None
     documents: list[dict] = []
     created_calls: list[tuple] = []
 
@@ -63,6 +64,8 @@ class _FakeCosmosDBClient:
 
     async def create_document(self, container_name, key, body):
         _FakeCosmosDBClient.created_calls.append((container_name, key, body))
+        if _FakeCosmosDBClient.create_error is not None:
+            raise _FakeCosmosDBClient.create_error
         if _FakeCosmosDBClient.create_returns_none:
             return None
         return body
@@ -112,6 +115,7 @@ def _install_stubs(
     # Reset the fake Cosmos client's class-level state for test isolation.
     _FakeCosmosDBClient.list_error = None
     _FakeCosmosDBClient.create_returns_none = False
+    _FakeCosmosDBClient.create_error = None
     _FakeCosmosDBClient.documents = []
     _FakeCosmosDBClient.created_calls = []
 
@@ -239,7 +243,6 @@ def test_feedback_list_success_and_filters_by_conversation_id(monkeypatch):
             "rating": "down",
             "createdAt": "2026-01-01T00:00:00.000000Z",
         },
-        {"id": "junk", "noRatingField": True},  # must be skipped (no "rating")
     ]
 
     r = client.get("/api/panel/feedback")
@@ -308,6 +311,31 @@ def test_feedback_list_returns_502_on_malformed_document_missing_required_field(
     r = client.get("/api/panel/feedback")
     assert r.status_code == 502
     assert "data integrity" in r.json()["detail"].lower()
+
+
+def test_feedback_list_returns_502_on_document_missing_rating_entirely(monkeypatch):
+    """A stored document that has no `"rating"` key at all must be counted
+    as a data-integrity failure — the same as an invalid rating value or a
+    missing `createdAt` — and must never be silently excluded from the
+    count/response without surfacing a 502. (Regression: an earlier
+    prefilter special-cased "rating" absence and skipped such documents
+    without incrementing `invalid_count`, contradicting the
+    no-silent-corruption contract.)"""
+    client = _build_client(monkeypatch, tenant_id="tenant-1", claims=_ADMIN_CLAIMS)
+    _FakeCosmosDBClient.documents = [
+        {
+            "id": "good",
+            "conversationId": "conv-a",
+            "rating": "up",
+            "createdAt": "2026-01-01T00:00:00.000000Z",
+        },
+        {"id": "no-rating-at-all", "conversationId": "conv-z", "createdAt": "2026-01-01T00:00:00.000000Z"},
+    ]
+    r = client.get("/api/panel/feedback")
+    assert r.status_code == 502
+    body = r.json()
+    assert "1" in body["detail"]
+    assert "data integrity" in body["detail"].lower()
 
 
 # ---------------------------------------------------------------------------
@@ -380,6 +408,28 @@ def test_feedback_create_returns_502_on_cosmos_failure(monkeypatch):
         json={"conversationId": "conv-a", "rating": "up"},
     )
     assert r.status_code == 502
+
+
+def test_feedback_create_returns_502_on_cosmos_exception(monkeypatch, caplog):
+    """`CosmosDBClient.create_document` raising (e.g. a transient Cosmos
+    outage or SDK error), not just returning `None`, must not propagate as
+    an unhandled 500 — it must be caught and surfaced as the same
+    documented 502 write-failure contract, without logging request body
+    content (comment/tags)."""
+    client = _build_client(monkeypatch, tenant_id="tenant-1", claims=_ADMIN_CLAIMS)
+    _FakeCosmosDBClient.create_error = RuntimeError("cosmos write exploded")
+    with caplog.at_level("ERROR"):
+        r = client.post(
+            "/api/panel/feedback",
+            json={
+                "conversationId": "conv-a",
+                "rating": "up",
+                "comment": "super secret user complaint text",
+            },
+        )
+    assert r.status_code == 502
+    assert "super secret user complaint text" not in r.text
+    assert "super secret user complaint text" not in caplog.text
 
 
 def test_feedback_create_requires_admin_role(monkeypatch):

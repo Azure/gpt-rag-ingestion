@@ -210,7 +210,15 @@ async def list_feedback(
     invalid_count = 0
     records: List[FeedbackRecord] = []
     for doc in documents:
-        if not isinstance(doc, dict) or "rating" not in doc:
+        # A stored entry that isn't a dict, or is missing a required field
+        # (including "rating"), is just as much a data-integrity failure as
+        # one with an invalid value — it must be counted, never silently
+        # skipped. `FeedbackRecord(**doc)` already raises `ValidationError`
+        # for a missing/invalid "rating" (a required Literal field), so
+        # there is no need for — and no correctness benefit to — a separate
+        # prefilter that special-cases "rating" absence.
+        if not isinstance(doc, dict):
+            invalid_count += 1
             continue
         try:
             records.append(FeedbackRecord(**doc))
@@ -267,9 +275,19 @@ async def create_feedback(
 
     cfg = get_config()
     client = CosmosDBClient()
-    created = await client.create_document(
-        _feedback_container_name(cfg), record.id, record.model_dump()
-    )
+    try:
+        created = await client.create_document(
+            _feedback_container_name(cfg), record.id, record.model_dump()
+        )
+    except Exception:
+        # Mirror the read-path contract: a raised Cosmos exception is a
+        # transport failure, not a validation error the caller can fix by
+        # resubmitting. Never let it propagate as an unhandled 500 — return
+        # the same sanitized 502 as the documented "write failed" case
+        # below, and never log the (possibly sensitive) request body.
+        logging.error("[panel] Failed to create feedback document in Cosmos (exception raised).")
+        raise HTTPException(status_code=502, detail="Failed to write feedback to Cosmos DB.")
+
     if created is None:
         logging.error("[panel] Failed to create feedback document in Cosmos.")
         raise HTTPException(status_code=502, detail="Failed to write feedback to Cosmos DB.")
