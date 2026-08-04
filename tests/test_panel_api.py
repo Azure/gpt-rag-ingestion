@@ -260,6 +260,56 @@ def test_feedback_list_returns_502_on_cosmos_failure(monkeypatch):
     assert r.status_code == 502
 
 
+def test_feedback_list_returns_502_on_malformed_document(monkeypatch, caplog):
+    """A stored document with `"rating"` present but an invalid value (or
+    missing a required field) must not raise an unhandled ValidationError
+    (which would 500) and must not be silently dropped from the response
+    either. It must surface as an explicit, sanitized 502 data-integrity
+    error, and the document content must never be logged."""
+    client = _build_client(monkeypatch, tenant_id="tenant-1", claims=_ADMIN_CLAIMS)
+    _FakeCosmosDBClient.documents = [
+        {
+            "id": "f1",
+            "conversationId": "conv-a",
+            "rating": "up",
+            "createdAt": "2026-01-01T00:00:00.000000Z",
+        },
+        {
+            "id": "corrupt",
+            "conversationId": "conv-b",
+            "rating": "sideways",  # invalid Literal value -> ValidationError
+            "createdAt": "2026-01-01T00:00:00.000000Z",
+            "comment": "super secret user complaint text",
+        },
+    ]
+
+    with caplog.at_level("ERROR"):
+        r = client.get("/api/panel/feedback")
+
+    assert r.status_code == 502
+    body = r.json()
+    assert "1" in body["detail"]
+    assert "data integrity" in body["detail"].lower()
+    # Never leak document content (comment/conversationId) in the response
+    # or in logs — only a count is surfaced.
+    assert "super secret user complaint text" not in r.text
+    assert "super secret user complaint text" not in caplog.text
+    assert "conv-b" not in r.text
+
+
+def test_feedback_list_returns_502_on_malformed_document_missing_required_field(monkeypatch):
+    """Missing a required field (`createdAt`) is also a ValidationError from
+    `FeedbackRecord(**doc)` and must be handled the same way as an invalid
+    rating value — explicit 502, not an unhandled 500."""
+    client = _build_client(monkeypatch, tenant_id="tenant-1", claims=_ADMIN_CLAIMS)
+    _FakeCosmosDBClient.documents = [
+        {"id": "no-created-at", "conversationId": "conv-c", "rating": "down"},
+    ]
+    r = client.get("/api/panel/feedback")
+    assert r.status_code == 502
+    assert "data integrity" in r.json()["detail"].lower()
+
+
 # ---------------------------------------------------------------------------
 # POST /api/panel/feedback
 # ---------------------------------------------------------------------------

@@ -36,7 +36,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from dependencies import get_config, validate_bearer_jwt
 from utils.deployment_mode import panel_surface_enabled, resolve_deployment_mode
@@ -176,7 +176,14 @@ def _feedback_container_name(cfg: Any) -> str:
     "/feedback",
     response_model=List[FeedbackRecord],
     dependencies=[Depends(require_panel_admin)],
-    responses={502: {"description": "Cosmos DB read failed."}},
+    responses={
+        502: {
+            "description": (
+                "Cosmos DB read failed, or one or more stored feedback "
+                "documents failed schema validation (data-integrity error)."
+            )
+        }
+    },
 )
 async def list_feedback(
     conversationId: Optional[str] = Query(default=None, max_length=_MAX_CONVERSATION_ID_CHARS),
@@ -191,7 +198,42 @@ async def list_feedback(
         logging.error("[panel] Failed to list feedback documents from Cosmos.")
         raise HTTPException(status_code=502, detail="Failed to read feedback from Cosmos DB.")
 
-    records = [FeedbackRecord(**doc) for doc in documents if isinstance(doc, dict) and "rating" in doc]
+    # Constructing FeedbackRecord from a stored document can itself raise
+    # (e.g. a corrupted document with a non-"up"/"down" rating, or missing a
+    # required field). This is a data-integrity failure, not a transport
+    # failure, but it must still be handled explicitly: silently dropping
+    # the record would hide corruption from the caller, and letting the
+    # ValidationError propagate would produce an unhandled 500 for every
+    # caller until the bad document is manually purged from Cosmos. Fail
+    # loudly instead — surface a sanitized 502 naming *how many* documents
+    # are unreadable, never the document content itself.
+    invalid_count = 0
+    records: List[FeedbackRecord] = []
+    for doc in documents:
+        if not isinstance(doc, dict) or "rating" not in doc:
+            continue
+        try:
+            records.append(FeedbackRecord(**doc))
+        except ValidationError:
+            invalid_count += 1
+
+    if invalid_count:
+        logging.error(
+            "[panel] %d feedback document(s) failed schema validation and "
+            "were excluded from the list (data-integrity error); document "
+            "content is never logged.",
+            invalid_count,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                f"Feedback data integrity error: {invalid_count} stored "
+                "document(s) failed schema validation. Not returning a "
+                "silently-filtered partial list; the malformed document(s) "
+                "must be corrected or removed in Cosmos DB."
+            ),
+        )
+
     if conversationId:
         records = [r for r in records if r.conversationId == conversationId]
     logging.info("[panel] feedback list returned count=%d", len(records))
