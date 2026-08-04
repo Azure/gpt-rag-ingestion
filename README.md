@@ -175,6 +175,38 @@ Flag matrix:
   any regulatory framework; it provides technical evidence adopters can use
   in their own governance and risk assessments.
 
+## Deployment modes and the administrative panel
+
+The Container App resolves a single deployment mode at startup from App
+Configuration (label `gpt-rag`) and re-validates it on every restart —
+changing either flag below requires a restart to take effect:
+
+| Setting | Default | Effect |
+| --- | --- | --- |
+| `DEPLOY_HOSTED_AGENT_ORCHESTRATION` | `false` | `true` selects a hosted deployment (chat is served by Azure AI Foundry, not this Container App). `false` selects **classic** mode: full behavior is unchanged, the admin SPA (`/dashboard`) and jobs/schedules/files/config APIs are always mounted, exactly as in prior releases. |
+| `DEPLOY_ADMINISTRATIVE_PANEL` | `false` | Only consulted when hosted mode is selected. `false` is **hosted/no-panel**: the admin SPA and every admin/panel route are not mounted at all (404), and no panel-only Cosmos container is required. `true` is **hosted/panel**: the admin surface and the new `/api/panel/*` API are mounted, and the service fails closed at startup (exits) if the panel-only Cosmos database/account are not configured. |
+
+This closes [Azure/GPT-RAG#592](https://github.com/Azure/GPT-RAG/issues/592):
+previously the admin SPA and admin API were mounted unconditionally at import
+time regardless of deployment mode, so a hosted/no-panel deployment exposed
+the same administrative surface as classic mode. Mounting now happens once,
+inside the ASGI `lifespan`, strictly gated on the resolved mode; `POST
+/retrieve` is unaffected by this gate because it already fails closed on its
+own hosted-retrieval flags (see above) independently of admin/panel mode.
+
+### Panel API (`/api/panel/*`, hosted/panel only)
+
+Every route below requires an authenticated caller with the Entra **Admin**
+app role — there is no development-mode auth bypass in hosted/panel mode; a
+missing tenant configuration is a hard `500`, never a silent allow.
+
+| Route | Purpose |
+| --- | --- |
+| `GET /api/panel/status` | Reports whether the panel is currently enabled and ready (re-checks live config on every call as defense-in-depth against drift, independent of the mount-time decision). |
+| `GET/POST /api/panel/feedback` | Cosmos-backed curation/feedback metadata for hosted conversations (create/list), reusing the same Cosmos account/database contract as the orchestrator's dashboard. |
+| `GET /api/panel/overview` | Aggregates existing jobs, files, and feedback data into a single dashboard-overview payload; degrades gracefully (partial payload) if Cosmos is temporarily unavailable rather than failing the whole request. |
+| `GET /api/panel/conversations/{id}/history` | **Not yet implemented (`501`).** Managed Foundry Conversation history retrieval depends on a still-undefined cross-repo API surface between `gpt-rag-ingestion`, `gpt-rag-orchestrator`, and Azure AI Foundry, tracked under [Azure/GPT-RAG#592](https://github.com/Azure/GPT-RAG/issues/592). This service intentionally does not proxy chat execution or fabricate history — only the pieces implementable entirely within this repository are enabled today. |
+
 ## Contributing
 
 We welcome contributions! See the [contribution guidelines](https://azure.github.io/GPT-RAG/contributing/) for details on how to contribute.

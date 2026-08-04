@@ -30,11 +30,24 @@ from telemetry import Telemetry
 from telemetry import audit
 from constants import APPLICATION_INSIGHTS_CONNECTION_STRING, APP_NAME
 from utils.tools import is_azure_environment
+from utils.deployment_mode import (
+    DeploymentMode,
+    PanelResourceError,
+    admin_surface_enabled,
+    panel_surface_enabled,
+    resolve_deployment_mode,
+    validate_panel_resources,
+)
 
 # -------------------------------
 # App Configuration (initialized at runtime)
 # -------------------------------
 app_config_client = None  # set inside lifespan after auth checks
+
+# Resolved once at startup (see `utils/deployment_mode.py` / Azure/GPT-RAG#592
+# ADR-0001). Structural surface changes require a container restart — this is
+# never re-resolved per request.
+DEPLOYMENT_MODE: DeploymentMode | None = None
 
 # FastAPI app + Scheduler
 # -------------------------------
@@ -204,6 +217,27 @@ async def lifespan(app: FastAPI):
     # Initialize App Configuration only after passing auth checks
     global app_config_client
     app_config_client = get_config()
+
+    # Resolve the ADR-0001 hosted/panel deployment mode once at startup (see
+    # `utils/deployment_mode.py` and Azure/GPT-RAG#592). This never changes
+    # for the lifetime of the process — a restart is required to pick up a
+    # flag change, matching the frozen contract's "structural change requires
+    # restart" requirement.
+    global DEPLOYMENT_MODE
+    DEPLOYMENT_MODE = resolve_deployment_mode(app_config_client)
+    logging.info(f"[startup] Resolved deployment mode: {DEPLOYMENT_MODE.value}")
+    try:
+        validate_panel_resources(app_config_client, DEPLOYMENT_MODE)
+    except PanelResourceError as exc:
+        # Fail closed: DEPLOY_ADMINISTRATIVE_PANEL=true without its Cosmos
+        # resources is a release-blocking misconfiguration, not a soft
+        # fallback (ADR-0001). Mirrors `_ensure_auth_or_exit`'s hard-exit
+        # convention for startup-fatal configuration problems.
+        logging.error(f"[startup] {exc}")
+        logging.shutdown()
+        os._exit(1)
+
+    _mount_admin_and_panel_surface(DEPLOYMENT_MODE)
 
     Telemetry.configure_monitoring(app_config_client, APPLICATION_INSIGHTS_CONNECTION_STRING, APP_NAME)
 
@@ -889,28 +923,56 @@ def get_ingest_documents_request_schema():
 HTTPXClientInstrumentor().instrument()
 FastAPIInstrumentor.instrument_app(app)
 
-# Admin API router
-from api.admin import router as admin_router
-app.include_router(admin_router)
-
 # Fail-closed retrieval API router (disabled until hosted INV-002 validation)
 from api.retrieval import router as retrieval_router
 app.include_router(retrieval_router)
 
-# Serve frontend static files (built by Vite into ./static)
-_static_dir = Path(__file__).resolve().parent / "static"
-if _static_dir.is_dir():
-    from fastapi.responses import FileResponse
+_panel_surface_mounted = False
 
-    app.mount("/assets", StaticFiles(directory=str(_static_dir / "assets")), name="static-assets")
 
-    @app.get("/logo.png", include_in_schema=False)
-    async def logo():
-        return FileResponse(str(_static_dir / "logo.png"))
+def _mount_admin_and_panel_surface(mode: DeploymentMode) -> None:
+    """Mount the admin dashboard and/or ADR-0001 panel routers for *mode*.
 
-    @app.get("/dashboard", include_in_schema=False)
-    async def dashboard():
-        return FileResponse(str(_static_dir / "index.html"))
+    Called exactly once from inside `lifespan()`, once the deployment mode is
+    known (Azure/GPT-RAG#592). Structural surface changes require a restart —
+    this function only ever runs at startup, never per-request:
+
+    * CLASSIC — admin API + `/dashboard` SPA mounted (unchanged legacy
+      behavior); no `/api/panel/*` routes.
+    * HOSTED_NO_PANEL — fails closed: neither the admin API/UI nor the panel
+      API is mounted, and panel Cosmos resources are never contacted.
+    * HOSTED_PANEL — admin API + `/dashboard` SPA mounted (reused as-is) plus
+      the new `/api/panel/*` router (feedback/curation + dashboard overview).
+    """
+    global _panel_surface_mounted
+    if _panel_surface_mounted:
+        return
+    _panel_surface_mounted = True
+
+    if admin_surface_enabled(mode):
+        from api.admin import router as admin_router
+        app.include_router(admin_router)
+
+        _static_dir = Path(__file__).resolve().parent / "static"
+        if _static_dir.is_dir():
+            from fastapi.responses import FileResponse
+
+            app.mount("/assets", StaticFiles(directory=str(_static_dir / "assets")), name="static-assets")
+
+            @app.get("/logo.png", include_in_schema=False)
+            async def logo():
+                return FileResponse(str(_static_dir / "logo.png"))
+
+            @app.get("/dashboard", include_in_schema=False)
+            async def dashboard():
+                return FileResponse(str(_static_dir / "index.html"))
+    else:
+        logging.info(f"[startup] Admin dashboard/API not mounted (mode={mode.value})")
+
+    if panel_surface_enabled(mode):
+        from api.panel import router as panel_router
+        app.include_router(panel_router)
+        logging.info("[startup] ADR-0001 hosted panel API mounted at /api/panel")
 
 
 # Only run Uvicorn directly when executing this file as a script.
