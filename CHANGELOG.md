@@ -4,6 +4,8 @@
 
 ### Added
 
+- **Repository-local release skill.** Added a reusable Copilot release workflow that discovers the authoritative version from published tags, GitHub releases, and tracked version files; enforces `release/X.Y.Z` branches from `develop` with pull requests to `main`; keeps SemVer, changelog, `VERSION`, tag, and release title consistent; sanitizes public notes; and blocks all tag, release, package, image, deployment, and Azure publication actions until explicit human approval.
+
 - **Fail-closed Foundry Toolbox retrieval boundary (`POST /retrieve`) for the hosted-agent path ([Azure/GPT-RAG#596](https://github.com/Azure/GPT-RAG/issues/596)).** Retrieval now accepts only a cryptographically validated delegated-user bearer supplied by a Toolbox `UserEntraToken` identity-passthrough flow; caller/model-supplied user IDs, group IDs, and index names are schema violations. The token must match the separately configured `HOSTED_RETRIEVAL_TOKEN_AUDIENCE` and is passed unchanged to Azure AI Search through `x-ms-query-source-authorization`, allowing native user, group, and RBAC-scope trimming instead of application-authored ACL filters. The configured `SEARCH_RAG_INDEX_NAME` is the only query target, elevated read is disabled, Search failures return HTTP 502, and response strings and result counts are bounded. The endpoint is disabled by default and returns HTTP 503 unless both `HOSTED_RETRIEVAL_ENABLED` and `HOSTED_RETRIEVAL_INV_002_VALIDATED` are true; operators may set the evidence gate only after ADR-0001 INV-002 passes two-user negative authorization in the isolated topology. Existing AI Search callers retain elevated-read behavior by default, so classic ingestion behavior is unchanged.
 
 ## [v2.5.0] - 2026-07-20
