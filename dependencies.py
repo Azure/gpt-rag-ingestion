@@ -400,8 +400,10 @@ async def validate_delegated_operator_bearer(request: Request) -> ValidatedUserB
         raise HTTPException(status_code=403, detail="Delegated user token required.")
 
     role, group = _operator_role_or_group_config()
-    roles = claims.get("roles") or []
-    groups = claims.get("groups") or []
+    roles = claims.get("roles")
+    groups = claims.get("groups")
+    roles = roles if isinstance(roles, list) else []
+    groups = groups if isinstance(groups, list) else []
     has_role = bool(role) and role in roles
     has_group = bool(group) and group in groups
     if not (has_role or has_group):

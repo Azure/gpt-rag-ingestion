@@ -158,6 +158,35 @@ async def test_validate_delegated_operator_bearer_accepts_configured_group(monke
 
 
 @pytest.mark.asyncio
+async def test_validate_delegated_operator_bearer_rejects_string_roles_claim_substring_match(
+    monkeypatch,
+):
+    """A malformed ``roles``/``groups`` claim (a string, not a list) must never
+    be treated as a container for substring-style matching -- ``"Admin" in
+    "SuperAdminX"`` would otherwise be a false positive membership check."""
+
+    async def _claims(_request, expected_audiences=None):
+        return {
+            "oid": "user-a",
+            "scp": "access_as_user",
+            "idtyp": "user",
+            "roles": "SomePanelOperatorRoleString",
+        }
+
+    monkeypatch.setattr(real_dependencies, "validate_bearer_jwt", _claims)
+    monkeypatch.setattr(
+        real_dependencies,
+        "get_config",
+        lambda: _fake_config({"PANEL_OPERATOR_APP_ROLE": "PanelOperator"}),
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await real_dependencies.validate_delegated_operator_bearer(_request_with_bearer())
+
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_validate_delegated_operator_bearer_rejects_missing_scope(monkeypatch):
     async def _claims(_request, expected_audiences=None):
         return {"oid": "user-a", "idtyp": "user", "roles": ["PanelOperator"]}
