@@ -5,10 +5,12 @@ import { JobsTable } from "./components/JobsTable";
 import { SchedulesTab } from "./components/SchedulesTab";
 import { FilesTable } from "./components/FilesTable";
 import { ConfigurationTab } from "./components/ConfigurationTab";
+import { OverviewTab } from "./components/OverviewTab";
+import { CurationTab } from "./components/CurationTab";
 import { fetchIdentity, fetchVersion, type Identity } from "./lib/api";
-import { Calendar, Database, FileText, Settings } from "lucide-react";
+import { BarChart3, Calendar, ClipboardList, Database, FileText, Settings } from "lucide-react";
 
-type Tab = "jobs" | "schedules" | "files" | "config";
+type Tab = "jobs" | "schedules" | "files" | "config" | "overview" | "curation";
 
 function Dashboard() {
   const [tab, setTab] = useState<Tab>("jobs");
@@ -93,6 +95,28 @@ function Dashboard() {
           <Settings className="h-4 w-4" />
           Configuration
         </button>
+        <button
+          onClick={() => setTab("overview")}
+          className={`flex items-center gap-1.5 border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
+            tab === "overview"
+              ? "border-primary text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <BarChart3 className="h-4 w-4" />
+          Overview
+        </button>
+        <button
+          onClick={() => setTab("curation")}
+          className={`flex items-center gap-1.5 border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
+            tab === "curation"
+              ? "border-primary text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <ClipboardList className="h-4 w-4" />
+          Curation
+        </button>
       </nav>
 
       {tab === "jobs" && (
@@ -101,6 +125,8 @@ function Dashboard() {
       {tab === "schedules" && <SchedulesTab identity={identity} />}
       {tab === "files" && <FilesTable />}
       {tab === "config" && <ConfigurationTab identity={identity} />}
+      {tab === "overview" && <OverviewTab />}
+      {tab === "curation" && <CurationTab />}
     </div>
   );
 }

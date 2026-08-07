@@ -343,6 +343,76 @@ async def validate_delegated_user_bearer(request: Request) -> ValidatedUserBeare
     return ValidatedUserBearer(access_token=access_token, claims=claims)
 
 
+# ---------------------------------------------------------------------------
+# Operator-facing hosted administrative panel surfaces (issue #611, ADR-0004).
+#
+# Reuses this service's existing admin-dashboard bearer pattern
+# (``OAUTH_AZURE_AD_TENANT_ID`` / ``OAUTH_AZURE_AD_CLIENT_ID``, the same pair
+# ``require_admin`` in ``api/admin.py`` validates against) rather than
+# inventing a separate audience/config key -- see the platform contract's
+# ``contracts/README.md`` ("Operator-role authorization for the ingestion
+# admin surfaces reuses ingestion's existing admin-dashboard bearer/role
+# pattern; this repository does not introduce a separate config key for
+# it."). Distinct from ``validate_delegated_user_bearer`` above, which
+# authenticates the *hosted retrieval* path against Azure AI Search's own
+# audience -- these are different call paths with different token audiences.
+# ---------------------------------------------------------------------------
+
+
+def operator_role_or_group_configured() -> bool:
+    """True only when an explicit operator app role or group is configured.
+
+    ADR-0004 requires operator authorization to be explicit. Until an
+    operator app role name (``PANEL_OPERATOR_APP_ROLE``) or an operator
+    group object id (``PANEL_OPERATOR_GROUP_ID``) is set, the panel operator
+    surfaces must stay disabled (503) rather than falling back to an
+    implicit/broad check.
+    """
+    role, group = _operator_role_or_group_config()
+    return bool(role or group)
+
+
+def _operator_role_or_group_config() -> Tuple[str, str]:
+    cfg = get_config()
+    role = cfg.get("PANEL_OPERATOR_APP_ROLE", default="", allow_none=True) or ""
+    group = cfg.get("PANEL_OPERATOR_GROUP_ID", default="", allow_none=True) or ""
+    return str(role).strip(), str(group).strip()
+
+
+async def validate_delegated_operator_bearer(request: Request) -> ValidatedUserBearer:
+    """Validate a delegated (per-user) bearer carrying the configured operator
+    app role or group membership.
+
+    Always rejects an app-only (client-credentials) token -- a delegated
+    user token is mandatory for every panel operator surface. Raises 401 for
+    a missing/invalid bearer, 403 for an app-only token, a token missing an
+    object id, or a delegated token that lacks the configured operator role
+    or group.
+    """
+    claims = await validate_bearer_jwt(request)
+
+    oid = claims.get("oid")
+    scopes = claims.get("scp")
+    identity_type = claims.get("idtyp")
+    if not isinstance(oid, str) or not oid.strip():
+        raise HTTPException(status_code=403, detail="Token missing user object identifier.")
+    if identity_type == "app" or not (isinstance(scopes, str) and scopes.strip()):
+        raise HTTPException(status_code=403, detail="Delegated user token required.")
+
+    role, group = _operator_role_or_group_config()
+    roles = claims.get("roles")
+    groups = claims.get("groups")
+    roles = roles if isinstance(roles, list) else []
+    groups = groups if isinstance(groups, list) else []
+    has_role = bool(role) and role in roles
+    has_group = bool(group) and group in groups
+    if not (has_role or has_group):
+        raise HTTPException(status_code=403, detail="Operator role or group required.")
+
+    access_token = _get_bearer_token(request)
+    return ValidatedUserBearer(access_token=access_token, claims=claims)
+
+
 def handle_exception(exception: Exception, status_code: int = 500):
     logging.error(exception, stack_info=True, exc_info=True)
     raise HTTPException(status_code=status_code, detail=str(exception)) from exception

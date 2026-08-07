@@ -1,5 +1,24 @@
 # Changelog
 
+## [v2.7.0] - 2026-08-07
+
+### Added
+
+- **Repository-local release skill.** Added a reusable Copilot release workflow that discovers the authoritative version from published tags, GitHub releases, and tracked version files; enforces `release/X.Y.Z` branches from `develop` with pull requests to `main`; keeps SemVer, changelog, `VERSION`, tag, and release title consistent; sanitizes public notes; and blocks all tag, release, package, image, deployment, and Azure publication actions until explicit human approval.
+
+- **Privacy-safe operator panel surfaces: overview metrics and corpus curation ([Azure/GPT-RAG#611](https://github.com/Azure/GPT-RAG/issues/611), ADR-0004, [PR #274](https://github.com/Azure/gpt-rag-ingestion/pull/274)).** Adds `GET /panel/overview/metrics`, `GET /panel/corpus-curation/queue`, and `POST /panel/corpus-curation/{item_id}/decision`, matching the shapes vendored from the shared `contracts/conversations-panel-v1.schema.json` platform contract (Azure/GPT-RAG PR #637). These surfaces never read or expose Foundry managed Conversation message bodies and hold no Conversations data-plane access: overview metrics are aggregate-only `COUNT(1)` reads over the two panel Cosmos containers this service holds container-scoped **Data Reader** on (owner-index, feedback), with every bucket below `PANEL_OVERVIEW_MIN_CARDINALITY` (default `5`) suppressed as `null` rather than disclosing a small exact count; corpus curation reuses the *existing* per-file-log blob store this identity already owns (the same store behind the classic Files tab's `blocked`/`unblock` flow) for both the queue (blocked, undecided documents) and decisions (`approve`/`reject`/`defer` + optional note), using Blob Storage's native ETag optimistic concurrency rather than a Cosmos write this identity does not have. Pagination uses an opaque, HMAC-signed, expiring cursor bound to the calling operator's `oid` (signed with the existing `DATA_INGEST_APP_APIKEY` secret — no new Key Vault secret) instead of a raw offset or Search continuation token. All three endpoints are disabled by default and return HTTP 503 unless `DEPLOY_ADMINISTRATIVE_PANEL=true`, `PANEL_OPERATOR_SURFACES_ENABLED=true`, and an explicit operator app role or group (`PANEL_OPERATOR_APP_ROLE` / `PANEL_OPERATOR_GROUP_ID`) is configured; every request requires a validated delegated (per-user) bearer carrying that role/group — app-only tokens are always rejected (403). The classic Vite dashboard gains matching "Overview" and "Curation" tabs that render the exact 401/403/503/502 the backend returns rather than a fabricated success-shaped placeholder; all existing tabs are unchanged.
+
+### Changed
+
+- **Retains v2.6.0 secure hosted retrieval, unchanged.** The fail-closed Foundry Toolbox retrieval boundary (`POST /retrieve`) shipped in v2.6.0 — delegated-user bearer validation, `HOSTED_RETRIEVAL_TOKEN_AUDIENCE` matching, native Search RBAC-scope trimming via `x-ms-query-source-authorization`, and the `HOSTED_RETRIEVAL_ENABLED` / `HOSTED_RETRIEVAL_INV_002_VALIDATED` fail-closed gate — is carried forward as-is in v2.7.0. This release is backward-compatible with v2.6.0 deployments.
+
+### Validation
+
+- Full backend suite: `python -m pytest -q` — 167 passed.
+- Python compilation check: `python -m compileall -q . -x "frontend|node_modules|\.git"` — passed.
+- Frontend: `npm run lint`, `npm run test` (Vitest), `npm run build` (`tsc -b && vite build`) — all passed.
+- Independent review of the merged PR #274 diff found no blockers; the panel operator surfaces are fail-closed by default and have no Conversations data-plane access.
+
 ## [v2.6.0] - 2026-07-30
 
 ### Added
