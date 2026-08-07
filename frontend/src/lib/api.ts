@@ -313,3 +313,96 @@ export async function applyConfig(): Promise<{ status: string; note?: string; re
   }
   return r.json();
 }
+
+// ─── Operator panel: overview metrics + corpus curation (issue #611) ───────
+//
+// These endpoints are NOT prefixed with /api (they live at /panel/... per
+// the shared conversations-panel-v1 contract) and require a validated
+// delegated operator bearer token. This dashboard does not yet perform
+// browser-side interactive sign-in (no MSAL/token acquisition wired in), so
+// these calls only succeed once the surrounding deployment injects a
+// forwarded Authorization header (for example via a reverse-auth proxy).
+// Until then every card/table below renders the exact 401/403/503 the
+// backend returns -- never a fabricated success-shaped placeholder.
+
+export class PanelApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
+async function panelFetch(path: string, init?: RequestInit): Promise<Response> {
+  const r = await fetch(path, init);
+  if (!r.ok) {
+    let detail = `Request failed: ${r.status}`;
+    try {
+      const body = await r.json();
+      if (typeof body?.detail === "string") detail = body.detail;
+    } catch {
+      /* ignore */
+    }
+    throw new PanelApiError(detail, r.status);
+  }
+  return r;
+}
+
+export interface OverviewCounts {
+  conversation_count: number | null;
+  feedback_count: number | null;
+  corpus_pending_count: number | null;
+  corpus_decided_count: number | null;
+}
+
+export interface OverviewMetricsResponse {
+  schema_version: 1;
+  generated_at: string;
+  correlation_id: string;
+  counts: OverviewCounts;
+}
+
+export async function fetchOverviewMetrics(): Promise<OverviewMetricsResponse> {
+  const r = await panelFetch("/panel/overview/metrics");
+  return r.json();
+}
+
+export interface CorpusCurationItem {
+  item_id: string;
+  document_id: string;
+  title: string;
+  reason_code: string;
+  submitted_at: string;
+}
+
+export interface CorpusCurationQueueResponse {
+  items: CorpusCurationItem[];
+  next_cursor: string | null;
+}
+
+export async function fetchCurationQueue(cursor?: string | null): Promise<CorpusCurationQueueResponse> {
+  const q = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
+  const r = await panelFetch(`/panel/corpus-curation/queue${q}`);
+  return r.json();
+}
+
+export type CurationDecision = "approve" | "reject" | "defer";
+
+export interface CorpusCurationDecisionResponse {
+  item_id: string;
+  decision: CurationDecision;
+  decided_at: string;
+}
+
+export async function postCurationDecision(
+  itemId: string,
+  decision: CurationDecision,
+  note?: string,
+): Promise<CorpusCurationDecisionResponse> {
+  const r = await panelFetch(`/panel/corpus-curation/${encodeURIComponent(itemId)}/decision`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ decision, note: note || null }),
+  });
+  return r.json();
+}
