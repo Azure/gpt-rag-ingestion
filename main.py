@@ -897,6 +897,12 @@ app.include_router(admin_router)
 from api.retrieval import router as retrieval_router
 app.include_router(retrieval_router)
 
+# Fail-closed operator panel surfaces (overview metrics + corpus curation),
+# disabled unless DEPLOY_ADMINISTRATIVE_PANEL and PANEL_OPERATOR_SURFACES_ENABLED
+# are both true and an explicit operator role/group is configured — issue #611 / ADR-0004.
+from api.panel_operator import router as panel_operator_router
+app.include_router(panel_operator_router)
+
 # Serve frontend static files (built by Vite into ./static)
 _static_dir = Path(__file__).resolve().parent / "static"
 if _static_dir.is_dir():

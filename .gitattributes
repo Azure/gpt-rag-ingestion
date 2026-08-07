@@ -8,3 +8,9 @@
 contracts/audit-event-v1.schema.json -text
 contracts/audit-event-v1.application-insights.schema.json -text
 contracts/audit-event-v1.sha256 -text
+
+# Same rationale for the vendored conversations-panel-v1 platform contract
+# (issue #611, ADR-0004) -- pinned by SHA-256 in
+# contracts/conversations-panel-v1.sha256 / tests/test_conversations_panel_contract.py.
+contracts/conversations-panel-v1.schema.json -text
+contracts/conversations-panel-v1.sha256 -text
