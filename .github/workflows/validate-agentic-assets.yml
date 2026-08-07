@@ -1,0 +1,44 @@
+name: Validate agentic engineering assets
+
+on:
+  pull_request:
+    paths:
+      - "AGENTS.md"
+      - ".github/copilot-instructions.md"
+      - ".github/agents/**"
+      - ".github/skills/**"
+      - ".github/instructions/**"
+      - ".github/scripts/validate-agentic-assets.py"
+      - ".github/scripts/requirements.txt"
+      - ".github/workflows/validate-agentic-assets.yml"
+  push:
+    branches:
+      - develop
+      - main
+    paths:
+      - "AGENTS.md"
+      - ".github/copilot-instructions.md"
+      - ".github/agents/**"
+      - ".github/skills/**"
+      - ".github/instructions/**"
+      - ".github/scripts/validate-agentic-assets.py"
+      - ".github/scripts/requirements.txt"
+      - ".github/workflows/validate-agentic-assets.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: .github/scripts/requirements.txt
+      - name: Install pinned validator dependencies
+        run: python -m pip install --disable-pip-version-check --requirement .github/scripts/requirements.txt
+      - name: Validate agents, skills, and scoped instructions
+        run: python .github/scripts/validate-agentic-assets.py
