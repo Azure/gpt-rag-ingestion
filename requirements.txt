@@ -50,5 +50,5 @@ psutil==7.0.0
 
 azure-monitor-opentelemetry
 azure-monitor-opentelemetry-exporter
-opentelemetry-instrumentation-httpx==0.52b1
+opentelemetry-instrumentation-httpx==0.65b0
 opentelemetry-instrumentation-fastapi
