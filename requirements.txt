@@ -1,5 +1,5 @@
 # Web framework and async dependencies
-aiohttp==3.13.4
+aiohttp==3.14.3
 fastapi==0.115.12
 uvicorn==0.49.0
 webvtt-py==0.5.1
