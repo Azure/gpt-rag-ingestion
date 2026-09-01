@@ -14,7 +14,7 @@ azure-mgmt-storage==22.1.1
 azure-mgmt-web==8.0.0
 azure-search-documents==11.5.2
 azure-storage-blob==12.24.1
-msgraph-sdk==1.5.4
+msgraph-sdk==1.61.0
 azure-ai-projects==1.0.0b10
 azure-cosmos==4.5.1
 
