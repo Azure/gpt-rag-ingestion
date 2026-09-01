@@ -39,7 +39,7 @@ tiktoken==0.7.0
 tenacity==8.5.0
 
 # Image library
-Pillow==12.2.0
+Pillow==12.3.0
 
 # PDF manipulation (page counting, splitting, and figure extraction)
 PyMuPDF==1.27.2.3
