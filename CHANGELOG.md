@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [v2.7.3] - 2026-09-03
 
 ### Fixed
 
@@ -135,7 +135,7 @@
 
 ### Validation
 
-- Full GPT-RAG Zero Trust validation passed in Switzerland North using the PR head (`gptrag-zt-che06272059` / `rg-gptrag-zt-che06272059`): provision, postProvision, deploy, ACR, and readiness all passed.
+- Full GPT-RAG Zero Trust validation passed in Switzerland North using the PR head: provision, postProvision, deploy, ACR, and readiness all passed.
 - ACR logs from that validation showed no `registry-1.docker.io` pulls.
 
 ## [v2.4.13] - 2026-06-19
@@ -148,7 +148,7 @@
 ### Validation
 
 - Frontend: `npm run lint` clean, `npm run build` clean, `npm test` green (`SchedulesTab` auto-dismiss test asserts the toast is removed from the DOM after the timeout).
-- Sandbox validation: image deployed to `ca-4oa7xxpgqecaa-dataingest` in `rg-gptrag-sandbox-2606181758`; `GET /api/version` returns `2.4.13`; new Schedules tab visible between Jobs and Files; *Run now* trigger toast disappears within ~5s without operator action.
+- Sandbox validation: image deployed to the sandbox data-ingestion container app; `GET /api/version` returns `2.4.13`; new Schedules tab visible between Jobs and Files; *Run now* trigger toast disappears within ~5s without operator action.
 
 ## [v2.4.12] - 2026-06-18
 
@@ -159,7 +159,7 @@
 ### Validation
 
 - Frontend: `npm run lint` clean, `npm run build` clean.
-- Sandbox validation: image deployed to `ca-4oa7xxpgqecaa-dataingest` in `rg-gptrag-sandbox-2606181758`; `GET /api/version` returns `2.4.12`.
+- Sandbox validation: image deployed to the sandbox data-ingestion container app; `GET /api/version` returns `2.4.12`.
 
 ## [v2.4.11] - 2026-06-18
 
@@ -179,7 +179,7 @@
 
 - Full pytest suite: 37 passed (3 new in `tests/test_admin_jobs_queue.py`: `test_queue_cron_is_read_from_trigger_not_app_config`, `test_queue_last_run_populated_from_runs_store`, `test_queue_last_run_handles_failed_run_without_indexed_count`).
 - Frontend: `npm run lint` clean, `npm run build` clean.
-- Sandbox validation: image deployed to `ca-4oa7xxpgqecaa-dataingest` in `rg-gptrag-sandbox-2606181758`; `GET /api/version` returns `2.4.11`; `GET /api/jobs/queue` returns non-null `cron` for `blob_index` and `blob_purge` and populated `last_run` for `blob_index`.
+- Sandbox validation: image deployed to the sandbox data-ingestion container app; `GET /api/version` returns `2.4.11`; `GET /api/jobs/queue` returns non-null `cron` for `blob_index` and `blob_purge` and populated `last_run` for `blob_index`.
 
 ## [v2.4.10] - 2026-06-18
 
