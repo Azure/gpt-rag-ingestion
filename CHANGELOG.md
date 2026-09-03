@@ -1,5 +1,21 @@
 # Changelog
 
+## [v2.7.3] - 2026-09-03
+
+### Fixed
+
+- **`GET /api/panel/feedback` no longer 500s permanently on a single malformed Cosmos document ([Azure/GPT-RAG#592](https://github.com/Azure/GPT-RAG/issues/592)).** Constructing `FeedbackRecord` from a stored feedback document previously happened outside the Cosmos read's error handling, so one document with an invalid `rating` value or a missing required field raised an unhandled Pydantic `ValidationError` — an unhandled `500` for every caller, indefinitely, until the bad document was manually purged. The endpoint now validates each document individually, never silently drops a malformed one from the response, and surfaces a sanitized `502` naming the count of unreadable documents. Document content (comments, tags, conversation IDs) is never logged or included in the error detail — only the count.
+
+- **`GET /api/panel/feedback` no longer silently drops documents missing the `rating` field, and `POST /api/panel/feedback` no longer 500s on a Cosmos write exception ([Azure/GPT-RAG#592](https://github.com/Azure/GPT-RAG/issues/592)).** A leftover prefilter special-cased documents with no `rating` key at all and `continue`d past them *before* the invalid-document counter ran, so such documents were excluded from the response without ever being counted or surfaced as a data-integrity failure — contradicting the no-silent-corruption contract from the fix above. Every document is now validated uniformly through `FeedbackRecord(**doc)`, so a missing `rating` is treated exactly like an invalid one: counted and surfaced via the same sanitized `502`. Separately, `create_document` was only checked for a `None` return; an exception raised by the Cosmos client during a write propagated as an unhandled `500` instead of the documented `502` write-failure contract. The write path now catches any exception and returns the same sanitized `502`, still without logging request body content (comments, tags).
+
+- **Hosted/panel deployment mode gating for the admin surface ([Azure/GPT-RAG#592](https://github.com/Azure/GPT-RAG/issues/592)).** The admin SPA (`/dashboard`, `/logo.png`) and every admin API route were previously mounted unconditionally at import time, regardless of deployment mode, and `DEPLOY_ADMINISTRATIVE_PANEL` was never read — so a hosted/no-panel deployment exposed the exact same administrative surface as classic and hosted/panel deployments. Mounting is now resolved once from App Configuration (`DEPLOY_HOSTED_AGENT_ORCHESTRATION`, `DEPLOY_ADMINISTRATIVE_PANEL`) inside the ASGI `lifespan`, and a structural mode change requires a restart to take effect. Classic mode (`DEPLOY_HOSTED_AGENT_ORCHESTRATION=false`) is unchanged: the admin SPA and jobs/schedules/files/config APIs are always mounted. Hosted/no-panel now fails closed and mounts none of the admin/panel surface (no panel-only Cosmos resources are required). Hosted/panel mounts the admin surface plus a new `/api/panel/*` API and fails closed at startup (`os._exit(1)`) if the panel-only Cosmos account/database are not configured. `POST /retrieve` is unaffected — it already gates itself independently on its own hosted-retrieval flags.
+
+- **Hosted/panel startup validation now also fails closed on missing Entra ID configuration, not just Cosmos ([Azure/GPT-RAG#592](https://github.com/Azure/GPT-RAG/issues/592)).** `validate_panel_resources` previously checked only the panel's Cosmos account/database, so a hosted/panel deployment with Cosmos configured but `OAUTH_AZURE_AD_TENANT_ID`/`OAUTH_AZURE_AD_CLIENT_ID` unset would start up looking healthy, mount every `/api/panel/*` route, and only then 500 on the very first request inside `require_panel_admin`/`validate_bearer_jwt` — deferring a structural misconfiguration to runtime instead of failing closed at startup as ADR-0001 requires ("no development-mode auth bypass"). Startup validation now also requires an Entra tenant ID and a client ID (accepting the same legacy `CLIENT_ID` fallback that `dependencies.py`'s JWT validation already honors, so startup and runtime agree on what "Entra configured" means) and exits the process with the same actionable `PanelResourceError` when either is missing or blank. HOSTED_NO_PANEL remains unaffected: it never requires or contacts Entra any more than it requires panel Cosmos.
+
+### Added
+
+- **New `/api/panel/*` administrative panel API for hosted/panel deployments ([Azure/GPT-RAG#592](https://github.com/Azure/GPT-RAG/issues/592)).** Implements the repository-local pieces of the frozen ADR-0001 hosted-panel contract: `GET /api/panel/status` (live readiness check, re-validated per request), `GET`/`POST /api/panel/feedback` (Cosmos-backed curation/feedback metadata reusing the orchestrator's existing dashboard/Cosmos contract, with strict Pydantic request validation), and `GET /api/panel/overview` (aggregates jobs, files, and feedback into a single dashboard payload, degrading gracefully instead of failing whole-request on a transient Cosmos error). Every route requires the caller to hold the Entra **Admin** app role; a missing/misconfigured tenant is a hard `500`, never a silent bypass, and no request or response ever logs tokens or conversation/protected content. `GET /api/panel/conversations/{id}/history` intentionally returns `501 Not Implemented` — retrieving managed Foundry Conversation history requires a still-undefined cross-repo API between this service, `gpt-rag-orchestrator`, and Azure AI Foundry, so it is called out as explicit remaining coordination rather than faked. This service continues to never route or proxy hosted chat execution itself.
+
 ## [v2.7.2] - 2026-09-03
 
 ### Fixed
@@ -119,7 +135,7 @@
 
 ### Validation
 
-- Full GPT-RAG Zero Trust validation passed in Switzerland North using the PR head (`gptrag-zt-che06272059` / `rg-gptrag-zt-che06272059`): provision, postProvision, deploy, ACR, and readiness all passed.
+- Full GPT-RAG Zero Trust validation passed in Switzerland North using the PR head: provision, postProvision, deploy, ACR, and readiness all passed.
 - ACR logs from that validation showed no `registry-1.docker.io` pulls.
 
 ## [v2.4.13] - 2026-06-19
@@ -132,7 +148,7 @@
 ### Validation
 
 - Frontend: `npm run lint` clean, `npm run build` clean, `npm test` green (`SchedulesTab` auto-dismiss test asserts the toast is removed from the DOM after the timeout).
-- Sandbox validation: image deployed to `ca-4oa7xxpgqecaa-dataingest` in `rg-gptrag-sandbox-2606181758`; `GET /api/version` returns `2.4.13`; new Schedules tab visible between Jobs and Files; *Run now* trigger toast disappears within ~5s without operator action.
+- Sandbox validation: image deployed to the sandbox data-ingestion container app; `GET /api/version` returns `2.4.13`; new Schedules tab visible between Jobs and Files; *Run now* trigger toast disappears within ~5s without operator action.
 
 ## [v2.4.12] - 2026-06-18
 
@@ -143,7 +159,7 @@
 ### Validation
 
 - Frontend: `npm run lint` clean, `npm run build` clean.
-- Sandbox validation: image deployed to `ca-4oa7xxpgqecaa-dataingest` in `rg-gptrag-sandbox-2606181758`; `GET /api/version` returns `2.4.12`.
+- Sandbox validation: image deployed to the sandbox data-ingestion container app; `GET /api/version` returns `2.4.12`.
 
 ## [v2.4.11] - 2026-06-18
 
@@ -163,7 +179,7 @@
 
 - Full pytest suite: 37 passed (3 new in `tests/test_admin_jobs_queue.py`: `test_queue_cron_is_read_from_trigger_not_app_config`, `test_queue_last_run_populated_from_runs_store`, `test_queue_last_run_handles_failed_run_without_indexed_count`).
 - Frontend: `npm run lint` clean, `npm run build` clean.
-- Sandbox validation: image deployed to `ca-4oa7xxpgqecaa-dataingest` in `rg-gptrag-sandbox-2606181758`; `GET /api/version` returns `2.4.11`; `GET /api/jobs/queue` returns non-null `cron` for `blob_index` and `blob_purge` and populated `last_run` for `blob_index`.
+- Sandbox validation: image deployed to the sandbox data-ingestion container app; `GET /api/version` returns `2.4.11`; `GET /api/jobs/queue` returns non-null `cron` for `blob_index` and `blob_purge` and populated `last_run` for `blob_index`.
 
 ## [v2.4.10] - 2026-06-18
 

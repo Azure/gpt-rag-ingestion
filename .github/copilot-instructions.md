@@ -50,6 +50,10 @@ For release `2.6.0`, keep these forms aligned:
 Never add `v` to `VERSION` or a release branch name. Feature work must not
 preemptively change `VERSION`.
 
+The GitHub Release title must be exactly the tag, with no product or service
+prefix: use `v2.6.0`, never `GPT-RAG Ingestion v2.6.0` or
+`gpt-rag-ingestion v2.6.0`.
+
 ## Changelog lifecycle
 
 `CHANGELOG.md` follows Keep a Changelog and uses `Added`, `Changed`, `Fixed`,
