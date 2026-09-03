@@ -36,6 +36,22 @@ class CosmosDBClient:
 
             return documents
 
+    async def count_documents(self, container_name) -> int:
+        """
+        Returns an aggregate item count for *container_name* via a
+        ``SELECT VALUE COUNT(1)`` query -- never materializes individual
+        rows. Used by privacy-safe operator overview surfaces (issue #611)
+        that must only ever cross a Cosmos Data Reader boundary with an
+        aggregate count, never per-item metadata.
+        """
+        async with CosmosClient(self.db_uri, credential=self.cfg.aiocredential) as db_client:
+            db = db_client.get_database_client(database=self.database_name)
+            container = db.get_container_client(container_name)
+            query = "SELECT VALUE COUNT(1) FROM c"
+            async for result in container.query_items(query=query):
+                return int(result)
+            return 0
+
     async def get_document(self, container, key) -> dict: 
         async with CosmosClient(self.db_uri, credential=self.cfg.aiocredential) as db_client:
             db = db_client.get_database_client(database=self.database_name)

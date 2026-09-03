@@ -927,6 +927,12 @@ FastAPIInstrumentor.instrument_app(app)
 from api.retrieval import router as retrieval_router
 app.include_router(retrieval_router)
 
+# Fail-closed operator panel surfaces (overview metrics + corpus curation),
+# disabled unless DEPLOY_ADMINISTRATIVE_PANEL and PANEL_OPERATOR_SURFACES_ENABLED
+# are both true and an explicit operator role/group is configured — issue #611 / ADR-0004.
+from api.panel_operator import router as panel_operator_router
+app.include_router(panel_operator_router)
+
 _panel_surface_mounted = False
 
 

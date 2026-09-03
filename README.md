@@ -90,6 +90,67 @@ content is capped at 8,000 characters per result, URLs at 2,048, titles at 512,
 and other string metadata at 256. Vectors, ACL fields, tokens, and raw
 authorization claims are never returned or logged.
 
+## Operator panel surfaces (overview metrics and corpus curation)
+
+The optional hosted administrative panel's ingestion-side operator surfaces
+(issue [Azure/GPT-RAG#611](https://github.com/Azure/GPT-RAG/issues/611),
+ADR-0004) expose `GET /panel/overview/metrics`,
+`GET /panel/corpus-curation/queue`, and
+`POST /panel/corpus-curation/{item_id}/decision`. These surfaces **never**
+read or expose Foundry managed Conversation message bodies and hold **no**
+Conversations data-plane access. The exact wire shapes are vendored from the
+shared platform contract at
+[`contracts/conversations-panel-v1.schema.json`](contracts/conversations-panel-v1.schema.json)
+(pinned by SHA-256 in [`contracts/conversations-panel-v1.sha256`](contracts/conversations-panel-v1.sha256),
+published by [Azure/GPT-RAG PR #637](https://github.com/Azure/GPT-RAG/pull/637)).
+
+- **Overview metrics** are aggregate-only `COUNT(1)` reads over the two panel
+  Cosmos containers this service holds container-scoped **Data Reader** on
+  (the owner-index and feedback metadata containers) — never a per-item
+  read. Every count bucket below `PANEL_OVERVIEW_MIN_CARDINALITY` (default
+  `5`) is suppressed as `null` rather than disclosing a small exact count.
+- **Corpus curation** reuses the *existing* per-file-log blob store this
+  service identity already owns and legitimately writes to (the same store
+  behind the classic dashboard's Files tab and `blocked`/`unblock` flow) —
+  never Cosmos, since this identity has no Cosmos write access for panel
+  data. A curation item is a blocked, undecided per-file log; a decision
+  (`approve`/`reject`/`defer` + an optional bounded note) is written with
+  Blob Storage's native ETag optimistic concurrency. Re-posting an identical
+  decision for an already-decided item is idempotent (returns the existing
+  outcome); a *conflicting* second decision is rejected (`422`) rather than
+  silently overwritten.
+- The curation queue's pagination cursor is opaque, HMAC-signed, expiring,
+  and bound to the calling operator's `oid` — never a raw offset or Search
+  continuation token — signed with the existing `DATA_INGEST_APP_APIKEY`
+  secret (no new Key Vault secret or RBAC introduced).
+
+All three endpoints are disabled by default and fail closed (`503`) unless
+every gate below is met (label `gpt-rag` App Configuration keys):
+
+| Setting | Default | Contract |
+| --- | --- | --- |
+| `DEPLOY_ADMINISTRATIVE_PANEL` | `false` | Existing platform-owned panel topology flag ([Azure/GPT-RAG PR #637](https://github.com/Azure/GPT-RAG/pull/637)). |
+| `PANEL_OPERATOR_SURFACES_ENABLED` | `false` | Ingestion-owned gate for these three endpoints specifically. |
+| `PANEL_OPERATOR_APP_ROLE` | unset | Entra app role name a delegated operator token must carry. At least this or the group below must be set. |
+| `PANEL_OPERATOR_GROUP_ID` | unset | Entra group object id a delegated operator token's `groups` claim must carry. |
+| `PANEL_OVERVIEW_MIN_CARDINALITY` | `5` | Overview count-bucket suppression threshold (shared with the platform contract). |
+| `PANEL_CURSOR_TTL_SECONDS` | `600` | Curation queue cursor lifetime (shared with the platform contract). |
+
+Every request requires a validated delegated (per-user) bearer token carrying
+the configured operator role or group — an app-only (client-credentials)
+token is always rejected. Failure contract: `401` missing/invalid bearer,
+`403` app-only token or missing operator role/group, `404` curation item not
+found or not visible, `422` malformed `item_id`, a tampered/expired/
+cross-principal cursor, or a conflicting recorded decision, `502` a Cosmos or
+corpus-control-store failure, `503` any gate above unmet. Only correlation
+ids and coarse audit metadata (never tokens, queries, or document content)
+are logged.
+
+The classic Vite operator dashboard adds matching **Overview** and
+**Curation** tabs that render the exact error the backend returns (disabled,
+unauthenticated, forbidden, or downstream failure) rather than a fabricated
+success-shaped placeholder; all existing tabs are unchanged.
+
 ### Event taxonomy
 
 This service emits exactly these seven event types (no aliases):

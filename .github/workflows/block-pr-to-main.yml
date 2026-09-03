@@ -1,0 +1,59 @@
+name: Block PRs to main
+
+on:
+  pull_request_target:
+    types: [opened, reopened, edited, synchronize]
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  block-pr:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate source branch
+        id: branch-policy
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if [[ "$HEAD_REF" =~ ^release/[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "allowed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "allowed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Post comment on opened or reopened PRs
+        if: steps.branch-policy.outputs.allowed != 'true' && (github.event.action == 'opened' || github.event.action == 'reopened')
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prNumber = context.payload.pull_request.number;
+            const body = `🚫 **Pull requests to the \`main\` branch are not allowed.**
+
+            This repository follows a branching strategy where:
+            - \`develop\` is the integration branch for all contributions
+            - \`main\` accepts pull requests only from release branches named exactly \`release/<MAJOR>.<MINOR>.<PATCH>\`
+
+            **Unless this is a release pull request, please change the base branch of this pull request to \`develop\`.**
+
+            You can do this by clicking **Edit** at the top right of the PR and changing the base branch dropdown from \`main\` to \`develop\`.
+
+            Thank you for your contribution! 🙏`;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: body
+            });
+
+      - name: Fail the workflow
+        if: steps.branch-policy.outputs.allowed != 'true'
+        run: |
+          echo "::error::Only release branches named exactly 'release/<MAJOR>.<MINOR>.<PATCH>' may target 'main'. Please change the base branch to 'develop'."
+          exit 1
