@@ -24,22 +24,35 @@ import main as main_module
 from utils.deployment_mode import DeploymentMode
 
 
+def _lazy_router_types() -> tuple[type, ...]:
+    """Return the private FastAPI wrapper types that defer `include_router()`.
+
+    FastAPI >=0.139 defers `include_router()` behind a lazy `_IncludedRouter`
+    wrapper. The pinned FastAPI (`requirements.txt`: 0.115.12) has no such
+    wrapper and copies `APIRoute` objects into `app.routes` eagerly, so the
+    import must stay optional — importing it unconditionally makes every
+    caller fail with `ImportError` on the version this service actually ships.
+    """
+    try:
+        from fastapi.routing import _IncludedRouter
+    except ImportError:
+        return ()
+    return (_IncludedRouter,)
+
+
 def _mounted_paths(app) -> set[str]:
     """Flatten `app.routes` into a set of effective path strings.
 
-    FastAPI >=0.139 defers `include_router()` calls via a lazy
-    `_IncludedRouter` wrapper instead of eagerly copying `APIRoute` objects
-    into `app.routes`, so a shallow scan of `route.path` misses everything
-    mounted through `app.include_router(...)`. Recurse into
-    `effective_candidates()` to resolve the real (prefixed) paths.
+    Recurses through any lazy router wrappers so the real (prefixed) paths are
+    resolved on FastAPI >=0.139; on the pinned eager version the shallow scan
+    of `route.path` is already complete.
     """
-    from fastapi.routing import _IncludedRouter
-
+    lazy_types = _lazy_router_types()
     paths: set[str] = set()
 
     def _walk(routes) -> None:
         for route in routes:
-            if isinstance(route, _IncludedRouter):
+            if lazy_types and isinstance(route, lazy_types):
                 _walk(route.effective_candidates())
                 continue
             path = getattr(route, "path", None)
