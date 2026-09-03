@@ -1,5 +1,29 @@
 # Changelog
 
+## [v2.7.1] - 2026-09-03
+
+### Changed
+
+- **Dependency maintenance release.** No application behavior changed; this
+  release only refreshes pinned runtime and frontend dependencies on top of
+  v2.7.0.
+  - `openai` 1.55.3 -> 2.41.1
+  - `msgraph-sdk` 1.5.4 -> 1.61.0
+  - `cryptography` >=42.0.0 -> >=50.0.1
+  - `httpx` >=0.27.0 -> >=0.28.1
+  - `azure-identity` 1.25.1 -> 1.25.3
+  - `azure-appconfiguration-provider` 2.1.0 -> 2.5.0
+  - `tabulate` 0.9.0 -> 0.10.0
+  - `opentelemetry-instrumentation-httpx` bumped to its current release
+  - Frontend: `tailwindcss` 3.4.19 -> 4.3.3, `autoprefixer` 10.4.27 -> 10.5.0,
+    `tailwind-merge` 3.5.0 -> 3.6.0, plus `react`, `@radix-ui/react-select`,
+    `@vitejs/plugin-react-swc`, `@testing-library/react` and `globals` bumps
+
+### Validation
+
+- Repository dependency and build workflows green on `develop` at the release
+  commit.
+
 ## [v2.7.0] - 2026-08-07
 
 ### Added
