@@ -34,6 +34,7 @@ def _load_extractor():
         "utils": {},
         "utils.file_utils": {"_safe_delete": lambda *a, **k: None},
     }
+    installed: list[str] = []
     for name, attrs in stubs.items():
         if name in sys.modules:
             continue
@@ -41,14 +42,24 @@ def _load_extractor():
         for attr, value in attrs.items():
             setattr(module, attr, value)
         sys.modules[name] = module
+        installed.append(name)
 
-    spec = importlib.util.spec_from_file_location(
-        "blob_storage_indexer_under_test", module_path
-    )
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(module)
-    return module._extract_custom_metadata
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "blob_storage_indexer_under_test", module_path
+        )
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)
+        return module._extract_custom_metadata
+    finally:
+        # Only ever installed fresh stubs above (never overwrote a
+        # pre-existing real module), so it's always safe to remove them —
+        # leaving them in `sys.modules` would otherwise permanently shadow
+        # the real `utils`/`utils.file_utils` packages for every test that
+        # collects after this module.
+        for name in installed:
+            del sys.modules[name]
 
 
 extract = _load_extractor()
