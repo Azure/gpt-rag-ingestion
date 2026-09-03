@@ -1,5 +1,35 @@
 # Changelog
 
+## [v2.7.2] - 2026-09-03
+
+### Fixed
+
+- **The container failed to start on v2.7.1.** `requirements.txt` pinned
+  `opentelemetry-instrumentation-httpx==0.65b0`, which falls outside the
+  `>=0.64b0,<0.65.0` range required by `azure-monitor-opentelemetry`. pip
+  resolved the conflict by backtracking to
+  `azure-monitor-opentelemetry-exporter 1.0.0b45`, which imports `LogData` from
+  a module path removed in `opentelemetry-sdk 1.44`. The image built
+  successfully but the container crashed on boot with
+  `ImportError: cannot import name 'LogData' from 'opentelemetry.sdk._logs'`,
+  raised from `telemetry/telemetry.py` while `main.py` was importing. The pin is
+  now a range aligned with the distro.
+
+### Added
+
+- **Continuous integration for the existing test suite.** The repository had 12
+  test files and no workflow running them, which is how the dependency conflict
+  above reached a published release. `.github/workflows/tests.yml` now runs
+  `python -m pytest tests -q` on every pull request.
+- **Guard against non-release pull requests to `main`**, matching the other
+  GPT-RAG repositories.
+
+### Validation
+
+- `unit-tests` workflow green on the release commit: `168 passed`.
+- Resolved dependency set verified coherent: `azure-monitor-opentelemetry 1.8.9`,
+  `azure-monitor-opentelemetry-exporter 1.0.0b56`,
+  `opentelemetry-instrumentation-httpx 0.64b0`, `opentelemetry-sdk 1.43.0`.
 ## [v2.7.1] - 2026-09-03
 
 ### Changed
