@@ -113,4 +113,4 @@ class TranscriptionChunker(BaseChunker):
         chunked_content_list = splitter.split_text(text)
     
         for chunked_content in chunked_content_list:
-            yield chunked_content # type: ignore
+            yield chunked_content

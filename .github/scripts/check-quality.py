@@ -164,6 +164,9 @@ def policy_findings(root: Path, base: str, current: list[dict], protected: list[
     for field in ("runtime_roots", "contracts", "toolchain", "required_checks", "dynamic_imports", "review"):
         if policy[field] != base_policy[field]:
             findings.append(q.finding("protected-policy-change", ".quality/policy.json", reason=field))
+    for field in ("coverage_stage", "planned_expansion", "review"):
+        if scope.get(field) != base_scope.get(field):
+            findings.append(q.finding("protected-policy-change", ".quality/typing-scope.json", reason=field))
     old_surfaces = {module["id"]: module for module in base_policy["modules"]}
     for surface in policy["modules"]:
         old = old_surfaces.get(surface["id"])
@@ -196,7 +199,8 @@ def policy_findings(root: Path, base: str, current: list[dict], protected: list[
     return findings
 
 
-def lint(root: Path, config: Path, sources: dict) -> tuple[list[dict], dict]:
+def lint(root: Path, config: Path, sources: dict, entries: list[dict],
+         modules: dict[str, str], review_stage: str) -> tuple[list[dict], dict]:
     result = q.run_tool([sys.executable, "-m", "ruff", "check", "--config", str(config),
                          "--output-format", "json", "--no-cache", *sources], root)
     try:
@@ -205,13 +209,31 @@ def lint(root: Path, config: Path, sources: dict) -> tuple[list[dict], dict]:
         raise q.QualityError("Ruff did not return JSON") from exc
     if not isinstance(diagnostics, list) or (result.returncode == 1 and not diagnostics):
         raise q.QualityError("Incomplete Ruff execution")
+    approved_sites = []
+    path_ids = {path: key for key, path in modules.items()}
+    for site in q.handler_sites(sources):
+        site["module_id"] = path_ids[site["file"]]
+        matching = [record for record in q.matching_exception_records(site, entries)
+                    if record["review"].get("status") == "active"
+                    and q.valid_exception_metadata(record, review_stage)]
+        if len(matching) == 1:
+            approved_sites.append((site, matching[0]["id"]))
     findings = []
+    used_ids = set()
     for item in diagnostics:
         if not all(key in item for key in ("code", "filename", "location", "message")):
             raise q.QualityError("Unsupported Ruff diagnostic")
         file = Path(item["filename"]).resolve().relative_to(root).as_posix()
+        if item["code"] == "BLE001":
+            approved = [record_id for site, record_id in approved_sites
+                        if site["file"] == file
+                        and site["line"] <= item["location"]["row"] <= site["header_end_line"]]
+            if len(approved) == 1:
+                # The separate required exceptions job proves same-run behavior evidence.
+                used_ids.update(approved)
+                continue
         findings.append(q.finding(item["code"], file, item["location"]["row"], item["message"]))
-    return findings, {}
+    return findings, {"exception_ids_used": sorted(used_ids)}
 
 
 def typing(root: Path, config: Path, sources: dict, modules: dict, covered: set,
@@ -357,6 +379,9 @@ def main() -> int:
         if any(modules.get(module_id) not in sources for module_id in covered):
             raise q.QualityError("Covered module is missing; coverage cannot disappear")
         selected = q.REQUIRED_CHECKS[:-1] if args.check == "all" else (args.check,)
+        entries = current[3]["entries"] if bootstrap else [
+            entry for entry in current[3]["entries"] if entry in protected[3]["entries"]
+        ]
         with tempfile.TemporaryDirectory(prefix="ingestion-quality-") as temporary:
             config = Path(temporary) / "pyproject.toml"
             config.write_text(config_text, encoding="utf-8")
@@ -365,7 +390,9 @@ def main() -> int:
                     findings = policy_findings(root, base, current, protected, sources, declared_modules, base_modules, bootstrap)
                     details = {"bootstrap": bootstrap}
                 elif check == "lint":
-                    findings, details = lint(root, config, sources)
+                    findings, details = lint(root, config, sources, entries, modules,
+                                            protected[1].get("coverage_stage", "initial"))
+                    report["exception_ids_used"].extend(details["exception_ids_used"])
                 elif check == "typing":
                     baseline = current[2] if bootstrap else {"entries": [
                         entry for entry in current[2]["entries"] if entry in protected[2]["entries"]
@@ -376,11 +403,10 @@ def main() -> int:
                 else:
                     evidence = load_evidence(args.test_evidence, base, head)
                     # Candidate additions cannot grant exemptions to base-policy code.
-                    entries = current[3]["entries"] if bootstrap else [
-                        entry for entry in current[3]["entries"] if entry in protected[3]["entries"]
-                    ]
                     findings = q.exception_findings(sources, entries, evidence,
-                                                     {path: key for key, path in modules.items()})
+                                                     {path: key for key, path in modules.items()},
+                                                     accepted_ids=report["exception_ids_used"],
+                                                     review_stage=protected[1].get("coverage_stage", "initial"))
                     for record in policy["dynamic_imports"]:
                         if (record.get("review", {}).get("status") != "active"
                                 or not record.get("evidence_tests")
@@ -394,6 +420,7 @@ def main() -> int:
     except (q.QualityError, OSError, UnicodeError, KeyError, TypeError, subprocess.TimeoutExpired) as exc:
         report["findings"].append(q.finding("execution-error", reason=str(exc)))
         LOG.error("Quality execution incomplete: %s", exc)
+    report["exception_ids_used"] = sorted(set(report["exception_ids_used"]))
     report["duration_seconds"] = round(time.monotonic() - started, 3)
     report["artifact_integrity"] = q.digest(report)
     args.report.parent.mkdir(parents=True, exist_ok=True)

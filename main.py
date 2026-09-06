@@ -248,35 +248,26 @@ async def lifespan(app: FastAPI):
         except Exception:
             logging.exception("[startup] Error running log-cleanup")
 
-        # If a job was scheduled (env var provided or default cron fallback), run it once sequentially.
-        # Only run jobs whose `_schedule` helper returned True.
-        try:
-            if s_blob_index:
-                logging.info("[startup] Running blob-storage-indexer immediately")
-                await _wrapped_jobs["blob_index"]()
-            if s_blob_purge:
-                logging.info("[startup] Running blob-purge immediately")
-                await _wrapped_jobs["blob_purge"]()
-            if s_nl2sql_index:
-                logging.info("[startup] Running nl2sql-indexer immediately")
-                await _wrapped_jobs["nl2sql_index"]()
-            if s_nl2sql_purge:
-                logging.info("[startup] Running nl2sql-purge immediately")
-                await _wrapped_jobs["nl2sql_purge"]()
-            if s_sharepoint_index:
-                logging.info("[startup] Running sharepoint-indexer immediately")
-                await _wrapped_jobs["sharepoint_index"]()
-            if s_sharepoint_purge:
-                logging.info("[startup] Running sharepoint-purger immediately")
-                await _wrapped_jobs["sharepoint_purge"]()
-            if s_images_purge:
-                logging.info("[startup] Running multimodality-images-purger immediately")
-                await _wrapped_jobs["multimodality_images_purge"]()
-        except asyncio.CancelledError:
-            logging.info("[startup] Startup jobs cancelled")
-            raise
-        except Exception:
-            logging.exception("[startup] Error while running immediate scheduled jobs")
+        # Independent startup jobs retain their ordering and failure isolation.
+        for job_id, scheduled, name in (
+            ("blob_index", s_blob_index, "blob-storage-indexer"),
+            ("blob_purge", s_blob_purge, "blob-purge"),
+            ("nl2sql_index", s_nl2sql_index, "nl2sql-indexer"),
+            ("nl2sql_purge", s_nl2sql_purge, "nl2sql-purge"),
+            ("sharepoint_index", s_sharepoint_index, "sharepoint-indexer"),
+            ("sharepoint_purge", s_sharepoint_purge, "sharepoint-purger"),
+            ("multimodality_images_purge", s_images_purge, "multimodality-images-purger"),
+        ):
+            if not scheduled:
+                continue
+            try:
+                logging.info("[startup] Running %s immediately", name)
+                await _wrapped_jobs[job_id]()
+            except asyncio.CancelledError:
+                logging.info("[startup] Startup jobs cancelled")
+                raise
+            except Exception as exc:
+                logging.error("[startup] Job %s failed (%s)", job_id, type(exc).__name__)
 
     if startup_run:
         # Critical: do NOT block lifespan startup. Uvicorn binds its listen socket
@@ -348,73 +339,45 @@ async def run_images_purge():
     if multi_var not in ("true", "1", "yes"):
         logging.info("[multimodality_images_purger] Skipped (MULTIMODAL!=true)")
         return
-    async with audit.audit_run("multimodality_images_purge") as run:
-        try:
-            from jobs.multimodal_images_purger import ImagesDeletedFilesPurger
-            await ImagesDeletedFilesPurger().run()
-        except Exception:
-            logging.exception("[multimodality_images_purger] Error")
-            run.mark_failed()
+    async with audit.audit_run("multimodality_images_purge"):
+        from jobs.multimodal_images_purger import ImagesDeletedFilesPurger
+        await ImagesDeletedFilesPurger().run()
 
 async def run_blob_index():
     logging.debug("[blob-storage-indexer] Starting")
-    async with audit.audit_run("blob_index") as run:
-        try:
-            from jobs.blob_storage_indexer import BlobStorageDocumentIndexer
-            await BlobStorageDocumentIndexer().run()
-        except Exception:
-            logging.exception("[blob-storage-indexer] Unexpected error")
-            run.mark_failed()
+    async with audit.audit_run("blob_index"):
+        from jobs.blob_storage_indexer import BlobStorageDocumentIndexer
+        await BlobStorageDocumentIndexer().run()
 
 async def run_blob_purge():
     logging.debug("[blob-storage-indexer-purger] Starting")
-    async with audit.audit_run("blob_purge") as run:
-        try:
-            from jobs.blob_storage_indexer import BlobStorageDeletedItemsCleaner
-            await BlobStorageDeletedItemsCleaner().run()
-        except Exception:
-            logging.exception("[blob-storage-indexer-purger] Unexpected error")
-            run.mark_failed()
+    async with audit.audit_run("blob_purge"):
+        from jobs.blob_storage_indexer import BlobStorageDeletedItemsCleaner
+        await BlobStorageDeletedItemsCleaner().run()
 
 async def run_sharepoint_index():
     logging.debug("[sharepoint-indexer] Starting")
-    async with audit.audit_run("sharepoint_index") as run:
-        try:
-            from jobs.sharepoint_indexer import SharePointIndexer
-            await SharePointIndexer().run()
-        except Exception:
-            logging.exception("[sharepoint-indexer] Unexpected error")
-            run.mark_failed()
+    async with audit.audit_run("sharepoint_index"):
+        from jobs.sharepoint_indexer import SharePointIndexer
+        await SharePointIndexer().run()
 
 async def run_sharepoint_purge():
     logging.debug("[sharepoint-purger] Starting")
-    async with audit.audit_run("sharepoint_purge") as run:
-        try:
-            from jobs.sharepoint_purger import SharePointPurger
-            await SharePointPurger().run()
-        except Exception:
-            logging.exception("[sharepoint-purger] Unexpected error")
-            run.mark_failed()
+    async with audit.audit_run("sharepoint_purge"):
+        from jobs.sharepoint_purger import SharePointPurger
+        await SharePointPurger().run()
 
 async def run_nl2sql_index():
     logging.debug("[nl2sql-indexer] Starting")
-    async with audit.audit_run("nl2sql_index") as run:
-        try:
-            from jobs.nl2sql_indexer import NL2SQLIndexer
-            await NL2SQLIndexer().run()
-        except Exception:
-            logging.exception("[nl2sql-indexer] Unexpected error")
-            run.mark_failed()
+    async with audit.audit_run("nl2sql_index"):
+        from jobs.nl2sql_indexer import NL2SQLIndexer
+        await NL2SQLIndexer().run()
 
 async def run_nl2sql_purge():
     logging.debug("[nl2sql-indexer-purger] Starting")
-    async with audit.audit_run("nl2sql_purge") as run:
-        try:
-            from jobs.nl2sql_purger import NL2SQLPurger
-            await NL2SQLPurger().run()
-        except Exception:
-            logging.exception("[nl2sql-indexer-purger] Unexpected error")
-            run.mark_failed()
+    async with audit.audit_run("nl2sql_purge"):
+        from jobs.nl2sql_purger import NL2SQLPurger
+        await NL2SQLPurger().run()
 
 # -------------------------------
 # HTTP-triggered document-chunking

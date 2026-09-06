@@ -23,6 +23,7 @@ from typing import Any
 REQUIRED_CHECKS = ("lint", "typing", "architecture", "exceptions", "policy", "unit-tests")
 NON_RUNTIME = (".github/", "tests/", "scripts/", "samples/", "frontend/", ".artifacts/")
 DIAGNOSTIC_KEY = ("module_id", "symbol", "source_fingerprint", "rule", "message_fingerprint")
+EXCEPTION_KEY = ("module_id", "symbol", "handler_fingerprint", "caught_types")
 
 
 class QualityError(ValueError):
@@ -338,6 +339,7 @@ def handler_sites(sources: dict[str, str]) -> list[dict]:
                     symbol, _ = source_context(tree, handler.lineno)
                     sites.append({
                         "module_id": module_name(path), "file": path, "line": handler.lineno,
+                        "header_end_line": handler.type.end_lineno if handler.type else handler.lineno,
                         "symbol": symbol, "caught_types": names,
                         "handler_fingerprint": digest({
                             "try": ast.dump(node, include_attributes=False),
@@ -347,18 +349,32 @@ def handler_sites(sources: dict[str, str]) -> list[dict]:
     return sites
 
 
+def matching_exception_records(site: dict, records: list[dict]) -> list[dict]:
+    return [record for record in records if all(record.get(key) == site[key] for key in EXCEPTION_KEY)]
+
+
+def valid_exception_metadata(record: dict, review_stage: str) -> bool:
+    required = ("boundary", "reason", "failure_outcome", "diagnostic_path")
+    return (all(record.get(key) for key in required)
+            and bool(record["review"].get("reference"))
+            and record.get("review_by_stage") == review_stage)
+
+
 def exception_findings(sources: dict[str, str], records: list[dict], evidence: dict,
-                       module_ids: dict[str, str] | None = None) -> list[dict]:
+                       module_ids: dict[str, str] | None = None,
+                       accepted_ids: list[str] | None = None,
+                       review_stage: str = "initial") -> list[dict]:
     findings = []
     used = set()
+    proposed = set()
     identities = Counter()
     for site in handler_sites(sources):
         site["module_id"] = (module_ids or {}).get(site["file"], site["module_id"])
         identity = tuple(str(site[key]) for key in ("module_id", "symbol", "handler_fingerprint", "caught_types"))
         identities[identity] += 1
-        matches = [record for record in records if all(record.get(key) == site[key]
-                   for key in ("module_id", "symbol", "handler_fingerprint", "caught_types"))
-                   and record.get("review", {}).get("status") == "active"]
+        matching = matching_exception_records(site, records)
+        proposed.update(record["id"] for record in matching if record.get("review", {}).get("status") == "proposed")
+        matches = [record for record in matching if record.get("review", {}).get("status") == "active"]
         if len(matches) != 1 or identities[identity] > 1:
             findings.append(finding("unapproved-handler", site["file"], site["line"],
                                     "Requires one exact reviewed boundary record", **{
@@ -367,14 +383,17 @@ def exception_findings(sources: dict[str, str], records: list[dict], evidence: d
             continue
         record = matches[0]
         used.add(record["id"])
-        required = ("boundary", "reason", "failure_outcome", "diagnostic_path", "review_by_stage")
-        if not all(record.get(key) for key in required) or not record["review"].get("reference"):
+        errors_before = len(findings)
+        if not valid_exception_metadata(record, review_stage):
             findings.append(finding("invalid-exception", site["file"], site["line"], record["id"]))
         if not record.get("evidence_tests") or any(evidence.get(test) != "passed" for test in record["evidence_tests"]):
             findings.append(finding("exception-evidence", site["file"], site["line"], record["id"]))
+        if len(findings) == errors_before and accepted_ids is not None:
+            accepted_ids.append(record["id"])
     for record in records:
         if record["id"] not in used:
-            findings.append(finding("stale-exception", reason=record["id"]))
+            rule = "exception-review-pending" if record["id"] in proposed else "stale-exception"
+            findings.append(finding(rule, reason=record["id"]))
     return findings
 
 

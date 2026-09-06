@@ -185,8 +185,6 @@ def _config_value(config: Any, key: str, default: Any) -> Any:
         return config.get(key, default=default, allow_none=True)
     except TypeError:
         return config.get(key, default)
-    except Exception:
-        return default
 
 
 def _as_bool(value: Any) -> bool:

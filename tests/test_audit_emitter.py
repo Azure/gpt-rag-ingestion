@@ -406,6 +406,26 @@ def test_deletion_only_emits_for_confirmed_successes(caplog):
     assert events[0].event_type == "ingestion.document.deleted"
 
 
+@pytest.mark.parametrize(
+    "result",
+    [[], [{"key": "other", "succeeded": True}], [{"key": "doc"}],
+     [{"key": "doc", "succeeded": "false"}], [{"key": "doc", "succeeded": None}],
+     [{"key": "doc", "succeeded": False}, {"key": "doc", "succeeded": True}]],
+)
+@pytest.mark.parametrize("operation", ["upload_documents", "delete_documents"])
+def test_unconfirmed_result_never_emits_positive_document_event(caplog, result, operation):
+    caplog.set_level(logging.INFO, logger=AUDIT_LOGGER)
+    audit.record_search_batch_result(
+        operation=operation,
+        documents=[{"id": "doc"}],
+        result=result,
+        source_type="blob_storage",
+    )
+    assert not any(record.event_type in {
+        "ingestion.document.indexed", "ingestion.document.deleted"
+    } for record in _events(caplog))
+
+
 def test_document_events_correlate_to_the_active_run(caplog):
     caplog.set_level(logging.INFO, logger=AUDIT_LOGGER)
 
@@ -440,6 +460,33 @@ def test_document_audit_never_raises_even_with_a_malformed_result(caplog):
         source_type="blob_storage",
     )
     # No exception means the ingestion result was never put at risk.
+
+
+@pytest.mark.parametrize("stage", ["sanitizer", "exporter", "document"])
+def test_audit_side_effect_failure_is_nonblocking_and_does_not_log_payload(monkeypatch, caplog, stage):
+    def fail(*args, **kwargs):
+        raise RuntimeError("private-audit-canary")
+
+    if stage == "sanitizer":
+        monkeypatch.setattr(audit, "sanitize_event", fail)
+    elif stage == "exporter":
+        monkeypatch.setattr(audit._logger, "info", fail)
+    else:
+        monkeypatch.setattr(audit, "_record_search_batch_result", fail)
+
+    completed = []
+    async def scenario():
+        async with audit.audit_run("blob_index"):
+            audit.record_search_batch_result(
+                operation="upload_documents", documents=[{"id": "doc"}],
+                result=[_FakeIndexingResult("doc", succeeded=True)], source_type="blob_storage",
+            )
+            completed.append(True)
+
+    asyncio.run(scenario())
+    assert completed == [True]
+    assert "private-audit-canary" not in caplog.text
+    assert "failed" in caplog.text.lower() or "dropped" in caplog.text.lower()
 
 
 def test_canary_large_batch_stays_within_bounds(caplog):

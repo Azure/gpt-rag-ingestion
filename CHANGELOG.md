@@ -19,7 +19,23 @@
   main re-exports, manual reservation behavior and scheduler lifecycle. Lazy
   worker exports keep state-only imports from initializing Azure configuration
   before startup authentication. Remove two overwritten, unused SharePoint
-  wrappers; keep the registered audit-wrapped functions unchanged.
+  wrappers while retaining the shared registry/lock and startup ordering.
+
+### Fixed
+
+- **Primary failures no longer masquerade as confirmed work.** Search deletion
+  uses the SDK delete operation and counts matching confirmed outcomes rather
+  than submissions; NL2SQL purge propagates failed scans and partial deletion.
+  Missing, malformed or duplicate Search responses cannot emit positive audit
+  outcomes. Cron/manual failures propagate through the existing audit context,
+  while startup jobs retain independent failure isolation.
+
+- **Configuration and diagnostic failures remain explicit and safe.** Governance
+  reads no longer silently disable governance after provider failure.
+  Configuration apply returns an error on failed scheduling, and writes with a
+  failed local refresh return the existing partial-failure shape. Audit
+  sanitization/export/projection remains non-blocking, with payload-free warning
+  diagnostics and four exact, unapproved boundary proposals for review.
 
 ## [v2.7.3] - 2026-09-03
 

@@ -172,7 +172,11 @@ def test_exact_exception_requires_passing_non_skipped_evidence():
     source = "try:\n work()\nexcept Exception:\n raise"
     record = handler_record(source)
     test_id = record["evidence_tests"][0]
-    assert not quality.exception_findings({"a.py": source}, [record], {test_id: "passed"})
+    accepted = []
+    assert not quality.exception_findings(
+        {"a.py": source}, [record], {test_id: "passed"}, accepted_ids=accepted,
+    )
+    assert accepted == ["a-boundary"]
     for result in (None, "skipped", "failed", "error"):
         assert "exception-evidence" in rules(
             quality.exception_findings({"a.py": source}, [record], {test_id: result})
@@ -187,11 +191,27 @@ def test_exception_record_cannot_cover_changed_body_or_catch():
     assert {"unapproved-handler", "stale-exception"} <= rules(result)
 
 
+def test_exception_past_its_review_stage_cannot_be_used():
+    source = "try:\n work()\nexcept Exception:\n raise"
+    record = handler_record(source)
+    record["review_by_stage"] = "retired-stage"
+    accepted = []
+    result = quality.exception_findings(
+        {"a.py": source}, [record],
+        {record["evidence_tests"][0]: "passed"}, accepted_ids=accepted,
+    )
+    assert "invalid-exception" in rules(result)
+    assert not accepted
+
+
 def test_proposed_exception_is_not_an_approval():
     source = "try:\n work()\nexcept Exception:\n raise"
     record = handler_record(source)
     record["review"]["status"] = "proposed"
-    assert "unapproved-handler" in rules(quality.exception_findings({"a.py": source}, [record], {}))
+    accepted = []
+    result = quality.exception_findings({"a.py": source}, [record], {}, accepted_ids=accepted)
+    assert {"unapproved-handler", "exception-review-pending"} <= rules(result)
+    assert not accepted
 
 
 def diagnostic(**updates):
@@ -442,6 +462,32 @@ def test_candidate_baseline_growth_cannot_consume_new_error(policy_repository):
     result, evidence = invoke_check(policy_repository, "policy")
     assert result.returncode == 1
     assert "protected-policy-change" in rules(evidence["findings"])
+
+
+def test_approved_exact_handler_can_satisfy_ruff_but_still_requires_behavior_evidence(policy_repository):
+    root, _ = policy_repository
+    source = "def value() -> int:\n try:\n  return int('bad')\n except Exception:\n  return 0\n"
+    (root / "main.py").write_text(source, encoding="utf-8")
+    record = handler_record(source)
+    record["module_id"] = "main"
+    (root / ".quality" / "exceptions.json").write_text(
+        json.dumps({"schema_version": 1, "entries": [record]}), encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=root, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "--quiet", "-m",
+         "test: establish approved boundary fixture\n\nCo-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>"],
+        cwd=root, check=True, capture_output=True,
+    )
+    result, evidence = invoke_check(policy_repository, "lint")
+    assert result.returncode == 0, evidence
+    assert evidence["exception_ids_used"] == ["a-boundary"]
+    result, evidence = invoke_check(policy_repository, "exceptions")
+    assert result.returncode == 1
+    assert "exception-evidence" in rules(evidence["findings"])
+    (root / "main.py").write_text(source + "\ndef other():\n try:\n  value()\n except Exception:\n  pass\n", encoding="utf-8")
+    result, evidence = invoke_check(policy_repository, "lint")
+    assert result.returncode == 1
+    assert "BLE001" in rules(evidence["findings"])
 
 
 def test_grimp_does_not_execute_package_initializers(tmp_path):

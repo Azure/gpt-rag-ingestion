@@ -1,4 +1,5 @@
 import logging
+from collections import Counter
 from azure.search.documents.aio import SearchClient
 from azure.search.documents.models import SearchMode
 from azure.core.exceptions import AzureError
@@ -86,22 +87,15 @@ class AISearchClient:
                 result=result,
                 source_type=index_name,
             )
-            if result and result[0].succeeded:
+            if (len(result) == 1 and result[0].succeeded is True
+                    and result[0].key == document.get("id")):
                 logging.info(f"[aisearch] Successfully indexed document into '{index_name}'.")
                 return True
             else:
-                # Collect error messages when provided by the SDK
-                try:
-                    error_messages = "; ".join([err.get("error", str(err)) for err in (result[0].error_messages or [])])
-                except Exception:
-                    error_messages = "Unknown error"
-                logging.error(f"[aisearch] Failed to index document into '{index_name}': {error_messages}")
+                logging.error("[aisearch] Search did not confirm the document upload.")
                 return False
-        except AzureError as e:
-            logging.error(f"[aisearch] AzureError while indexing document into '{index_name}': {e}")
-            return False
-        except Exception as e:
-            logging.error(f"[aisearch] Unexpected error while indexing document into '{index_name}': {e}")
+        except AzureError:
+            logging.error("[aisearch] Search upload failed.")
             return False
 
     async def delete_document(self, index_name: str, key_field: str, key_value: str):
@@ -113,22 +107,9 @@ class AISearchClient:
             key_field (str): The name of the key field in the index.
             key_value (str): The value of the key field for the document to delete.
         """
-        client = await self.get_search_client(index_name)
-
-        try:
-            result = await client.delete_documents(key_field, [key_value])
-            audit.record_search_batch_result(
-                operation="delete_documents",
-                documents=[{key_field: key_value}],
-                result=result,
-                source_type=index_name,
-                key_field=key_field,
-            )
-            logging.info(f"[aisearch] Successfully deleted document with {key_field}='{key_value}' from '{index_name}'.")
-        except AzureError as e:
-            logging.error(f"[aisearch] AzureError while deleting document from '{index_name}': {e}")
-        except Exception as e:
-            logging.error(f"[aisearch] Unexpected error while deleting document from '{index_name}': {e}")
+        outcome = await self.delete_documents(index_name, key_field, [key_value])
+        if outcome["deleted"] != 1 or outcome["failed"]:
+            raise AzureError("Search did not confirm the requested document deletion.")
 
     async def delete_documents(self, index_name: str, key_field: str, key_values: List[str]) -> Dict[str, int]:
         """
@@ -146,41 +127,37 @@ class AISearchClient:
         client = await self.get_search_client(index_name)
 
         try:
-            # Prepare the delete actions
-            actions = [{"@search.action": "delete", key_field: key_value} for key_value in key_values]
-
-            # Azure AI Search supports batch operations, but there might be limits on batch size.
-            # Here, we assume that the list is within acceptable limits. For very large lists, consider batching.
-            result = await client.upload_documents(documents=actions)
+            documents = [{key_field: key_value} for key_value in key_values]
+            result = await client.delete_documents(documents=documents)
 
             audit.record_search_batch_result(
                 operation="delete_documents",
-                documents=[{key_field: key_value} for key_value in key_values],
+                documents=documents,
                 result=result,
                 source_type=index_name,
                 key_field=key_field,
             )
 
-            # Check results
+            # Missing, duplicate or unrelated responses cannot confirm a request.
+            requested = Counter(key_values)
+            remaining = requested.copy()
+            response_counts = Counter(res.key for res in result)
             succeeded = 0
-            failed = 0
             for res in result:
-                if res.succeeded:
+                if remaining[res.key] <= 0 or response_counts[res.key] > requested[res.key]:
+                    logging.error("[aisearch] Search returned an unexpected deletion result key.")
+                    continue
+                remaining[res.key] -= 1
+                if res.succeeded is True:
                     succeeded += 1
-                else:
-                    failed += 1
-                    error_messages = "; ".join([error["error"] for error in res.error_messages])
-                    logging.error(f"[aisearch] Failed to delete a document: {error_messages}")
 
+            failed = len(key_values) - succeeded
             logging.info(f"[aisearch] Deleted {succeeded} documents from '{index_name}'.")
             if failed > 0:
                 logging.warning(f"[aisearch] Failed to delete {failed} documents from '{index_name}'. Check logs for details.")
             return {"deleted": succeeded, "failed": failed}
-        except AzureError as e:
-            logging.error(f"[aisearch] AzureError while deleting documents from '{index_name}': {e}")
-            return {"deleted": 0, "failed": len(key_values)}
-        except Exception as e:
-            logging.error(f"[aisearch] Unexpected error while deleting documents from '{index_name}': {e}")
+        except AzureError:
+            logging.error("[aisearch] Search deletion failed.")
             return {"deleted": 0, "failed": len(key_values)}
 
     async def search_documents(

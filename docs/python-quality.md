@@ -54,10 +54,28 @@ worker exports are lazy so importing the state API does not load workers or
 contact App Configuration before startup authentication.
 
 The existing manual reservation ID, 409 guard, APScheduler date-trigger options,
-cron wrapper, cleanup-on-failure/cancellation and lifespan order are preserved.
+cleanup-on-failure/cancellation and lifespan order are preserved.
 The two overwritten, unused SharePoint wrappers in `main.py` were removed;
 the later audit-wrapped definitions remain the actual registered functions.
 There is no ingestion `src` migration or application factory.
+
+Primary failure reporting is corrected in the follow-up: cron/manual worker
+exceptions propagate through the existing `audit_run` context manager, which
+emits the failed terminal event. Startup retains ordered, independent job
+execution after one job fails. Search writes require matching successful SDK
+results; batch deletion uses the SDK's delete operation, counts only confirmed
+keys, and treats missing/excess duplicate results as unconfirmed. NL2SQL purge
+propagates failed scans and partial deletions instead of reporting successful
+totals. Governance-setting read failures no longer silently disable governance.
+
+Successful operator response shapes and authentication are unchanged.
+`POST /api/config/apply` reports 500 when schedules could not be applied;
+`PUT /api/config` reports its existing 207 partial-failure shape when the
+remote write succeeded but local cache refresh failed. Manual scheduling and
+these configuration error responses omit downstream exception payloads.
+Audit events never infer success from a missing or malformed result; audit
+sanitizer/export/projection failures still cannot fail the primary operation,
+and warning logs contain stage/type metadata rather than exception payloads.
 
 `.quality/policy.json` inventories all runtime modules, including flat
 `main`, `dependencies`, and `constants`, package roots, and namespace chunkers.
@@ -100,14 +118,22 @@ policy review. Mypy's cache is not a debt baseline.
 
 ## Broad handlers and remaining acceptance
 
-The exception ledger is empty: **no inherited handler is automatically
-approved**. The syntax check includes bare handlers, builtins aliases, tuples,
+The exception ledger contains four exact **proposed**, not active, audit
+records: unexpected sanitizer failure, exporter failure, primary run failure
+observation/propagation, and document-audit projection failure. Each cites its
+own source fingerprint, boundary-specific rationale and executed failure tests.
+**No inherited handler is automatically approved.** The syntax check includes
+bare handlers, builtins aliases, tuples,
 exception groups, and logged/re-raised catches exempted by Ruff BLE001.
 Indirect catch types that cannot be established from syntax require review.
 An exception needs an exact source/handler fingerprint, necessity, boundary,
 failure outcome, diagnostic path, review reference/stage and passing test IDs.
-Changed, stale, ambiguous or unused records fail. Candidate review strings
-are not authorization.
+Changed, expired-stage, stale, ambiguous or unused records fail. Candidate
+review strings are not authorization. Ruff BLE001 is waived only for the
+exact header of a matching active protected-base record, never an entire
+file or rule. This does not waive the separate required exceptions job:
+without passing same-run behavior evidence, the aggregate still fails.
+Proposal records cannot waive either check.
 
 The repository still contains inherited broad-handler and lint violations.
 Remediation must classify each operation and add boundary-specific failure
@@ -116,7 +142,10 @@ configuration fallbacks and indexing/deletion success-shaped fallbacks cannot
 be approved merely because they log. Audit sanitization/export remains
 contractually best-effort; it must not become a primary-operation failure,
 nor be used to excuse indexing, deletion, configuration or authentication
-failures. This draft does not claim T025 or all of T028 / SC-003 complete.
+failures. The concrete Search/NL2SQL/governance/configuration defects above
+have regression coverage, but this draft does not claim the entire legacy
+failure inventory is complete: T025 and all of T028 / SC-003 still need review
+and remaining boundary-specific work.
 
 ## CI trust and separate administrative activation
 

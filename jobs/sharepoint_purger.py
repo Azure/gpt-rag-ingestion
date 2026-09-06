@@ -175,7 +175,7 @@ class SharePointPurger:
 
 			self._storage_writable = True
 			logging.info(f"{PURGE_SCOPE} storage logs enabled")
-		except Exception as exc:  # noqa: BLE001
+		except Exception as exc:
 			self._storage_writable = False
 			logging.warning(f"{PURGE_SCOPE} storage logs disabled (probe failed): {exc}")
 
@@ -260,7 +260,7 @@ class SharePointPurger:
 						deleteStatusCode=status_code,
 						errorMessage=error_message,
 					)
-			except Exception as exc:  # noqa: BLE001
+			except Exception as exc:
 				failed += len(batch)
 				logging.exception(f"{PURGE_SCOPE} delete_documents failed for batch")
 				for item in batch:
@@ -376,7 +376,7 @@ class SharePointPurger:
 					logging.warning(
 						f"[{self.cfg.indexer_name}] run summary mismatch on {name} (attempt {attempt + 1}); retry in {backoff:.1f}s"
 					)
-				except Exception as exc:  # noqa: BLE001
+				except Exception as exc:
 					logging.warning(
 						f"[{self.cfg.indexer_name}] run summary write failed for {name} (attempt {attempt + 1}): {exc}; "
 						f"retry in {backoff:.1f}s"
@@ -416,7 +416,7 @@ class SharePointPurger:
 	async def _write_run_summary_safely(self, run_id: str, summary: Dict[str, Any]) -> None:
 		try:
 			await asyncio.wait_for(self._write_run_summary(run_id, summary), timeout=self._run_summary_total_timeout_s)
-		except Exception as exc:  # noqa: BLE001
+		except Exception as exc:
 			logging.warning(
 				f"[{self.cfg.indexer_name}] run summary write skipped/timeout after {self._run_summary_total_timeout_s}s: {exc}"
 			)

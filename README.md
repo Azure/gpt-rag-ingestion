@@ -27,8 +27,11 @@ Python 3.12 contributor commands, the jobs-owned scheduler interface,
 incremental typing scope, import/error policy and recovery guidance are in
 [Python quality gates](docs/python-quality.md). The bootstrap reports inherited
 violations without blanket exemptions; required-check activation and remaining
-failure-boundary review are explicitly pending. Runtime contracts and operator
-startup/configuration remain unchanged.
+failure-boundary review are explicitly pending. Existing successful response
+shapes, schema bytes and authentication remain unchanged. Search and NL2SQL
+deletion counts now require confirmed results; worker and governance failures
+propagate, and configuration apply/refresh failures are reported explicitly
+rather than as success. Startup jobs retain independent failure isolation.
 
 ## Governance and audit events
 

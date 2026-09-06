@@ -1,9 +1,75 @@
 {
   "schema_version": 1,
-  "entries": [],
+  "entries": [
+    {
+      "id": "audit-unexpected-sanitizer-failure",
+      "module_id": "telemetry.audit",
+      "symbol": "_emit",
+      "handler_fingerprint": "62bd9ada079c3a129b34b1d3ef5cf20037e5b840ca44b73bd9b46e0d365deb51",
+      "caught_types": ["Exception"],
+      "boundary": "Optional audit sanitization before export",
+      "reason": "A sanitizer defect must drop an unsafe audit event, not fail an already-running ingestion operation. This record covers only the unexpected sanitizer catch, not source/configuration failures.",
+      "failure_outcome": "contractual-best-effort-side-effect",
+      "diagnostic_path": "gptrag.audit_warning: dropped event type and exception class, without exception payload",
+      "evidence_tests": ["tests/test_audit_emitter.py::test_audit_side_effect_failure_is_nonblocking_and_does_not_log_payload[sanitizer]"],
+      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review_by_stage": "initial"
+    },
+    {
+      "id": "audit-exporter-failure",
+      "module_id": "telemetry.audit",
+      "symbol": "_emit",
+      "handler_fingerprint": "0dbfe922bf286e9bdd01421b045fa7add8315b201f11a3c421425d7c0b83307f",
+      "caught_types": ["Exception"],
+      "boundary": "Optional audit logger/exporter invocation",
+      "reason": "A failed logger/exporter must not reverse a confirmed Search outcome or turn a successful worker into a failure. Only the audit side effect is dropped; the primary result is unchanged.",
+      "failure_outcome": "contractual-best-effort-side-effect",
+      "diagnostic_path": "gptrag.audit_warning: failed export stage, event type and exception class only",
+      "evidence_tests": [
+        "tests/test_audit_emitter.py::test_broken_exporter_does_not_raise_and_does_not_fail_the_run",
+        "tests/test_audit_emitter.py::test_audit_side_effect_failure_is_nonblocking_and_does_not_log_payload[exporter]"
+      ],
+      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review_by_stage": "initial"
+    },
+    {
+      "id": "audit-run-failure-propagation",
+      "module_id": "telemetry.audit",
+      "symbol": "audit_run",
+      "handler_fingerprint": "978bd4cd83a4cd6092d208c117da9f6be5eda81fe689a1df1b39335df0f064e4",
+      "caught_types": ["Exception"],
+      "boundary": "Run context manager observing the primary worker failure",
+      "reason": "Record exactly one failed terminal event and re-raise the same primary exception. The context-variable cleanup must still run; this catch never converts an indexing/purge failure to success.",
+      "failure_outcome": "propagation",
+      "diagnostic_path": "Correlated ingestion.run.failed event; original exception propagates to the worker caller",
+      "evidence_tests": [
+        "tests/test_audit_emitter.py::test_unhandled_exception_emits_failed_and_reraises",
+        "tests/test_audit_emitter.py::test_cancelled_error_is_preserved_and_emits_cancelled_event"
+      ],
+      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review_by_stage": "initial"
+    },
+    {
+      "id": "document-audit-construction-failure",
+      "module_id": "telemetry.audit",
+      "symbol": "record_search_batch_result",
+      "handler_fingerprint": "6a1ad3870993d274922017fa77170b067eb97be1e74e885c99c3397854acee1f",
+      "caught_types": ["Exception"],
+      "boundary": "Optional document audit projection of an existing Search response",
+      "reason": "Malformed audit projection must not alter the caller's primary SDK result. The write adapter separately validates confirmation; this catch does not approve or synthesize a successful upload/delete.",
+      "failure_outcome": "contractual-best-effort-side-effect",
+      "diagnostic_path": "gptrag.audit_warning: document emission failed, with exception class but no source or exception payload",
+      "evidence_tests": [
+        "tests/test_audit_emitter.py::test_document_audit_never_raises_even_with_a_malformed_result",
+        "tests/test_audit_emitter.py::test_audit_side_effect_failure_is_nonblocking_and_does_not_log_payload[document]"
+      ],
+      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review_by_stage": "initial"
+    }
+  ],
   "review": {
     "status": "proposed",
     "reference": "https://github.com/Azure/GPT-RAG/pull/689",
-    "rationale": "No blanket exemptions. Unreviewed inherited handlers remain blocking findings; audit best-effort behavior is not rewritten to satisfy a gate."
+    "rationale": "Four exact audit-boundary proposals with failure evidence, not active approvals. All unreviewed handlers remain blocking; no blanket exemptions."
   }
 }

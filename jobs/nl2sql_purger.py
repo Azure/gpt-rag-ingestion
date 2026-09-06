@@ -160,40 +160,36 @@ class NL2SQLPurger:
         For an index, retrieve all doc IDs (paged) and delete those not present (by sanitized id).
         """
         deleted = 0
-        try:
-            client = await self._ai_search.get_search_client(index_name)
-            # iterate pages selecting only 'id'
-            results = await client.search(search_text="*", select=["id"], include_total_count=True, top=1000, headers=_ELEVATED_HEADERS)
-            async for page in results.by_page():
-                page_ids: List[str] = []
-                async for doc in page:
-                    doc_id = doc.get("id")
-                    if not doc_id:
-                        continue
-                    # Delete if document is not present in sanitized existing set
-                    if doc_id not in sanitized_existing:
-                        page_ids.append(doc_id)
-                if page_ids:
-                    await self._ai_search.delete_documents(index_name=index_name, key_field="id", key_values=page_ids)
-                    deleted += len(page_ids)
-        except Exception:
-            logging.exception(f"[nl2sql-purger] Error purging index {index_name}")
+        client = await self._ai_search.get_search_client(index_name)
+        results = await client.search(search_text="*", select=["id"], include_total_count=True, top=1000, headers=_ELEVATED_HEADERS)
+        async for page in results.by_page():
+            page_ids: List[str] = []
+            async for doc in page:
+                doc_id = doc.get("id")
+                if not doc_id:
+                    continue
+                if doc_id not in sanitized_existing:
+                    page_ids.append(doc_id)
+            if page_ids:
+                outcome = await self._ai_search.delete_documents(
+                    index_name=index_name, key_field="id", key_values=page_ids
+                )
+                if outcome["failed"] or outcome["deleted"] != len(page_ids):
+                    logging.error("[nl2sql-purger] Search did not confirm every requested deletion.")
+                    raise RuntimeError("Search did not confirm all requested NL2SQL deletions.")
+                deleted += outcome["deleted"]
         return deleted
 
     async def _count_index_docs(self, index_name: str) -> int:
         """Count documents in an index (all docs)."""
-        try:
-            client = await self._ai_search.get_search_client(index_name)
-            results = await client.search(search_text="*", select=["id"], include_total_count=True, top=1000, headers=_ELEVATED_HEADERS)
-            count = 0
-            async for page in results.by_page():
-                async for doc in page:
-                    if doc.get("id"):
-                        count += 1
-            return count
-        except Exception:
-            logging.exception(f"[nl2sql-purger] Error counting docs in index {index_name}")
-            return 0
+        client = await self._ai_search.get_search_client(index_name)
+        results = await client.search(search_text="*", select=["id"], include_total_count=True, top=1000, headers=_ELEVATED_HEADERS)
+        count = 0
+        async for page in results.by_page():
+            async for doc in page:
+                if doc.get("id"):
+                    count += 1
+        return count
 
     @staticmethod
     def _sanitize_id(doc_id: str) -> str:

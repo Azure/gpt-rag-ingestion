@@ -13,6 +13,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Callable, Coroutine, Dict, List, Optional, Tuple
 
+from apscheduler.jobstores.base import JobLookupError
 from azure.identity.aio import (
     AzureCliCredential,
     ChainedTokenCredential,
@@ -452,8 +453,8 @@ async def run_job_now(job_type: str) -> Dict[str, Any]:
             entry = _running_jobs.get(job_type)
             if entry and entry.get("run_id") == trigger_id:
                 _running_jobs.pop(job_type, None)
-        logging.exception("Failed to enqueue manual run for %s", job_type)
-        raise HTTPException(status_code=500, detail=f"Failed to schedule job: {exc}") from exc
+        logging.error("Failed to enqueue manual run for %s (%s)", job_type, type(exc).__name__)
+        raise HTTPException(status_code=500, detail="Failed to schedule job.") from exc
 
     logging.info("[admin] Manual run requested for job_type=%s trigger_id=%s", job_type, trigger_id)
     return {"jobType": job_type, "triggerId": trigger_id, "status": "queued"}
@@ -991,15 +992,11 @@ def _reschedule_cron_job(env_key: str, cron_expr: str) -> Optional[str]:
             scheduler.remove_job(job_id)
             logging.info("[admin] Removed cron job %s (empty cron)", job_id)
             return job_id
-        except Exception:
+        except JobLookupError:
             return None
 
     trigger = CronTrigger.from_crontab(cron_expr, timezone=scheduler.timezone)
-    existing = None
-    try:
-        existing = scheduler.get_job(job_id)
-    except Exception:
-        existing = None
+    existing = scheduler.get_job(job_id)
 
     if existing is not None:
         scheduler.reschedule_job(job_id, trigger=trigger)
@@ -1131,8 +1128,8 @@ async def update_config_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
             )
             applied.append(spec.key)
         except AzureError as exc:
-            logging.exception("Failed to write %s to App Configuration", spec.key)
-            failed.append({"key": spec.key, "error": f"write failed: {exc}"})
+            logging.error("Failed to write %s to App Configuration (%s)", spec.key, type(exc).__name__)
+            failed.append({"key": spec.key, "error": "write failed"})
 
     if not applied:
         # Every write failed — surface as a hard error.
@@ -1146,8 +1143,12 @@ async def update_config_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
     # own refresh cadence; the operator can force this via /api/config/reload.
     try:
         get_config("refresh")
-    except Exception:  # pragma: no cover - cache refresh is best-effort
-        logging.exception("Failed to refresh AppConfig cache after PUT /api/config")
+    except Exception as exc:
+        logging.error("Failed to refresh AppConfig cache after PUT /api/config (%s)", type(exc).__name__)
+        failed.extend(
+            {"key": key, "error": "Setting written, but local cache refresh failed."}
+            for key in applied
+        )
 
     # If any cron expression was applied, reschedule the matching job so the
     # change takes effect without a container restart.
@@ -1161,8 +1162,8 @@ async def update_config_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
             if jid:
                 rescheduled.append(jid)
         except Exception as exc:
-            logging.exception("Failed to reschedule cron for %s", spec.key)
-            failed.append({"key": spec.key, "error": f"reschedule failed: {exc}"})
+            logging.error("Failed to reschedule cron for %s (%s)", spec.key, type(exc).__name__)
+            failed.append({"key": spec.key, "error": "reschedule failed"})
 
     status_code = 200 if not failed else 207
     if status_code == 207:
@@ -1197,6 +1198,7 @@ async def apply_config_changes() -> Dict[str, Any]:
     _invalidate_cache("runs", "files")
 
     rescheduled: List[str] = []
+    failed: List[str] = []
     from jobs.runtime import JOB_CRON_MAP
 
     cfg = get_config()
@@ -1209,8 +1211,15 @@ async def apply_config_changes() -> Dict[str, Any]:
             jid = _reschedule_cron_job(env_key, (cron_expr or "").strip())
             if jid:
                 rescheduled.append(jid)
-        except Exception:
-            logging.exception("Failed to reschedule %s during /config/apply", env_key)
+        except Exception as exc:
+            logging.error("Failed to reschedule %s during /config/apply (%s)", env_key, type(exc).__name__)
+            failed.append(env_key)
+    if failed:
+        raise HTTPException(
+            status_code=500,
+            detail={"message": "Failed to apply one or more schedules.",
+                    "failed": failed, "rescheduled": rescheduled},
+        )
     return {
         "status": "ok",
         "rescheduled": rescheduled,
