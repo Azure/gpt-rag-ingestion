@@ -2,6 +2,39 @@
   "schema_version": 1,
   "entries": [
     {
+      "id": "auth-integrity-diagnostics",
+      "module_id": "dependencies",
+      "symbol": "_token_integrity_diagnostics",
+      "handler_fingerprint": "344f8392754d783f61b70522d7dbb556f099d292c1cd61fd5bbde21edd17a857",
+      "caught_types": ["Exception"],
+      "boundary": "Optional token-integrity debug diagnostics before independent JWT verification",
+      "reason": "This pre-existing debug-only boundary must not change authorization when a configured logging handler or token-length diagnostic fails. It neither returns claims nor skips the subsequent signature, issuer, audience and expiry checks. A real signed-token test injects a failing diagnostic sink and still executes full verification.",
+      "failure_outcome": "contractual-best-effort-side-effect",
+      "diagnostic_path": "Optional sink may be unavailable; primary JWT verification and its explicit HTTP failure remain authoritative",
+      "evidence_tests": [
+        "tests/test_bearer_jwt_failures.py::test_optional_auth_diagnostic_failure_cannot_change_verification[integrity]",
+        "tests/test_bearer_jwt_failures.py::test_real_jwt_malformed_header_is_401[e30.e30.bad]"
+      ],
+      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review_by_stage": "initial"
+    },
+    {
+      "id": "auth-graph-audience-hint",
+      "module_id": "dependencies",
+      "symbol": "validate_bearer_jwt",
+      "handler_fingerprint": "bf8882543cc85828558fa99a0437b3d0f9c4d373da46ad936ed254f7d837d7be",
+      "caught_types": ["Exception"],
+      "boundary": "Optional Microsoft Graph audience warning, not the audience validation operation",
+      "reason": "The established warning is diagnostic only. Logging sink failures must not replace the actual audience rejection or bypass verification. The failure test uses a real signed Graph-audience token and a failing warning sink; JWT verification still returns the established 403 Invalid token audience outcome. No decoder, key acquisition, signature or authorization operation is inside this proposal.",
+      "failure_outcome": "contractual-best-effort-side-effect",
+      "diagnostic_path": "The authoritative JWT validation returns an explicit 403 audience failure even if the optional warning cannot be emitted",
+      "evidence_tests": [
+        "tests/test_bearer_jwt_failures.py::test_optional_auth_diagnostic_failure_cannot_change_verification[graph-hint]"
+      ],
+      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review_by_stage": "initial"
+    },
+    {
       "id": "direct-upload-record-failure",
       "module_id": "main",
       "symbol": "ingest_documents",
@@ -154,6 +187,6 @@
   "review": {
     "status": "proposed",
     "reference": "https://github.com/Azure/GPT-RAG/pull/689",
-    "rationale": "Nine exact proposals: four audit boundaries, confirmed-write cache refresh, three purger cleanup boundaries and direct-upload per-record failure translation. All require individual review; none is active."
+    "rationale": "Eleven exact proposals: four audit boundaries, confirmed-write cache refresh, three purger cleanup boundaries, direct-upload per-record failure translation and two optional auth diagnostics. All require individual review; none is active."
   }
 }

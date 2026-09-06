@@ -23,6 +23,15 @@
 
 ### Fixed
 
+- **Model-service failures preserve outcomes without exposing payloads.**
+  Keep OpenAI retry/usage semantics and original terminal exceptions while
+  narrowing retry parsing. Document analysis retains explicit error results
+  without authorization headers or response bodies in diagnostics; Blob-URL
+  analysis initializes its own PDF features, and figure failures use a
+  status-only HTTP error. Real JWT verification fixtures preserve existing
+  401/403 outcomes while narrowing token/claim parsing and retaining optional,
+  non-authoritative auth diagnostics as individually proposed boundaries.
+
 - **Malformed quality evidence cannot become a passing receipt.** Validate
   Ruff/mypy diagnostic types, positions, duplicate keys and exit consistency;
   reject aggregate reports whose passed status contradicts their findings.

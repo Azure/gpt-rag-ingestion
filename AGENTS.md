@@ -114,9 +114,9 @@ and handler checks include flat roots, late/type-only imports and package
 facades. `main` compatibility re-exports are not another owner of mutable state.
 Use the jobs-owned test seam when patching scheduling.
 
-Nine exact exception records are proposed: four audit boundaries, post-write
-local refresh, three purger resource-cleanup boundaries, and direct-upload
-per-record failure translation. None is active.
+Exact exception records are proposed for audit boundaries, post-write local
+refresh, purger resource cleanup, direct-upload per-record failure translation,
+and optional auth diagnostics. None is active.
 Other inherited handler/lint findings remain blocking. This is not
 an active required-merge claim. Protected policy
 review, a clean reference PR and administrative rule activation are separate

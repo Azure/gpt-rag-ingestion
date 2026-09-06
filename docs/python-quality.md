@@ -130,6 +130,23 @@ retries only Azure SDK failures and rethrows the original terminal failure.
 Analysis calls retain error-list results for Azure/Requests failures without
 copying their payloads into diagnostics. Constructor wrappers that only logged
 and rethrew were removed; credential order and creation are unchanged.
+The Blob-URL analysis path initializes PDF features independently instead of
+depending on a preceding byte-analysis call. Figure retrieval preserves its
+200-only byte result and now raises a status-only `requests.HTTPError` for
+other responses. Analysis diagnostics omit authorization headers and response
+bodies. OpenAI retry parsing uses SDK/HTTP response contracts; terminal errors
+propagate unchanged without their payloads in logs, while retry counts, waits
+and successful usage accounting remain unchanged.
+Content Understanding also requires a successful polling HTTP response before
+accepting a body claiming that analysis succeeded.
+
+Real RS256 token tests exercise malformed/expired claims, invalid tenant,
+audience and issuer, bounded key rotation/alternate JWKS retrieval, and both
+v1/v2 issuers. JWT parsing now catches PyJWT token errors and the concrete
+numeric-claim conversion failures observed in these tests, not arbitrary
+implementation exceptions. Existing 401/403 outcomes and verification remain
+unchanged for these inputs. Optional integrity/Graph-audience diagnostics
+remain non-authoritative even if their logging sink fails.
 
 `.quality/policy.json` inventories all runtime modules, including flat
 `main`, `dependencies`, and `constants`, package roots, and namespace chunkers.
@@ -199,7 +216,7 @@ clean positive control.
 
 ## Broad handlers and remaining acceptance
 
-The exception ledger contains nine exact **proposed**, not active, records.
+The exception ledger contains eleven exact **proposed**, not active, records.
 Four cover audit boundaries: unexpected sanitizer failure, exporter failure, primary run failure
 observation/propagation, and document-audit projection failure. Each cites its
 own source fingerprint, boundary-specific rationale and executed failure tests.
@@ -209,6 +226,9 @@ not authorize primary-operation success fallbacks.
 The ninth covers only the direct upload's established per-record failure
 translation, with actual route/SDK failure evidence; it does not authorize
 unconfirmed uploads or the endpoint's other handlers.
+Two further records preserve only optional auth diagnostic logging, never
+signature/claims validation or JWKS acquisition; real-token failure tests prove
+that their failure cannot grant access or replace the verified outcome.
 **No inherited handler is automatically approved.** The syntax check includes
 bare handlers, builtins aliases, tuples,
 exception groups, and logged/re-raised catches exempted by Ruff BLE001.

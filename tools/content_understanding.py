@@ -131,7 +131,7 @@ class ContentUnderstandingClient:
             return result, [msg]
 
         if resp.status_code != 202:
-            msg = f"Bad response {resp.status_code}: {resp.text}"
+            msg = f"Bad response {resp.status_code}: analysis submission was not accepted."
             logging.error(f"[content_understanding][{filename}] {msg}")
             return result, [msg]
 
@@ -163,6 +163,11 @@ class ContentUnderstandingClient:
             time.sleep(2)
             try:
                 r = requests.get(op_loc, headers=poll_headers, timeout=60)
+                if r.status_code != 200:
+                    msg = f"Polling failed with status {r.status_code}: result was not confirmed."
+                    logging.error(f"[content_understanding][{filename}] {msg}")
+                    errors.append(msg)
+                    break
                 data = r.json()
             except requests.RequestException:
                 msg = "Polling error: analysis service response could not be read."
@@ -172,7 +177,7 @@ class ContentUnderstandingClient:
 
             status = data.get("status", "").lower()
             if status in ("failed", "canceled"):
-                msg = f"Analysis {status}: {r.text}"
+                msg = f"Analysis {status}: service did not produce a successful result."
                 logging.error(f"[content_understanding][{filename}] {msg}")
                 errors.append(msg)
                 break

@@ -37,6 +37,9 @@ Direct `/ingest-documents` uploads now count only matching confirmed Search
 results while preserving the API-key boundary, per-record response, and ACL
 fields. Expected SDK/parser failures keep explicit error results; unexpected
 adapter failures are not retried or disguised as missing configuration/data.
+Model-service retries and JWT rejection statuses retain their established
+contracts. Analysis diagnostics omit authorization headers and response bodies;
+polling HTTP errors cannot become confirmed analysis results.
 
 ## Governance and audit events
 
