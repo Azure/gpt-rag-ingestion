@@ -30,6 +30,14 @@ from telemetry import Telemetry
 from telemetry import audit
 from constants import APPLICATION_INSIGHTS_CONNECTION_STRING, APP_NAME
 from utils.tools import is_azure_environment
+from jobs.runtime import (
+    JOB_CRON_MAP,
+    JOB_REGISTRY,
+    running_jobs as _running_jobs,
+    running_jobs_lock as _running_jobs_lock,
+    set_scheduler,
+    track_running as _track_running,
+)
 from utils.deployment_mode import (
     DeploymentMode,
     PanelResourceError,
@@ -62,72 +70,7 @@ def _resolve_timezone():
 
 local_tz = _resolve_timezone()
 scheduler = AsyncIOScheduler(timezone=local_tz)
-
-# -------------------------------
-# Manual run-now coordination
-# -------------------------------
-# `_running_jobs` is the source of truth for "is this job_type executing right now?".
-# It is consulted both by the manual `POST /api/jobs/{job_type}/run` endpoint to
-# return 409 on concurrent triggers, and by the scheduler wrapper so cron-triggered
-# runs participate in the same mutual exclusion as manual runs.
-#
-# Each entry is keyed by `job_type` and holds:
-#   - ``run_id``: APScheduler job id of the currently executing trigger
-#     (e.g. ``"manual-blob_index-1735592812345"`` or the cron ``job_id``)
-#   - ``started_at``: tz-aware UTC datetime when the wrapper acquired the slot
-#
-# The shape is exposed verbatim by ``GET /api/jobs/queue`` so the operator
-# dashboard can show "what is in flight right now and since when".
-_running_jobs: dict[str, dict] = {}
-_running_jobs_lock = asyncio.Lock()
-
-
-def _track_running(job_id: str, func):
-    """Wrap an async job function so its execution is reflected in `_running_jobs`.
-
-    The wrapper records the APScheduler trigger id and the wall-clock UTC
-    start time so the queue endpoint can report both back to the dashboard.
-    Cron and manual runs share this same path because they both call the
-    wrapped function.
-    """
-
-    async def _wrapped():
-        # The manual endpoint may have pre-filled this slot with the actual
-        # APScheduler trigger id (e.g. ``manual-blob_index-<ts>``) before the
-        # event loop picked up the date trigger. Only fall back to the
-        # registry `job_id` (the cron path) when the slot is empty.
-        async with _running_jobs_lock:
-            if job_id not in _running_jobs:
-                _running_jobs[job_id] = {
-                    "run_id": job_id,
-                    "started_at": datetime.datetime.now(tz=datetime.timezone.utc),
-                }
-        try:
-            return await func()
-        finally:
-            async with _running_jobs_lock:
-                _running_jobs.pop(job_id, None)
-
-    _wrapped.__name__ = getattr(func, "__name__", job_id)
-    return _wrapped
-
-
-# Populated inside lifespan once the job functions are defined.
-JOB_REGISTRY: dict[str, "object"] = {}
-
-# Maps CRON_RUN_* App Configuration keys to the APScheduler `job_id` they drive.
-# Exposed at module scope so `api.admin` (Configuration tab) can reschedule the
-# right job after a PUT /api/config that updates a cron expression — without
-# having to mirror the mapping inside `lifespan` and risk drift.
-JOB_CRON_MAP: dict[str, str] = {
-    "CRON_RUN_SHAREPOINT_INDEX": "sharepoint_index",
-    "CRON_RUN_SHAREPOINT_PURGE": "sharepoint_purge",
-    "CRON_RUN_IMAGES_PURGE": "multimodality_images_purge",
-    "CRON_RUN_BLOB_INDEX": "blob_index",
-    "CRON_RUN_BLOB_PURGE": "blob_purge",
-    "CRON_RUN_NL2SQL_INDEX": "nl2sql_index",
-    "CRON_RUN_NL2SQL_PURGE": "nl2sql_purge",
-}
+set_scheduler(scheduler)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -399,22 +342,6 @@ async def readyz():
 # -------------------------------
 # Timer job wrappers
 # -------------------------------
-async def run_sharepoint_index():
-    logging.debug("[sharepoint-indexer] Starting")
-    try:
-        from jobs.sharepoint_indexer import SharePointIndexer
-        await SharePointIndexer().run()
-    except Exception:
-        logging.exception("[sharepoint-indexer] Unexpected error")
-
-async def run_sharepoint_purge():
-    logging.debug("[sharepoint-purger] Starting")
-    try:
-        from jobs.sharepoint_purger import SharepointPurger
-        await SharepointPurger().run()
-    except Exception:
-        logging.exception("[sharepoint-purger] Unexpected error")
-
 async def run_images_purge():
     logging.info("[multimodality_images_purger] Starting")
     multi_var = (app_config_client.get("MULTIMODAL") or "").lower()

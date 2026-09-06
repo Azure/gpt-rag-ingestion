@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "module_ids": ["telemetry.audit_contract", "telemetry.audit_sanitizer", "jobs.runtime"],
+  "coverage_stage": "initial",
+  "planned_expansion": ["typed configuration", "delegated authentication", "retrieval and operator boundaries"],
+  "move_map": [],
+  "review": {
+    "status": "proposed",
+    "owner": "@placerda",
+    "reference": "https://github.com/Azure/GPT-RAG/pull/689",
+    "rationale": "Audit contract seeds plus the new jobs-owned runtime; all new modules become blocking."
+  }
+}

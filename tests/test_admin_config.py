@@ -79,7 +79,7 @@ def _install_stubs(
     monkeypatch.setitem(sys.modules, "tools.credentials", credentials_stub)
 
     # main stub — only what api.admin imports lazily
-    main_stub = types.ModuleType("main")
+    main_stub = types.ModuleType("jobs.runtime")
 
     async def _noop_job():
         return None
@@ -102,8 +102,8 @@ def _install_stubs(
         "CRON_RUN_NL2SQL_INDEX": "nl2sql_index",
         "CRON_RUN_NL2SQL_PURGE": "nl2sql_purge",
     }
-    main_stub._running_jobs = {}
-    main_stub._running_jobs_lock = asyncio.Lock()
+    main_stub.running_jobs = {}
+    main_stub.running_jobs_lock = asyncio.Lock()
 
     class _FakeScheduler:
         def __init__(self) -> None:
@@ -127,7 +127,8 @@ def _install_stubs(
             self.jobs.pop(jid, None)
 
     main_stub.scheduler = _FakeScheduler()
-    monkeypatch.setitem(sys.modules, "main", main_stub)
+    main_stub.get_scheduler = lambda: main_stub.scheduler
+    monkeypatch.setitem(sys.modules, "jobs.runtime", main_stub)
 
     # azure.appconfiguration write client stub — capture set_configuration_setting
     written: list[object] = []

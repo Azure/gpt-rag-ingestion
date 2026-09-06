@@ -21,6 +21,15 @@ The **GPT-RAG Data Ingestion** service automates the processing of diverse docum
 
 For full documentation, visit the **[GPT-RAG documentation site](https://azure.github.io/GPT-RAG/)**.
 
+## Contributor quality bootstrap
+
+Python 3.12 contributor commands, the jobs-owned scheduler interface,
+incremental typing scope, import/error policy and recovery guidance are in
+[Python quality gates](docs/python-quality.md). The bootstrap reports inherited
+violations without blanket exemptions; required-check activation and remaining
+failure-boundary review are explicitly pending. Runtime contracts and operator
+startup/configuration remain unchanged.
+
 ## Governance and audit events
 
 This service emits a versioned, correlated audit trail for ingestion runs and

@@ -354,13 +354,13 @@ async def list_jobs(
 
 def _available_job_types() -> List[str]:
     """Return the canonical job_type identifiers accepted by ``/api/jobs/{job_type}/run``."""
-    from main import JOB_REGISTRY  # local import to avoid circular import at module load
+    from jobs.runtime import JOB_REGISTRY
 
     return sorted(JOB_REGISTRY.keys())
 
 
 def _running_job_types() -> List[str]:
-    from main import _running_jobs
+    from jobs.runtime import running_jobs as _running_jobs
 
     # `_running_jobs` is now ``dict[str, dict]``; iterating yields job_types.
     return sorted(_running_jobs)
@@ -402,8 +402,14 @@ async def run_job_now(job_type: str) -> Dict[str, Any]:
     if not _JOB_TYPE_RE.match(job_type):
         raise HTTPException(status_code=400, detail="Invalid job_type")
 
-    # Late import keeps api/admin import-time light and avoids circular import.
-    from main import JOB_REGISTRY, _running_jobs, _running_jobs_lock, scheduler
+    from jobs.runtime import (
+        JOB_REGISTRY,
+        get_scheduler,
+        running_jobs as _running_jobs,
+        running_jobs_lock as _running_jobs_lock,
+    )
+
+    scheduler = get_scheduler()
 
     if job_type not in JOB_REGISTRY:
         raise HTTPException(
@@ -419,7 +425,7 @@ async def run_job_now(job_type: str) -> Dict[str, Any]:
             )
         # Pre-fill the slot with the actual APScheduler trigger id so the
         # queue endpoint reports the manual ``manual-<type>-<ts>`` id rather
-        # than the generic registry key. The wrapper in main.py respects an
+        # than the generic registry key. The wrapper in jobs.runtime respects an
         # already-filled slot and pops it on completion.
         trigger_id = f"manual-{job_type}-{int(time.time() * 1000)}"
         _running_jobs[job_type] = {
@@ -564,10 +570,9 @@ def _last_run_payload(run: Optional[dict]) -> Optional[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 @router.get("/jobs/queue")
 async def get_jobs_queue() -> Dict[str, Any]:
-    # Late import: keeps api.admin importable on its own (and matches the
-    # rest of this module, which avoids pulling in the full ingestion stack
-    # at module load).
-    from main import JOB_REGISTRY, _running_jobs, scheduler
+    from jobs.runtime import JOB_REGISTRY, get_scheduler, running_jobs as _running_jobs
+
+    scheduler = get_scheduler()
 
     # Reuse the cached runs list so a poll every 10s does not hammer blob
     # storage; the underlying cache TTL is 60s.
@@ -970,7 +975,9 @@ def _reschedule_cron_job(env_key: str, cron_expr: str) -> Optional[str]:
     Returns the job_id when something happened, or ``None`` if the key isn't
     a cron-driven job or the scheduler has no matching registry entry yet.
     """
-    from main import JOB_CRON_MAP, JOB_REGISTRY, scheduler
+    from jobs.runtime import JOB_CRON_MAP, JOB_REGISTRY, get_scheduler
+
+    scheduler = get_scheduler()
 
     job_id = JOB_CRON_MAP.get(env_key)
     if not job_id:
@@ -1190,7 +1197,7 @@ async def apply_config_changes() -> Dict[str, Any]:
     _invalidate_cache("runs", "files")
 
     rescheduled: List[str] = []
-    from main import JOB_CRON_MAP
+    from jobs.runtime import JOB_CRON_MAP
 
     cfg = get_config()
     for env_key in JOB_CRON_MAP:

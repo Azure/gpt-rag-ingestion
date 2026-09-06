@@ -125,3 +125,13 @@ def test_mount_is_idempotent(fresh_main):
     count_second = len(fresh_main.app.routes)
 
     assert count_first == count_second
+
+
+def test_main_reexports_one_jobs_owned_scheduler_registry_and_lock(fresh_main):
+    runtime = importlib.import_module("jobs.runtime")
+    assert fresh_main.scheduler is runtime.get_scheduler()
+    assert fresh_main.JOB_REGISTRY is runtime.JOB_REGISTRY
+    assert fresh_main.JOB_CRON_MAP is runtime.JOB_CRON_MAP
+    assert fresh_main._running_jobs is runtime.running_jobs
+    assert fresh_main._running_jobs_lock is runtime.running_jobs_lock
+    assert fresh_main._track_running is runtime.track_running

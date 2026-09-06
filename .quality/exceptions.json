@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "entries": [],
+  "review": {
+    "status": "proposed",
+    "reference": "https://github.com/Azure/GPT-RAG/pull/689",
+    "rationale": "No blanket exemptions. Unreviewed inherited handlers remain blocking findings; audit best-effort behavior is not rewritten to satisfy a gate."
+  }
+}

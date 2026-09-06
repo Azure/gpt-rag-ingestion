@@ -105,12 +105,12 @@ def _install_stubs(
     monkeypatch.setitem(sys.modules, "tools.cosmosdb", cosmosdb_stub)
 
     # `api.admin._available_job_types` / `_running_job_types` (used by the
-    # overview endpoint) do a local `from main import ...` — stub `main`
+    # overview endpoint) read jobs.runtime state; stub the canonical owner
     # minimally, matching tests/test_admin_run_now.py's convention.
-    main_stub = types.ModuleType("main")
+    main_stub = types.ModuleType("jobs.runtime")
     main_stub.JOB_REGISTRY = {jt: None for jt in (available_jobs or [])}
-    main_stub._running_jobs = {jt: {} for jt in (running_jobs or [])}
-    monkeypatch.setitem(sys.modules, "main", main_stub)
+    main_stub.running_jobs = {jt: {} for jt in (running_jobs or [])}
+    monkeypatch.setitem(sys.modules, "jobs.runtime", main_stub)
 
     # Reset the fake Cosmos client's class-level state for test isolation.
     _FakeCosmosDBClient.list_error = None

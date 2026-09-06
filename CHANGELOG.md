@@ -1,5 +1,26 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Reviewable Python quality bootstrap.** Add development-only pinned Ruff,
+  mypy, Import Linter and Grimp, explicit module/typing inventories,
+  individual-debt and handler records, mutation fixtures, and protected-base
+  quality jobs in the existing pytest workflow. The aggregate rejects missing,
+  skipped or stale evidence. Inherited violations remain visible and blocking;
+  no blanket exemptions or claim of administrative activation is introduced.
+
+### Changed
+
+- **Jobs-owned scheduler coordination without API-to-entrypoint cycles.**
+  Move the shared scheduler reference, registry, cron map, running-job
+  dictionary/lock and tracking wrapper to `jobs.runtime`, retaining the same
+  main re-exports, manual reservation behavior and scheduler lifecycle. Lazy
+  worker exports keep state-only imports from initializing Azure configuration
+  before startup authentication. Remove two overwritten, unused SharePoint
+  wrappers; keep the registered audit-wrapped functions unchanged.
+
 ## [v2.7.3] - 2026-09-03
 
 ### Fixed
