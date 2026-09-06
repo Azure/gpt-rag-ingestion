@@ -188,6 +188,14 @@ declared area are retained. Record parsing rejects missing/unknown fields,
 invalid nested types and unsupported lifecycle values before running checks.
 Boolean or floating-point schema versions are not version 1. The exact
 requirements manifest must agree with the policy toolchain.
+Tool diagnostics are validated before they can participate in the baseline:
+Ruff and mypy require typed, nonempty diagnostic fields and valid source
+positions, and duplicate JSON keys or contradictory exit status are execution
+errors. The aggregate also rejects a report claiming `passed` while carrying
+findings. Existing-runner fixtures execute the aggregate CLI with missing or
+skipped jobs, missing reports, wrong base/head/policy/source/run/attempt,
+skipped or stale test evidence, and duplicate evidence keys, alongside the
+clean positive control.
 
 ## Broad handlers and remaining acceptance
 

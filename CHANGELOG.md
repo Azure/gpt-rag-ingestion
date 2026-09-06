@@ -23,6 +23,12 @@
 
 ### Fixed
 
+- **Malformed quality evidence cannot become a passing receipt.** Validate
+  Ruff/mypy diagnostic types, positions, duplicate keys and exit consistency;
+  reject aggregate reports whose passed status contradicts their findings.
+  Real aggregate CLI fixtures cover missing/skipped jobs and stale or mismatched
+  artifacts without treating incomplete execution as successful validation.
+
 - **Direct uploads require authoritative Search confirmation.** Exercise the
   actual `/ingest-documents` route with the pinned SDK response model, reject
   missing, duplicate and unrelated results, and retain the per-record response

@@ -355,11 +355,13 @@ def lint(root: Path, config: Path, sources: dict, entries: list[dict],
                          "--output-format", "json", "--no-cache",
                          *[str(root / path) for path in sources]], config.parent)
     try:
-        diagnostics = json.loads(result.stdout)
+        diagnostics = json.loads(result.stdout, object_pairs_hook=q.unique_keys)
     except json.JSONDecodeError as exc:
         raise q.QualityError("Ruff did not return JSON") from exc
     if not isinstance(diagnostics, list) or (result.returncode == 1 and not diagnostics):
         raise q.QualityError("Incomplete Ruff execution")
+    if result.returncode == 0 and diagnostics:
+        raise q.QualityError("Ruff exit status contradicts its diagnostics")
     approved_sites = []
     path_ids = {path: key for key, path in modules.items()}
     for site in q.handler_sites(sources):
@@ -373,9 +375,17 @@ def lint(root: Path, config: Path, sources: dict, entries: list[dict],
     findings = []
     used_ids = set()
     for item in diagnostics:
-        if not all(key in item for key in ("code", "filename", "location", "message")):
+        if (not isinstance(item, dict)
+                or not all(isinstance(item.get(key), str) and item[key]
+                           for key in ("code", "filename", "message"))
+                or not isinstance(item.get("location"), dict)
+                or not all(type(item["location"].get(key)) is int and item["location"][key] >= 1
+                           for key in ("row", "column"))):
             raise q.QualityError("Unsupported Ruff diagnostic")
-        file = Path(item["filename"]).resolve().relative_to(root).as_posix()
+        path = Path(item["filename"]).resolve()
+        if not path.is_relative_to(root):
+            raise q.QualityError("Ruff emitted an out-of-repository source error")
+        file = path.relative_to(root).as_posix()
         if item["code"] == "BLE001":
             approved = [record_id for site, record_id in approved_sites
                         if site["file"] == file
@@ -402,15 +412,22 @@ def typing(root: Path, config: Path, sources: dict, modules: dict, covered: set,
         if not line.strip():
             continue
         try:
-            item = json.loads(line)
+            item = json.loads(line, object_pairs_hook=q.unique_keys)
         except json.JSONDecodeError as exc:
             raise q.QualityError("Mypy returned an unrecognized diagnostic") from exc
-        if not all(key in item for key in ("file", "line", "column", "message", "code", "severity")):
+        if (not isinstance(item, dict)
+                or not all(isinstance(item.get(key), str) and item[key]
+                           for key in ("file", "message", "severity"))
+                or type(item.get("line")) is not int or item["line"] < 1
+                or type(item.get("column")) is not int or item["column"] < 0
+                or "code" not in item):
             raise q.QualityError("Incomplete mypy diagnostic")
         if item["severity"] not in {"error", "note"}:
             raise q.QualityError("Unsupported mypy severity")
         if item["severity"] != "error":
             continue
+        if not isinstance(item["code"], str) or not item["code"]:
+            raise q.QualityError("Mypy error lacks a diagnostic code")
         path = Path(item["file"])
         path = (config.parent / path).resolve() if not path.is_absolute() else path.resolve()
         if not path.is_relative_to(root):

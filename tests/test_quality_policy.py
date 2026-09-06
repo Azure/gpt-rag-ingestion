@@ -482,7 +482,8 @@ def test_tool_timeout_and_crash_are_errors(monkeypatch):
 
 def report(name):
     return {"schema_version": 1, "check_name": name, "status": "passed",
-            "base_sha": "b" * 40, "head_sha": "c" * 40, "policy_sha": "d" * 64}
+            "base_sha": "b" * 40, "head_sha": "c" * 40, "policy_sha": "d" * 64,
+            "findings": []}
 
 
 def test_aggregate_requires_fixed_actual_results_and_fresh_reports():
@@ -497,6 +498,114 @@ def test_aggregate_requires_fixed_actual_results_and_fresh_reports():
     assert quality.aggregate(jobs, stale, "b" * 40, "c" * 40)
     assert quality.aggregate(jobs, {}, "b" * 40, "c" * 40)
     assert quality.aggregate({}, reports, "b" * 40, "c" * 40)
+
+
+@pytest.fixture
+def checker():
+    spec = importlib.util.spec_from_file_location("check_quality_under_test", SCRIPT.with_name("check-quality.py"))
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("line", True), ("line", "1"), ("line", 0), ("column", None),
+    ("column", False), ("file", ""), ("message", []), ("code", None),
+    ("severity", "warning"),
+])
+def test_malformed_mypy_diagnostics_are_execution_errors(checker, monkeypatch, tmp_path, field, value):
+    diagnostic = {
+        "file": str(tmp_path / "a.py"), "line": 1, "column": 0,
+        "message": "bad return type", "code": "return-value", "severity": "error",
+    }
+    diagnostic[field] = value
+    monkeypatch.setattr(quality, "run_tool", lambda *a, **k: subprocess.CompletedProcess(
+        [], 1, json.dumps(diagnostic), "",
+    ))
+    with pytest.raises(quality.QualityError):
+        checker.typing(tmp_path, tmp_path / "pyproject.toml", {"a.py": "value = 1"},
+                       {"a": "a.py"}, {"a"}, {"entries": []})
+
+
+@pytest.mark.parametrize(("returncode", "diagnostics"), [(1, ""), (0, "error")])
+def test_mypy_status_must_match_diagnostics(checker, monkeypatch, tmp_path, returncode, diagnostics):
+    stdout = "" if not diagnostics else json.dumps({
+        "file": str(tmp_path / "a.py"), "line": 1, "column": 0,
+        "message": "bad return type", "code": "return-value", "severity": "error",
+    })
+    monkeypatch.setattr(quality, "run_tool", lambda *a, **k: subprocess.CompletedProcess(
+        [], returncode, stdout, "",
+    ))
+    with pytest.raises(quality.QualityError):
+        checker.typing(tmp_path, tmp_path / "pyproject.toml", {"a.py": "value = 1"},
+                       {"a": "a.py"}, {"a"}, {"entries": []})
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("code", None), ("filename", ""), ("message", []),
+    ("location", {"row": True, "column": 1}), ("location", {"row": 0, "column": 1}),
+])
+def test_malformed_ruff_diagnostics_are_execution_errors(checker, monkeypatch, tmp_path, field, value):
+    diagnostic = {
+        "filename": str(tmp_path / "a.py"), "location": {"row": 1, "column": 1},
+        "message": "undefined name", "code": "F821",
+    }
+    diagnostic[field] = value
+    monkeypatch.setattr(quality, "run_tool", lambda *a, **k: subprocess.CompletedProcess(
+        [], 1, json.dumps([diagnostic]), "",
+    ))
+    with pytest.raises(quality.QualityError):
+        checker.lint(tmp_path, tmp_path / "pyproject.toml", {"a.py": "missing"}, [], {"a": "a.py"}, "initial")
+
+
+@pytest.mark.parametrize("mutation", [
+    "none", "missing-job", "skipped-job", "error-job", "missing-report",
+    "wrong-head", "wrong-base", "wrong-policy", "wrong-source", "wrong-run", "wrong-attempt",
+    "status-contradiction", "skipped-test", "stale-test", "wrong-test-attempt", "duplicate-test-key",
+])
+def test_aggregate_cli_requires_actual_consistent_current_receipts(tmp_path, mutation):
+    jobs = {name: {"result": "success"} for name in quality.REQUIRED_CHECKS}
+    for name in quality.REQUIRED_CHECKS[:-1]:
+        data = dict(report(name), repository="Azure/gpt-rag-ingestion", source_sha="a" * 64,
+                    run_id="123", run_attempt="1")
+        if name == "lint":
+            changes = {
+                "wrong-head": ("head_sha", "e" * 40), "wrong-base": ("base_sha", "e" * 40),
+                "wrong-policy": ("policy_sha", "e" * 64), "wrong-source": ("source_sha", "e" * 64),
+                "wrong-run": ("run_id", "124"), "wrong-attempt": ("run_attempt", "2"),
+                "status-contradiction": ("findings", [{"rule": "execution-error", "reason": "crash"}]),
+            }
+            if mutation in changes:
+                key, value = changes[mutation]
+                data[key] = value
+            if mutation == "missing-report":
+                continue
+        data["artifact_integrity"] = quality.digest(data)
+        (tmp_path / f"{name}.json").write_text(json.dumps(data), encoding="utf-8")
+    if mutation == "missing-job":
+        del jobs["unit-tests"]
+    elif mutation in {"skipped-job", "error-job"}:
+        jobs["unit-tests"]["result"] = mutation.removesuffix("-job")
+    evidence = {
+        "schema_version": 1, "base_sha": "b" * 40,
+        "head_sha": "e" * 40 if mutation == "stale-test" else "c" * 40,
+        "run_id": "123", "run_attempt": "2" if mutation == "wrong-test-attempt" else "1",
+        "junit_sha": "f" * 64,
+        "tests": {"tests/test_failure.py::test_error": "skipped" if mutation == "skipped-test" else "passed"},
+    }
+    evidence["artifact_integrity"] = quality.digest(evidence)
+    encoded = json.dumps(evidence)
+    if mutation == "duplicate-test-key":
+        encoded = encoded.replace('"tests": {', '"tests": {}, "tests": {')
+    (tmp_path / "test-evidence.json").write_text(encoded, encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, "-I", str(SCRIPT.with_name("quality-gate.py")),
+         "--reports", str(tmp_path), "--base-sha", "b" * 40, "--head-sha", "c" * 40],
+        env=dict(os.environ, NEEDS_JSON=json.dumps(jobs), GITHUB_RUN_ID="123", GITHUB_RUN_ATTEMPT="1"),
+        capture_output=True, text=True, timeout=30,
+    )
+    assert (result.returncode == 0) == (mutation == "none"), result.stderr
 
 
 @pytest.fixture

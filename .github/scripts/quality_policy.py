@@ -758,9 +758,11 @@ def aggregate(jobs: dict, reports: dict, base_sha: str, head_sha: str) -> list[d
             continue
         report = reports.get(name, {})
         if not all((
-            report.get("schema_version") == 1, report.get("check_name") == name,
+            type(report.get("schema_version")) is int and report["schema_version"] == 1,
+            report.get("check_name") == name,
             report.get("status") == "passed", report.get("base_sha") == base_sha,
             report.get("head_sha") == head_sha,
+            report.get("findings") == [],
             isinstance(report.get("policy_sha"), str) and len(report["policy_sha"]) == 64,
         )):
             result.append(finding("invalid-report", reason=name))
