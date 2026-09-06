@@ -40,6 +40,12 @@ adapter failures are not retried or disguised as missing configuration/data.
 Model-service retries and JWT rejection statuses retain their established
 contracts. Analysis diagnostics omit authorization headers and response bodies;
 polling HTTP errors cannot become confirmed analysis results.
+NL2SQL optional job-log failures preserve confirmed primary document outcomes;
+an unavailable unchanged-document check triggers reindexing with the same key,
+not an assumed success. Failed documents and cleanup remain explicit.
+Chunking preserves terminal error lists and successful chunk identity while
+allowing cancellation to propagate. Optional image extraction retains only
+confirmed partial results, and owned PDF split files are cleaned on failure.
 
 ## Governance and audit events
 

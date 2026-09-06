@@ -216,7 +216,7 @@ clean positive control.
 
 ## Broad handlers and remaining acceptance
 
-The exception ledger contains eleven exact **proposed**, not active, records.
+The exception ledger contains sixteen exact **proposed**, not active, records.
 Four cover audit boundaries: unexpected sanitizer failure, exporter failure, primary run failure
 observation/propagation, and document-audit projection failure. Each cites its
 own source fingerprint, boundary-specific rationale and executed failure tests.
@@ -229,6 +229,26 @@ unconfirmed uploads or the endpoint's other handlers.
 Two further records preserve only optional auth diagnostic logging, never
 signature/claims validation or JWKS acquisition; real-token failure tests prove
 that their failure cannot grant access or replace the verified outcome.
+Four NL2SQL indexer records preserve its existing explicit failed-document
+result and independent Search/Blob/credential cleanup. Optional log-container,
+read/write and existence-check failures are narrowed to actual Azure/JSON
+errors, not covered by those broad-handler proposals. A failed optional
+existence check may trigger idempotent reindexing with the same key, never
+an assumed upload success. Unexpected adapter failures reach the failed
+document outcome instead of being treated as absent logs/documents.
+Resource-close warnings cannot replace a primary exception or confirmed
+summary; persisted error text names the failure class rather than copying
+dependency payloads.
+The document-chunking proposal preserves the existing terminal errors-list
+translation around arbitrary format chunkers. Cancellation and process
+interrupts are no longer suppressed by a return in `finally`; successful
+chunk IDs, order, content, metadata and embedding inputs remain unchanged.
+Analysis retries cover declared SDK/Requests failures, and temporary split
+files owned by the chunker are cleaned on success and failure. Expected
+PDF/ZIP/codec errors retain diagnostic, confirmed-partial-image behavior;
+unexpected implementation failures propagate. Image uploads cannot return an
+empty success-shaped URL, optional captions retain their established fallback,
+and caption/dependency payloads are omitted from diagnostics.
 **No inherited handler is automatically approved.** The syntax check includes
 bare handlers, builtins aliases, tuples,
 exception groups, and logged/re-raised catches exempted by Ruff BLE001.
@@ -251,8 +271,24 @@ contractually best-effort; it must not become a primary-operation failure,
 nor be used to excuse indexing, deletion, configuration or authentication
 failures. The concrete Search/NL2SQL/governance/configuration defects above
 have regression coverage, but this draft does not claim the entire legacy
-failure inventory is complete: T025 and all of T028 / SC-003 still need review
-and remaining boundary-specific work.
+failure inventory is complete: T025 still needs individual legacy dispositions
+and their associated failure evidence; SC-003 acceptance is not complete.
+
+### Delivered task milestones
+
+| Task | Implemented evidence | Remaining acceptance |
+| --- | --- | --- |
+| T003 | Flat-root/module/public-surface inventory and source-base reconciliation | Review proposed surface policy |
+| T007 | Exact development pins and closed, typed parsing of all four records | Bootstrap policy approval |
+| T010 | Q6 regression fixtures, real aggregate CLI failures and isolated-tool controls | Administrative merge-eligibility exercise, not more fixture setup |
+| T013 | Ruff/mypy enforcement, individual diagnostic identities and monotonic scope | Resolve inherited runtime findings |
+| T016 | Protected-base evaluator, verified policy owner and same-workflow aggregate dependencies | Actual protected review, bootstrap and required-check activation |
+| T019 | Flat/package/late/type-only/private/cycle/dynamic-loader fixtures | Policy approval |
+| T022 | Jobs-owned scheduler singleton/registry/lock and lifecycle/run-now regressions | No remaining implementation gap identified |
+| T025 | Complete static graph and independent broad-handler enforcement | Remaining legacy handler dispositions and necessary per-site evidence |
+| T028 | Scheduler, actual direct upload, confirmed Search/purge, provider startup/precedence, real JWT and audit-independence cases | Not a certification of every inherited failure handler or live Azure topology |
+| T040 | Contributor commands, ownership, recovery and coordinated PR evidence | Keep final PR/docs receipts synchronized |
+| T045 (component) | Full Python/asset evidence; existing frontend commands attempted | Frontend restore is blocked by the existing React 19/React DOM 18 peer conflict; final immutable CI and unavailable live/deployment evidence remain separate |
 
 ## CI trust and separate administrative activation
 

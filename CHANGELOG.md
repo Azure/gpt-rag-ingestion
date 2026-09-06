@@ -23,6 +23,21 @@
 
 ### Fixed
 
+- **Chunking preserves cancellation and confirmed partial results.** Remove
+  return-from-finally suppression, narrow SDK/parser retries and optional
+  image failures, and close PDF/image resources and owned split files.
+  Preserve chunk IDs, content, metadata and explicit document errors while
+  preventing empty-URL upload success and sensitive caption/error diagnostics.
+  The existing terminal document-error boundary is individually proposed,
+  not approved.
+
+- **NL2SQL optional state cannot hide document failures.** Narrow SDK/JSON
+  operations used for job logs and unchanged-document checks; unexpected
+  failures become explicit failed-document outcomes, not missing-state
+  defaults. Preserve confirmed upload counts, stable reindex keys and
+  independent resource cleanup, with safe diagnostics and individually
+  proposed, not activated, failure/cleanup boundaries.
+
 - **Model-service failures preserve outcomes without exposing payloads.**
   Keep OpenAI retry/usage semantics and original terminal exceptions while
   narrowing retry parsing. Document analysis retains explicit error results

@@ -2,6 +2,98 @@
   "schema_version": 1,
   "entries": [
     {
+      "id": "document-chunking-failure",
+      "module_id": "chunking.document_chunking",
+      "symbol": "DocumentChunker.chunk_document",
+      "handler_fingerprint": "bc2db98743947eca7d46c662717cd2bf5ccf1fee1cd31c8ce6a82b3de64fb95a",
+      "caught_types": ["Exception"],
+      "boundary": "Existing format-chunker orchestration boundary returning terminal document errors",
+      "reason": "A format-specific chunker failure must become an explicit failed-document errors list consumed by ingestion, not successful chunks or a suppressed cancellation. The established result shape is retained with a safe message. Arbitrary format implementation exceptions require this one translation boundary; lower SDK/parser retries and optional image handling are narrowed separately. BaseException and metadata failures outside this boundary propagate.",
+      "failure_outcome": "explicit-failure-translation",
+      "diagnostic_path": "Safe document processing error and nonempty terminal errors list; no dependency payload",
+      "evidence_tests": [
+        "tests/test_chunking_failure_boundaries.py::test_document_errors_remain_explicit_and_do_not_expose_upstream_payload",
+        "tests/test_chunking_failure_boundaries.py::test_document_cancellation_is_not_suppressed_by_finally[failure0]",
+        "tests/test_chunking_failure_boundaries.py::test_document_cancellation_is_not_suppressed_by_finally[failure1]",
+        "tests/test_chunking_failure_boundaries.py::test_document_metadata_failure_is_not_replaced_by_unbound_local",
+        "tests/test_chunking_failure_boundaries.py::test_document_success_preserves_chunk_identity_and_order"
+      ],
+      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review_by_stage": "initial"
+    },
+    {
+      "id": "nl2sql-document-failure",
+      "module_id": "jobs.nl2sql_indexer",
+      "symbol": "NL2SQLIndexer._process_one",
+      "handler_fingerprint": "d9e4ae0060c2e88d71a81e43a8f61d567516fcd28b150001afc0b27a1b6e2873",
+      "caught_types": ["Exception"],
+      "boundary": "Existing per-document NL2SQL processing failure result consumed by run aggregation",
+      "reason": "The established boundary converts a failed properties/read/embedding/upload operation to an explicit error record and failed per-kind count so other documents can proceed. Arbitrary adapter implementation failures must never be retried as missing documents or counted as indexed. This proposal covers only this explicit failed-result translation; expected optional-log operations are separately narrowed and cancellation is not caught.",
+      "failure_outcome": "explicit-failure-translation",
+      "diagnostic_path": "Safe error-class message, per-file status=error and run itemsFailed; no raw dependency payload",
+      "evidence_tests": [
+        "tests/test_nl2sql_indexer_failures.py::test_document_failure_is_explicit_and_does_not_expose_dependency_payload[properties]",
+        "tests/test_nl2sql_indexer_failures.py::test_document_failure_is_explicit_and_does_not_expose_dependency_payload[exists]",
+        "tests/test_nl2sql_indexer_failures.py::test_document_failure_is_explicit_and_does_not_expose_dependency_payload[embedding]",
+        "tests/test_nl2sql_indexer_failures.py::test_document_failure_is_explicit_and_does_not_expose_dependency_payload[upload]",
+        "tests/test_nl2sql_indexer_failures.py::test_run_counts_unconfirmed_document_as_failed_not_indexed",
+        "tests/test_nl2sql_indexer_failures.py::test_document_cancellation_is_not_a_failed_record"
+      ],
+      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review_by_stage": "initial"
+    },
+    {
+      "id": "nl2sql-indexer-search-cleanup",
+      "module_id": "jobs.nl2sql_indexer",
+      "symbol": "NL2SQLIndexer.run",
+      "handler_fingerprint": "1477ad8775272deee80da0daadc61b5576f8ec9de0361a000dfbbe6aa9d6c3ec",
+      "caught_types": ["Exception"],
+      "boundary": "Search client close in NL2SQL indexing run finally block",
+      "reason": "A Search cleanup failure must not replace the original listing/indexing outcome or skip subsequent Blob and credential cleanup. This preserves the pre-existing lifecycle contract while making cleanup failure visible. It covers close only, not search, upload or result aggregation.",
+      "failure_outcome": "contractual-best-effort-side-effect",
+      "diagnostic_path": "Safe Search cleanup warning; primary exception or confirmed summary remains authoritative",
+      "evidence_tests": [
+        "tests/test_nl2sql_indexer_failures.py::test_cleanup_preserves_primary_outcome_and_attempts_all_clients[True-_ai_search]",
+        "tests/test_nl2sql_indexer_failures.py::test_cleanup_preserves_primary_outcome_and_attempts_all_clients[False-_ai_search]"
+      ],
+      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review_by_stage": "initial"
+    },
+    {
+      "id": "nl2sql-indexer-blob-cleanup",
+      "module_id": "jobs.nl2sql_indexer",
+      "symbol": "NL2SQLIndexer._close_clients_safely",
+      "handler_fingerprint": "06d7e7fb8e869b5c19e7247be7a647f748b8b3981ab13ec81c891616982a2aeb",
+      "caught_types": ["Exception"],
+      "boundary": "BlobServiceClient close after NL2SQL indexing",
+      "reason": "A Blob close failure must not replace a primary run failure, reverse a confirmed document result, or prevent the chained credential from closing. The existing independent cleanup sequencing is preserved with an explicit warning; no source download/listing or durable write is exempted.",
+      "failure_outcome": "contractual-best-effort-side-effect",
+      "diagnostic_path": "Safe Blob cleanup warning, followed by credential close",
+      "evidence_tests": [
+        "tests/test_nl2sql_indexer_failures.py::test_cleanup_preserves_primary_outcome_and_attempts_all_clients[True-_blob_service]",
+        "tests/test_nl2sql_indexer_failures.py::test_cleanup_preserves_primary_outcome_and_attempts_all_clients[False-_blob_service]"
+      ],
+      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review_by_stage": "initial"
+    },
+    {
+      "id": "nl2sql-indexer-credential-cleanup",
+      "module_id": "jobs.nl2sql_indexer",
+      "symbol": "NL2SQLIndexer._close_clients_safely",
+      "handler_fingerprint": "5b354a8cb17ccdf31805cee4013e8c52848d33fba557a8743dc0f8869e13ab5a",
+      "caught_types": ["Exception"],
+      "boundary": "Chained credential close after NL2SQL indexing",
+      "reason": "The last resource-close operation must not mask the primary run failure or convert confirmed document totals into an indexing failure. Both successful and failed runs inject a non-SDK close failure and prove that all owned cleanup calls are attempted. Credential creation/token acquisition and authorization are outside this proposal.",
+      "failure_outcome": "contractual-best-effort-side-effect",
+      "diagnostic_path": "Safe credential cleanup warning without changing the primary result",
+      "evidence_tests": [
+        "tests/test_nl2sql_indexer_failures.py::test_cleanup_preserves_primary_outcome_and_attempts_all_clients[True-_credential]",
+        "tests/test_nl2sql_indexer_failures.py::test_cleanup_preserves_primary_outcome_and_attempts_all_clients[False-_credential]"
+      ],
+      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review_by_stage": "initial"
+    },
+    {
       "id": "auth-integrity-diagnostics",
       "module_id": "dependencies",
       "symbol": "_token_integrity_diagnostics",
@@ -187,6 +279,6 @@
   "review": {
     "status": "proposed",
     "reference": "https://github.com/Azure/GPT-RAG/pull/689",
-    "rationale": "Eleven exact proposals: four audit boundaries, confirmed-write cache refresh, three purger cleanup boundaries, direct-upload per-record failure translation and two optional auth diagnostics. All require individual review; none is active."
+    "rationale": "Sixteen exact proposals: four audit boundaries, confirmed-write cache refresh, three purger cleanup boundaries, direct-upload per-record failure translation, two optional auth diagnostics, NL2SQL per-document failure translation, three indexer cleanup boundaries and document chunking failure translation. All require individual review; none is active."
   }
 }

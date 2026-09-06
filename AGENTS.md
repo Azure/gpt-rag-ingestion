@@ -115,8 +115,8 @@ facades. `main` compatibility re-exports are not another owner of mutable state.
 Use the jobs-owned test seam when patching scheduling.
 
 Exact exception records are proposed for audit boundaries, post-write local
-refresh, purger resource cleanup, direct-upload per-record failure translation,
-and optional auth diagnostics. None is active.
+refresh, indexer/purger resource cleanup, explicit per-record failure
+translations, and optional auth diagnostics. None is active.
 Other inherited handler/lint findings remain blocking. This is not
 an active required-merge claim. Protected policy
 review, a clean reference PR and administrative rule activation are separate

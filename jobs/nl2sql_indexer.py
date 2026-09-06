@@ -9,7 +9,7 @@ from typing import Optional, Dict
 from azure.identity.aio import AzureCliCredential, ManagedIdentityCredential, ChainedTokenCredential
 from azure.storage.blob.aio import BlobServiceClient
 from azure.storage.blob import ContentSettings
-from azure.core.exceptions import ResourceNotFoundError
+from azure.core.exceptions import AzureError, ResourceExistsError, ResourceNotFoundError
 
 from dependencies import get_config
 from tools import AISearchClient, AzureOpenAIClient
@@ -207,7 +207,7 @@ class NL2SQLIndexer:
             try:
                 await self._ai_search.close()
             except Exception:
-                pass
+                logging.warning("[nl2sql-indexer] Search cleanup failed; preserving primary run outcome.")
             await self._close_clients_safely()
 
     async def _process_one(self, blob_name: str, run_id: str):
@@ -223,6 +223,7 @@ class NL2SQLIndexer:
             "runId": run_id,
             "startedAt": started,
         }
+        kind = None
 
         try:
             # Fetch current blob properties
@@ -251,11 +252,7 @@ class NL2SQLIndexer:
             if prev_log and prev_log.get("lastModified") == last_mod and prev_log.get("etag") == etag:
                 exists = False
                 if index_name:
-                    try:
-                        exists = await self._exists_in_index(index_name, doc_id)
-                    except Exception:
-                        # If existence check fails, fall back to indexing to be safe
-                        exists = False
+                    exists = await self._exists_in_index(index_name, doc_id)
                 if exists:
                     per_file_log.update({
                         "status": "skipped",
@@ -269,7 +266,7 @@ class NL2SQLIndexer:
                     await self._write_file_log(self.cfg.jobs_log_container, f"{log_key}.json", per_file_log)
                     return {"status": "skipped", "kind": kind}
                 else:
-                    logging.info(f"[nl2sql-indexer] Re-indexing '{blob_name}' because it's missing in index '{index_name}' despite unchanged blob.")
+                    logging.info("[nl2sql-indexer] Re-indexing unchanged blob because index presence was not confirmed.")
 
             # Download and parse payload only if we decided not to skip
             download = await blob.download_blob()
@@ -353,15 +350,16 @@ class NL2SQLIndexer:
             return {"status": "success" if ok else "error", "kind": kind, "vectorDims": vector_dims}
 
         except Exception as e:
-            logging.exception(f"[nl2sql-indexer] Failed processing {blob_name}")
+            error = f"Document processing failed ({type(e).__name__})."
+            logging.error("[nl2sql-indexer] %s See the per-file error record.", error)
             per_file_log.update({
                 "status": "error",
-                "error": str(e),
+                "error": error,
                 "finishedAt": datetime.now(timezone.utc).isoformat(),
-                "kind": kind if 'kind' in locals() else None,
+                "kind": kind,
             })
             await self._write_file_log(self.cfg.jobs_log_container, f"{log_key}.json", per_file_log)
-            return {"status": "error", "error": str(e), "kind": (kind if 'kind' in locals() else "unknown")}
+            return {"status": "error", "error": error, "kind": kind or "unknown"}
 
     @staticmethod
     def _sanitize_id(doc_id: str) -> str:
@@ -375,8 +373,10 @@ class NL2SQLIndexer:
         try:
             cc = self._blob_service.get_container_client(name)
             await cc.create_container()
-        except Exception:
+        except ResourceExistsError:
             pass
+        except AzureError:
+            logging.warning("[nl2sql-indexer] Could not ensure job-log container; primary indexing will still be attempted.")
 
     async def _write_file_log(self, container: str, blob_name: str, payload: dict):
         cc = self._blob_service.get_container_client(container)
@@ -387,8 +387,8 @@ class NL2SQLIndexer:
                 overwrite=True,
                 content_settings=ContentSettings(content_type="application/json"),
             )
-        except Exception:
-            logging.exception(f"[nl2sql-indexer] failed to write file log {blob_name}")
+        except AzureError:
+            logging.error("[nl2sql-indexer] File-log upload failed; primary document outcome is unchanged.")
 
     async def _write_run_summary(self, container: str, summary: dict, run_id: str):
         cc = self._blob_service.get_container_client(container)
@@ -400,11 +400,11 @@ class NL2SQLIndexer:
                 overwrite=True,
                 content_settings=ContentSettings(content_type="application/json"),
             )
-        except Exception:
-            logging.exception(f"[nl2sql-indexer] failed to write run summary {name}")
+        except AzureError:
+            logging.error("[nl2sql-indexer] Run-summary upload failed; primary document counts are unchanged.")
 
     async def _exists_in_index(self, index_name: str, doc_id: str) -> bool:
-        """Check if a document with given id exists in the target index."""
+        """Confirm presence for the unchanged-blob optimization; unknown means reindex."""
         try:
             res = await self._ai_search.search_documents(
                 index_name=index_name,
@@ -414,8 +414,8 @@ class NL2SQLIndexer:
                 top=1,
             )
             return (res or {}).get("count", 0) > 0
-        except Exception as e:
-            logging.error(f"[nl2sql-indexer] exists check failed for index '{index_name}', id '{doc_id}': {e}")
+        except AzureError:
+            logging.warning("[nl2sql-indexer] Existence check unavailable; document will be reindexed.")
             return False
 
     async def _read_previous_log(self, container: str, file_log_name: str) -> Optional[Dict]:
@@ -429,8 +429,8 @@ class NL2SQLIndexer:
             return json.loads(data.decode("utf-8", errors="replace"))
         except ResourceNotFoundError:
             return None
-        except Exception:
-            logging.exception(f"[nl2sql-indexer] failed to read previous log {name}")
+        except (AzureError, json.JSONDecodeError):
+            logging.warning("[nl2sql-indexer] Previous job log unavailable or invalid; document will be reindexed.")
             return None
 
     async def _close_clients_safely(self):
@@ -438,11 +438,11 @@ class NL2SQLIndexer:
             if self._blob_service:
                 await self._blob_service.close()
         except Exception:
-            pass
+            logging.warning("[nl2sql-indexer] Blob cleanup failed; preserving primary run outcome.")
         try:
             if self._credential and hasattr(self._credential, "close"):
                 res = self._credential.close()
                 if asyncio.iscoroutine(res):
                     await res
         except Exception:
-            pass
+            logging.warning("[nl2sql-indexer] Credential cleanup failed; preserving primary run outcome.")

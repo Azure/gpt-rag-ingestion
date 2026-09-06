@@ -259,8 +259,8 @@ class BaseChunker:
             title = title.title()
     
             return title
-        except Exception as e:
-            logging.error(f"[base_chunker][{filename}] Error extracting title from filename '{filename}': {e}")
+        except TypeError:
+            logging.error("[base_chunker] Invalid filename for title extraction.")
             return "filename"
         
     def _truncate_chunk(self, text):
