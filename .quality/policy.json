@@ -1318,12 +1318,12 @@
         "ChainedTokenCredential",
         "Dict",
         "ManagedIdentityCredential",
-        "RetryError",
         "SettingSelector",
         "load",
         "logging",
         "os",
         "retry",
+        "retry_if_exception_type",
         "stop_after_attempt",
         "wait_random_exponential"
       ],

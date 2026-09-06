@@ -30,8 +30,9 @@ violations without blanket exemptions; required-check activation and remaining
 failure-boundary review are explicitly pending. Existing successful response
 shapes, schema bytes and authentication remain unchanged. Search and NL2SQL
 deletion counts now require confirmed results; worker and governance failures
-propagate, and configuration apply/refresh failures are reported explicitly
-rather than as success. Startup jobs retain independent failure isolation.
+propagate, and genuine configuration-application failures are explicit.
+Confirmed configuration writes retain their existing success response if the
+best-effort local refresh fails. Startup jobs retain independent failure isolation.
 
 ## Governance and audit events
 

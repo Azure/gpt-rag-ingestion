@@ -38,11 +38,15 @@
   while startup jobs retain independent failure isolation.
 
 - **Configuration and diagnostic failures remain explicit and safe.** Governance
-  reads no longer silently disable governance after provider failure.
-  Configuration apply returns an error on failed scheduling, and writes with a
-  failed local refresh return the existing partial-failure shape. Audit
+  reads no longer silently disable governance after selected-provider failure.
+  Bounded Azure retries preserve real missing-key defaults, selector order and
+  environment precedence without logging exception payloads. Configuration
+  apply returns an error on failed scheduling; confirmed writes retain their
+  existing success response when the best-effort local refresh fails. Audit
   sanitization/export/projection remains non-blocking, with payload-free warning
-  diagnostics and four exact, unapproved boundary proposals for review.
+  diagnostics. Eight exact audit, refresh and resource-cleanup proposals remain
+  unapproved; NL2SQL purge now also closes its owned Search adapter without
+  masking a primary failure.
 
 ## [v2.7.3] - 2026-09-03
 

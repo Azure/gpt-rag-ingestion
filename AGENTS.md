@@ -114,8 +114,9 @@ and handler checks include flat roots, late/type-only imports and package
 facades. `main` compatibility re-exports are not another owner of mutable state.
 Use the jobs-owned test seam when patching scheduling.
 
-Four audit exception records are proposed with exact failure evidence; none
-is active. Other inherited handler/lint findings remain blocking. This is not
+Eight exact exception records are proposed: four audit boundaries, post-write
+local refresh, and three purger resource-cleanup boundaries. None is active.
+Other inherited handler/lint findings remain blocking. This is not
 an active required-merge claim. Protected policy
 review, a clean reference PR and administrative rule activation are separate
 acceptance requirements; no agent may change GitHub settings to bypass them.

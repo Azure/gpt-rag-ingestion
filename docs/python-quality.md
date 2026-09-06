@@ -66,16 +66,33 @@ execution after one job fails. Search writes require matching successful SDK
 results; batch deletion uses the SDK's delete operation, counts only confirmed
 keys, and treats missing/excess duplicate results as unconfirmed. NL2SQL purge
 propagates failed scans and partial deletions instead of reporting successful
-totals. Governance-setting read failures no longer silently disable governance.
+totals. Selected-provider read failures now reach governance/startup instead
+of silently becoming disabled defaults. Real missing keys still use defaults,
+Azure read errors retain bounded retries, and unexpected errors propagate.
+The selector order remains ingestion, base, unlabelled; the pinned provider
+lets later matching selections replace earlier duplicate keys. Existing
+environment opt-in and bootstrap source fallbacks are unchanged.
 
 Successful operator response shapes and authentication are unchanged.
 `POST /api/config/apply` reports 500 when schedules could not be applied;
-`PUT /api/config` reports its existing 207 partial-failure shape when the
-remote write succeeded but local cache refresh failed. Manual scheduling and
-these configuration error responses omit downstream exception payloads.
+`PUT /api/config` retains 200/applied after confirmed durable writes even if
+its existing best-effort local cache refresh fails. The same key is not added
+to `failed` merely because of this refresh. Explicit reload/apply operations,
+remote writes and schedule changes retain their own failure contracts.
+Manual scheduling and affected configuration errors omit downstream payloads.
 Audit events never infer success from a missing or malformed result; audit
 sanitizer/export/projection failures still cannot fail the primary operation,
 and warning logs contain stage/type metadata rather than exception payloads.
+Purge run-level failures, including late pages, post-delete counts and
+cancellation, cannot publish a finished summary. Owned Search, Blob and
+credential cleanup is attempted without replacing the primary result; cleanup
+failures produce safe warnings. SDK-result tests deserialize the pinned Search
+model, whose readonly response fields are not populated by constructor kwargs.
+Real audit export failures do not change confirmed adapter outcomes.
+
+The write-adapter evidence does **not** cover `/ingest-documents`, which uploads
+directly through the SDK. Existing endpoint tests still run, but full direct
+upload failure-contract closure is not claimed by these wrapper tests.
 
 `.quality/policy.json` inventories all runtime modules, including flat
 `main`, `dependencies`, and `constants`, package roots, and namespace chunkers.
@@ -133,10 +150,13 @@ requirements manifest must agree with the policy toolchain.
 
 ## Broad handlers and remaining acceptance
 
-The exception ledger contains four exact **proposed**, not active, audit
-records: unexpected sanitizer failure, exporter failure, primary run failure
+The exception ledger contains eight exact **proposed**, not active, records.
+Four cover audit boundaries: unexpected sanitizer failure, exporter failure, primary run failure
 observation/propagation, and document-audit projection failure. Each cites its
 own source fingerprint, boundary-specific rationale and executed failure tests.
+The other four cover the established post-write local refresh contract and
+each of the purger's Search, Blob and credential cleanup boundaries. They do
+not authorize primary-operation success fallbacks.
 **No inherited handler is automatically approved.** The syntax check includes
 bare handlers, builtins aliases, tuples,
 exception groups, and logged/re-raised catches exempted by Ruff BLE001.
@@ -210,14 +230,21 @@ The source baseline is ingestion `38a395586ee1d440a8e1ca8233413f8c25b3fdc2`
 (`9b64a5b962067161cb55252c6e0917a2738ba984`) and UI `v2.6.2`
 (`f59cca919f0bc59631d7bba7f3e223dff3718244`). No unmerged peer is required.
 Schema bytes/hashes, audit event formats, App Configuration selectors,
-credentials, API wire contracts, `VERSION` and runtime dependency pins remain
-unchanged. Exact candidate SHA and command results belong in the component PR.
+credentials, successful API response shapes, `VERSION` and runtime dependency
+pins remain unchanged. The `/config/apply` 200-to-500 correction on genuine
+application failure and propagated worker/provider errors are observable
+contract-restoring changes, not behaviorally identical failure paths.
+Exact candidate SHA and command results belong in the component PR.
 
 Recovery requires no data/configuration migration: revert the component slice
 through a reviewed PR or, under separate deployment authorization, restore
 the previous compatible ingestion artifact. If future release pins change,
 restore the full previous manifest combination. Roll forward a defective gate
 through protected policy review rather than silently disabling required checks.
+Code or artifact rollback does **not** restore deleted Search documents or undo
+persisted App Configuration writes. Any required data recovery must restore
+authoritative source data and reingest under separate authorization; previous
+configuration values must likewise be restored and applied separately.
 No deployment, image publication, live Search validation, cross-component
 integration or artifact recovery rehearsal was authorized or performed here.
 Local unit evidence is not a substitute for those acceptance items.

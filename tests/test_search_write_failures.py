@@ -9,7 +9,10 @@ import sys
 import types
 
 from azure.core.exceptions import AzureError
+from azure.search.documents.models import IndexingResult
 import pytest
+
+from telemetry import audit as real_audit
 
 
 @pytest.fixture
@@ -30,6 +33,7 @@ def search_boundary(monkeypatch):
     spec = importlib.util.spec_from_file_location("search_write_under_test", path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, module)
     spec.loader.exec_module(module)
 
     class Client:
@@ -62,7 +66,10 @@ def search_boundary(monkeypatch):
 
 
 def result(key, succeeded):
-    return types.SimpleNamespace(key=key, succeeded=succeeded, error_message="private downstream detail")
+    return IndexingResult.deserialize({
+        "key": key, "status": succeeded, "statusCode": 200 if succeeded else 400,
+        "errorMessage": "private downstream detail",
+    })
 
 
 @pytest.mark.asyncio
@@ -156,3 +163,26 @@ async def test_unexpected_write_failure_cannot_be_swallowed(search_boundary, ope
             await boundary.delete_document("index", "id", "a")
         else:
             await boundary.delete_documents("index", "id", ["a"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["index", "delete", "batch"])
+async def test_audit_export_failure_cannot_change_a_confirmed_sdk_outcome(
+    search_boundary, monkeypatch, caplog, operation,
+):
+    boundary, client, _ = search_boundary
+    client.result = [result("a", True)]
+    monkeypatch.setattr(sys.modules["search_write_under_test"], "audit", real_audit)
+
+    def fail_export(*args, **kwargs):
+        raise RuntimeError("private exporter detail")
+
+    monkeypatch.setattr(real_audit._logger, "info", fail_export)
+    if operation == "index":
+        assert await boundary.index_document("index", {"id": "a"}) is True
+    elif operation == "delete":
+        assert await boundary.delete_document("index", "id", "a") is None
+    else:
+        assert await boundary.delete_documents("index", "id", ["a"]) == {"deleted": 1, "failed": 0}
+    assert "Audit event export failed" in caplog.text
+    assert "private exporter detail" not in caplog.text

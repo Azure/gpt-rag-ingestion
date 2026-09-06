@@ -65,11 +65,76 @@
       ],
       "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
       "review_by_stage": "initial"
+    },
+    {
+      "id": "post-write-local-refresh-best-effort",
+      "module_id": "api.admin",
+      "symbol": "update_config_settings",
+      "handler_fingerprint": "780610b49341f82792acb0b3ebb0fbf338520963da15e90469a0bd738e0f3868",
+      "caught_types": ["Exception"],
+      "boundary": "Local cache refresh after confirmed durable App Configuration writes",
+      "reason": "The established PUT contract treats only this post-write refresh as best-effort. A refresh failure must not relabel an already applied durable write as failed. Explicit reload/apply operations, remote writes and primary provider reads retain their independent failure contracts.",
+      "failure_outcome": "contractual-best-effort-side-effect",
+      "diagnostic_path": "Warning naming the post-write cache-refresh stage and exception class, without downstream payload",
+      "evidence_tests": ["tests/test_admin_config.py::test_written_config_with_failed_refresh_preserves_applied_success"],
+      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review_by_stage": "initial"
+    },
+    {
+      "id": "nl2sql-search-client-cleanup",
+      "module_id": "jobs.nl2sql_purger",
+      "symbol": "NL2SQLPurger._close_clients_safely",
+      "handler_fingerprint": "e6d6990e1569914b8b6585204468c051d2768715250c0c78ebf80d328f3129b1",
+      "caught_types": ["Exception"],
+      "boundary": "Closing the purger-owned Search adapter in run finalization",
+      "reason": "Search transport cleanup must be attempted but cannot replace the original purge failure or reverse an already confirmed Search outcome. A failed close must still allow Blob and credential cleanup.",
+      "failure_outcome": "contractual-best-effort-side-effect",
+      "diagnostic_path": "NL2SQL Search-client cleanup warning with exception class only",
+      "evidence_tests": [
+        "tests/test_nl2sql_purge_failures.py::test_cleanup_failure_cannot_replace_primary_failure_or_skip_other_clients[_ai_search]",
+        "tests/test_nl2sql_purge_failures.py::test_cleanup_failure_preserves_confirmed_primary_summary[_ai_search]"
+      ],
+      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review_by_stage": "initial"
+    },
+    {
+      "id": "nl2sql-blob-client-cleanup",
+      "module_id": "jobs.nl2sql_purger",
+      "symbol": "NL2SQLPurger._close_clients_safely",
+      "handler_fingerprint": "b38ab3d58d24a9fc5974b50f6649bc0df7e6a9e6ab6c12f8e9e29eeebe5b4ef0",
+      "caught_types": ["Exception"],
+      "boundary": "Closing the purger-owned Blob client in run finalization",
+      "reason": "Preserve the existing non-masking cleanup boundary while making its failure visible. A Blob close failure must not skip credential cleanup, manufacture a finished summary after a failed purge, or invalidate confirmed primary work.",
+      "failure_outcome": "contractual-best-effort-side-effect",
+      "diagnostic_path": "NL2SQL Blob-client cleanup warning with exception class only",
+      "evidence_tests": [
+        "tests/test_nl2sql_purge_failures.py::test_cleanup_failure_cannot_replace_primary_failure_or_skip_other_clients[_blob_service]",
+        "tests/test_nl2sql_purge_failures.py::test_cleanup_failure_preserves_confirmed_primary_summary[_blob_service]"
+      ],
+      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review_by_stage": "initial"
+    },
+    {
+      "id": "nl2sql-credential-cleanup",
+      "module_id": "jobs.nl2sql_purger",
+      "symbol": "NL2SQLPurger._close_clients_safely",
+      "handler_fingerprint": "b97ddd1ebbde95879da37eda638a0dc65cda132f4efff4de4e25b6f9a5cc95e3",
+      "caught_types": ["Exception"],
+      "boundary": "Closing the purger-owned credential after its clients",
+      "reason": "Credential finalization is not a new indexing/deletion operation. Preserve the original primary exception or confirmed result if credential cleanup fails, but emit a safe warning rather than silently passing.",
+      "failure_outcome": "contractual-best-effort-side-effect",
+      "diagnostic_path": "NL2SQL credential-cleanup warning with exception class only",
+      "evidence_tests": [
+        "tests/test_nl2sql_purge_failures.py::test_cleanup_failure_cannot_replace_primary_failure_or_skip_other_clients[_credential]",
+        "tests/test_nl2sql_purge_failures.py::test_cleanup_failure_preserves_confirmed_primary_summary[_credential]"
+      ],
+      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review_by_stage": "initial"
     }
   ],
   "review": {
     "status": "proposed",
     "reference": "https://github.com/Azure/GPT-RAG/pull/689",
-    "rationale": "Four exact audit-boundary proposals with failure evidence, not active approvals. All unreviewed handlers remain blocking; no blanket exemptions."
+    "rationale": "Eight exact proposals: four audit boundaries, confirmed-write cache refresh and three purger cleanup boundaries. All require individual review; none is active."
   }
 }

@@ -191,7 +191,7 @@ def test_apply_does_not_report_ok_when_scheduler_fails(monkeypatch, caplog):
     assert "private scheduler detail" not in caplog.text
 
 
-def test_written_config_with_failed_refresh_reports_partial_failure(monkeypatch, caplog):
+def test_written_config_with_failed_refresh_preserves_applied_success(monkeypatch, caplog):
     client, _, admin = _build_client(monkeypatch, tenant_id=None, claims=None)
     original = admin.get_config
 
@@ -204,9 +204,10 @@ def test_written_config_with_failed_refresh_reports_partial_failure(monkeypatch,
     response = client.put("/api/config", json={
         "updates": [{"key": "CRON_RUN_BLOB_INDEX", "value": "0 * * * *"}]
     })
-    assert response.status_code == 207
+    assert response.status_code == 200
     assert response.json()["applied"] == ["CRON_RUN_BLOB_INDEX"]
-    assert response.json()["failed"]
+    assert response.json()["failed"] == []
+    assert "Failed to refresh AppConfig cache" in caplog.text
     assert "private refresh detail" not in response.text
     assert "private refresh detail" not in caplog.text
 

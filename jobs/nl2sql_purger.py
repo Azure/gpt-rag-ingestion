@@ -220,14 +220,18 @@ class NL2SQLPurger:
 
     async def _close_clients_safely(self):
         try:
+            await self._ai_search.close()
+        except Exception as exc:
+            logging.warning("[nl2sql-purger] Search client cleanup failed (%s)", type(exc).__name__)
+        try:
             if self._blob_service:
                 await self._blob_service.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.warning("[nl2sql-purger] Blob client cleanup failed (%s)", type(exc).__name__)
         try:
             if self._credential and hasattr(self._credential, "close"):
                 res = self._credential.close()
                 if asyncio.iscoroutine(res):
                     await res
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.warning("[nl2sql-purger] Credential cleanup failed (%s)", type(exc).__name__)

@@ -1144,11 +1144,7 @@ async def update_config_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
     try:
         get_config("refresh")
     except Exception as exc:
-        logging.error("Failed to refresh AppConfig cache after PUT /api/config (%s)", type(exc).__name__)
-        failed.extend(
-            {"key": key, "error": "Setting written, but local cache refresh failed."}
-            for key in applied
-        )
+        logging.warning("Failed to refresh AppConfig cache after PUT /api/config (%s)", type(exc).__name__)
 
     # If any cron expression was applied, reschedule the matching job so the
     # change takes effect without a container restart.
