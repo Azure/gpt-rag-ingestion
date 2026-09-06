@@ -122,6 +122,8 @@ unrelated local import hide a module-level alias. It follows first-party
 reexports, class-member exception aliases and static attribute assignments;
 unresolved catch types cannot consume an approval. A changed resolved catch
 type invalidates its record even when the handler body itself is unchanged.
+Implicit exception/loader builtins remain possible bindings when the
+conservative collector cannot prove that a local shadow applies at the site.
 Variable-loader records are bound to the qualified symbol and call syntax,
 must be active, and cannot be reused for a second site. Relative literal
 imports use Python's package resolution, including keyword package arguments;

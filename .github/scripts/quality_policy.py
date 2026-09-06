@@ -223,7 +223,10 @@ class SourceBindings:
             if module in self.class_parents:
                 return self.resolve(self.class_parents[module], name, seen)
             return self.mutation_values(module + "." + name, seen) or {name}
-        resolved = set()
+        # Module-wide collection cannot prove that a local shadow applies here.
+        # Retain implicit builtins rather than letting an unrelated scope hide them.
+        implicit = {"Exception", "BaseException", "ExceptionGroup", "BaseExceptionGroup", "__import__", "getattr"}
+        resolved = {name} if module not in self.class_parents and first in implicit else set()
         for kind, value, rest in entries:
             if kind == "import" and isinstance(value, str):
                 resolved.update(self.imported(value + ("." + rest if rest else ""), seen))

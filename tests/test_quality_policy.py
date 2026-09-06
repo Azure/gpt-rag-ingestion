@@ -192,6 +192,18 @@ def test_frozen_review_scope_alias_reproductions(source, rule):
     assert rule in rules(findings)
 
 
+@pytest.mark.parametrize(("source", "rule"), [
+    ("def run() -> None:\n try:\n  raise TypeError('failure')\n except Exception:\n  raise\n"
+     "def unused():\n from builtins import ValueError as Exception", "unapproved-handler"),
+    ("def load(name: str) -> object:\n return __import__(name)\n"
+     "def unused():\n from json import loads as __import__", "dynamic-import"),
+], ids=["implicit-exception", "implicit-loader"])
+def test_implicit_builtin_survives_unrelated_local_binding(source, rule):
+    sources = {"main.py": source}
+    findings = quality.analyze_sources(sources) + quality.exception_findings(sources, [], {})
+    assert rule in rules(findings)
+
+
 def test_reexported_narrow_class_and_builtin_remain_narrow():
     sources = {
         "errors.py": "class Failure(Exception):\n pass\nfrom builtins import ValueError as Invalid",
