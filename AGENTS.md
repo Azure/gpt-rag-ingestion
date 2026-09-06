@@ -103,7 +103,7 @@ documented in [docs/python-quality.md](docs/python-quality.md). Use Python 3.12:
 ```text
 python -m pip install -r requirements-quality.txt
 python -m pytest -q tests/test_quality_policy.py tests/test_jobs_runtime.py
-python .github/scripts/check-quality.py --check all --base-ref <protected-base-sha> --report .artifacts/quality.json
+python -I .github/scripts/check-quality.py --check all --base-ref <protected-base-sha> --report .artifacts/quality.json
 ```
 
 `.quality/typing-scope.json` protects the audit contract/sanitizer seeds and

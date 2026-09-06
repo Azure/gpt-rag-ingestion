@@ -14,9 +14,11 @@ import hashlib
 import io
 from importlib.util import resolve_name
 import json
+import os
 from pathlib import Path, PurePosixPath
 import re
 import subprocess
+import tempfile
 import tokenize
 from typing import Any, Iterator
 
@@ -59,15 +61,46 @@ def unique_keys(pairs: list[tuple[str, Any]]) -> dict:
     return result
 
 
-def run_tool(command: list[str], cwd: Path, timeout: int = 300) -> subprocess.CompletedProcess:
+def run_tool(command: list[str], cwd: Path, timeout: int = 300, *,
+             source_root: Path | None = None) -> subprocess.CompletedProcess:
+    env = {key: value for key, value in os.environ.items()
+           if not key.upper().startswith(("PYTHON", "MYPY", "RUFF", "IMPORTLINTER"))}
+    if source_root is not None:
+        # Mypy reads these files statically; Python never imports from this path.
+        env["MYPYPATH"] = str(source_root)
     try:
         result = subprocess.run(command, cwd=cwd, text=True, encoding="utf-8",
-                                capture_output=True, timeout=timeout)
+                                capture_output=True, timeout=timeout, env=env)
     except (OSError, UnicodeError, subprocess.TimeoutExpired) as exc:
         raise QualityError(f"Tool execution failed: {type(exc).__name__}") from exc
     if result.returncode not in (0, 1):
         raise QualityError(f"Tool execution returned {result.returncode}; inspect local tool diagnostics")
     return result
+
+
+def git_output(root: Path, *args: str, missing: bool = False) -> str:
+    executable = None
+    for directory in os.get_exec_path():
+        parent = Path(directory).resolve()
+        candidate = parent / ("git.exe" if os.name == "nt" else "git")
+        if (not candidate.resolve().is_relative_to(root.resolve())
+                and candidate.is_file() and os.access(candidate, os.X_OK)):
+            executable = str(candidate.resolve())
+            break
+    if executable is None:
+        raise QualityError("Git must be installed outside the candidate checkout")
+    env = {key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")}
+    env.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull, GIT_NO_REPLACE_OBJECTS="1")
+    with tempfile.TemporaryDirectory(prefix="ingestion-quality-git-") as temporary:
+        result = subprocess.run(
+            [executable, "-c", "core.fsmonitor=false", "-C", str(root), *args],
+            cwd=temporary, env=env, capture_output=True, text=True, encoding="utf-8", timeout=30,
+        )
+    if result.returncode:
+        if missing and result.returncode == 128:
+            return ""
+        raise QualityError(f"Git input unavailable: {args[0]}")
+    return result.stdout
 
 
 def module_name(path: str) -> str:
@@ -672,22 +705,35 @@ def annotations(tree: ast.Module) -> dict[str, dict[str, str]]:
     return result
 
 
-def suppressions(source: str) -> Counter:
+def suppressions(source: str, path: str = "main.py",
+                 bindings: SourceBindings | None = None) -> Counter:
     tokens = tokenize.generate_tokens(io.StringIO(source).readline)
     tree = ast.parse(source)
-    return Counter((token.string.strip(), source_context(tree, token.start[0]))
-                   for token in tokens if token.type == tokenize.COMMENT
-                   and re.search(r"(?:noqa|type:\s*ignore|mypy:|pyright:)", token.string, re.I))
+    result = Counter((token.string.strip(), source_context(tree, token.start[0]))
+                     for token in tokens if token.type == tokenize.COMMENT
+                     and re.search(r"(?:noqa|type:\s*ignore|mypy:|pyright:)", token.string, re.I))
+    resolver = bindings or SourceBindings({path: tree})
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            for decorator in node.decorator_list:
+                targets = resolver.expression(module_name(path), decorator)
+                if targets & {"typing.no_type_check", "typing_extensions.no_type_check",
+                              "typing.no_type_check_decorator", "typing_extensions.no_type_check_decorator"}:
+                    result[("no_type_check", source_context(tree, node.lineno))] += 1
+    return result
 
 
 def source_policy(base_sources: dict[str, str], sources: dict[str, str],
                   modules: dict[str, str], base_modules: dict[str, str],
                   covered: list[str]) -> list[dict]:
     result = []
+    old_bindings = SourceBindings(parse_sources(base_sources))
+    new_bindings = SourceBindings(parse_sources(sources))
     for module_id, path in modules.items():
-        old = base_sources.get(base_modules.get(module_id, ""), "")
+        old_path = base_modules.get(module_id, path)
+        old = base_sources.get(old_path, "")
         current = sources[path]
-        if suppressions(current) - suppressions(old):
+        if suppressions(current, path, new_bindings) - suppressions(old, old_path, old_bindings):
             result.append(finding("new-suppression", path, reason="Suppression/directive change requires protected review"))
         if module_id in covered:
             old_annotations = annotations(ast.parse(old))

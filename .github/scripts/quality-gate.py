@@ -5,7 +5,9 @@ import json
 import logging
 import os
 from pathlib import Path
+import sys
 
+sys.path.append(str(Path(__file__).resolve().parent))
 import quality_policy as q
 
 
@@ -15,6 +17,8 @@ def main() -> int:
     parser.add_argument("--base-sha", required=True)
     parser.add_argument("--head-sha", required=True)
     args = parser.parse_args()
+    if not sys.flags.isolated:
+        parser.error("Run the protected aggregate with python -I to isolate Python startup")
     try:
         needs = json.loads(os.environ["NEEDS_JSON"])
         jobs = {name: value["result"] for name, value in needs.items()}

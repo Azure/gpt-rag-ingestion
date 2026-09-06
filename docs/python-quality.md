@@ -23,8 +23,8 @@ git fetch origin develop
 $Base = git merge-base HEAD origin/develop
 python -m pytest -q tests/test_quality_policy.py tests/test_jobs_runtime.py
 python -m pytest tests -q --junitxml=.artifacts/pytest.xml -o junit_family=legacy
-python .github/scripts/quality-evidence.py --junit .artifacts/pytest.xml --base-ref $Base --report .artifacts/test-evidence.json
-python .github/scripts/check-quality.py --check all --base-ref $Base --test-evidence .artifacts/test-evidence.json --report .artifacts/quality.json
+python -I .github/scripts/quality-evidence.py --junit .artifacts/pytest.xml --base-ref $Base --report .artifacts/test-evidence.json
+python -I .github/scripts/check-quality.py --check all --base-ref $Base --test-evidence .artifacts/test-evidence.json --report .artifacts/quality.json
 ```
 
 Use the PR's actual fetched target SHA for release-target work. `--check`
@@ -36,6 +36,27 @@ Every accepted test must have passed in that same candidate/run/attempt.
 The report's parent directory is created; code and policy are never rewritten.
 Exit codes are **0 passed, 1 violations, 2 incomplete/invalid execution**.
 An absent report or nonzero process result is not success.
+
+Use `python -I` for the checker, evidence binder and aggregate: startup isolation
+must apply before Python reads candidate `PYTHONPATH` or startup hooks. Child
+tools also use the current absolute interpreter in isolated mode with neutral
+temporary working directories. Ruff receives absolute source paths; mypy's
+source path is static input, not Python's import path. Grimp and Import Linter
+receive non-executable package specs for source directories, so even package
+initializers cannot execute. The Import Linter CLI's cwd insertion is avoided
+through its existing application API, with an explicit completion receipt.
+Missing collectors or tool failures remain errors, not clean graph results.
+Plugins, alternate Python executables, external config inheritance and custom
+contract loaders are unsupported and rejected before launch.
+
+Static CI jobs install runtime requirements and quality pins from the selected
+protected checkout, from a neutral directory with isolated Python/pip. Candidate
+dependency installation remains part of the separate unprivileged behavioral
+job, not static analysis. Installed tooling and its environment are trusted;
+this is source-import isolation, not a general-purpose OS sandbox. Git metadata
+reads resolve an executable outside the candidate, disable filesystem-monitor
+hooks and ignore inherited Git overrides. First adoption still runs candidate
+policy code under the explicitly blocked bootstrap path.
 
 Pinned versions exercised locally: Python 3.12.9, Ruff 0.16.5, mypy 2.3.1,
 Import Linter 2.14, Grimp 3.16. The plan's Ruff 0.16.6, Import Linter 2.15 and
@@ -143,6 +164,8 @@ stage. Same-count substitutions, duplication and stale allowances fail.
 Moves require one-to-one mappings retaining coverage and identity. Removed
 annotations, shifted/new suppressions, nested configs and reduced scope fail
 policy review. Mypy's cache is not a debt baseline.
+Decorator-based `no_type_check` suppression, including qualified/imported aliases
+and local reexports, is covered as well as comment directives.
 Cross-root moves, and moves that change coverage of a protected import
 relationship, also require policy review even if the stable module ID and
 declared area are retained. Record parsing rejects missing/unknown fields,

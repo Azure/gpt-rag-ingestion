@@ -16,6 +16,7 @@ import tempfile
 import time
 import tomllib
 
+sys.path.append(str(Path(__file__).resolve().parent))
 import quality_policy as q
 
 
@@ -23,19 +24,14 @@ LOG = logging.getLogger("ingestion.quality")
 POLICY_FILES = (".quality/policy.json", ".quality/typing-scope.json",
                 ".quality/typing-baseline.json", ".quality/exceptions.json")
 PROTECTED_FILES = (".github/scripts/check-quality.py", ".github/scripts/quality_policy.py",
+                   ".github/scripts/quality-tool.py",
                    ".github/scripts/quality-evidence.py", ".github/scripts/quality-gate.py",
                    "tests/test_quality_policy.py",
                    ".github/workflows/tests.yml", ".github/CODEOWNERS", "requirements-quality.txt")
 
 
 def git(root: Path, *args: str, missing: bool = False) -> str:
-    result = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True,
-                            encoding="utf-8", timeout=30)
-    if result.returncode:
-        if missing and result.returncode == 128:
-            return ""
-        raise q.QualityError(f"Git input unavailable: {args[0]}")
-    return result.stdout
+    return q.git_output(root, *args, missing=missing)
 
 
 def discover(root: Path) -> dict[str, str]:
@@ -277,6 +273,12 @@ def validate_pins(manifest: str, policy: dict) -> None:
 def policy_settings(config: str) -> dict:
     try:
         tool = tomllib.loads(config)["tool"]
+        if (tool["mypy"].get("plugins") or tool["mypy"].get("python_executable")
+                or tool["mypy"].get("mypy_path") or tool["ruff"].get("extend")
+                or tool["importlinter"].get("contract_types")
+                or any(contract.get("type") not in {"forbidden", "protected", "layers", "independence", "acyclic_siblings"}
+                       for contract in tool["importlinter"].get("contracts", []))):
+            raise q.QualityError("Executable or external tool configuration is not supported")
         return {key: tool[key] for key in ("ruff", "mypy", "importlinter")}
     except (KeyError, tomllib.TOMLDecodeError) as exc:
         raise q.QualityError("Missing or invalid tool configuration") from exc
@@ -349,8 +351,9 @@ def policy_findings(root: Path, base: str, current: list[dict], protected: list[
 
 def lint(root: Path, config: Path, sources: dict, entries: list[dict],
          modules: dict[str, str], review_stage: str) -> tuple[list[dict], dict]:
-    result = q.run_tool([sys.executable, "-m", "ruff", "check", "--config", str(config),
-                         "--output-format", "json", "--no-cache", *sources], root)
+    result = q.run_tool([sys.executable, "-I", "-m", "ruff", "check", "--config", str(config),
+                         "--output-format", "json", "--no-cache",
+                         *[str(root / path) for path in sources]], config.parent)
     try:
         diagnostics = json.loads(result.stdout)
     except json.JSONDecodeError as exc:
@@ -388,8 +391,11 @@ def lint(root: Path, config: Path, sources: dict, entries: list[dict],
 def typing(root: Path, config: Path, sources: dict, modules: dict, covered: set,
            baseline: dict) -> tuple[list[dict], dict]:
     paths = sorted(modules[module_id] for module_id in covered)
-    result = q.run_tool([sys.executable, "-m", "mypy", "--config-file", str(config),
-                         "--no-incremental", "--disallow-untyped-defs", "--output", "json", *paths], root)
+    result = q.run_tool([sys.executable, "-I", "-m", "mypy", "--config-file", str(config),
+                         "--no-incremental", "--cache-dir", str(config.parent / "mypy-cache"),
+                         "--disallow-untyped-defs", "--output", "json",
+                         *[str(root / path) for path in paths]], config.parent,
+                        source_root=root)
     errors, imported = [], []
     path_ids = {path: module_id for module_id, path in modules.items()}
     for line in result.stdout.splitlines():
@@ -406,7 +412,7 @@ def typing(root: Path, config: Path, sources: dict, modules: dict, covered: set,
         if item["severity"] != "error":
             continue
         path = Path(item["file"])
-        path = (root / path).resolve() if not path.is_absolute() else path.resolve()
+        path = (config.parent / path).resolve() if not path.is_absolute() else path.resolve()
         if not path.is_relative_to(root):
             raise q.QualityError("Mypy emitted an out-of-repository source error")
         relative = path.relative_to(root).as_posix()
@@ -433,13 +439,9 @@ def typing(root: Path, config: Path, sources: dict, modules: dict, covered: set,
 
 def architecture(root: Path, config: Path, sources: dict, policy: dict) -> tuple[list[dict], dict]:
     findings = q.analyze_sources(sources, policy["contracts"], policy["dynamic_imports"])
-    script = (
-        "import grimp,json; "
-        "g=grimp.build_graph('api','chunking','jobs','telemetry','tools','utils',"
-        "cache_dir=None,exclude_type_checking_imports=False); "
-        "print(json.dumps({m:sorted(g.find_modules_directly_imported_by(m)) for m in sorted(g.modules)}))"
-    )
-    result = q.run_tool([sys.executable, "-c", script], root)
+    runner = Path(__file__).with_name("quality-tool.py")
+    result = q.run_tool([sys.executable, "-I", str(runner), "grimp",
+                         "--root", str(root), "--config", str(config)], config.parent)
     if result.returncode:
         raise q.QualityError("Grimp collection failed")
     try:
@@ -453,7 +455,12 @@ def architecture(root: Path, config: Path, sources: dict, policy: dict) -> tuple
         for target in targets:
             if target not in graph[importer]:
                 raise q.QualityError(f"Import collectors disagree: {importer} -> {target}")
-    result = q.run_tool(["lint-imports", "--config", str(config), "--no-cache"], root)
+    result = q.run_tool([sys.executable, "-I", str(runner), "import-linter",
+                         "--root", str(root), "--config", str(config)], config.parent)
+    receipts = [line.removeprefix("QUALITY_IMPORT_LINTER_RESULT=") for line in result.stdout.splitlines()
+                if line.startswith("QUALITY_IMPORT_LINTER_RESULT=")]
+    if receipts != [json.dumps({"passed": result.returncode == 0})]:
+        raise q.QualityError("Import Linter execution incomplete; missing result receipt")
     if result.returncode:
         findings.append(q.finding("import-linter-contract", reason="Package contract failed; run lint-imports locally"))
     return findings, {"modules": len(graph), "edges": sum(map(len, graph.values())),
@@ -492,6 +499,8 @@ def main() -> int:
     }
     exit_code = 2
     try:
+        if not sys.flags.isolated:
+            raise q.QualityError("Run the protected checker with python -I to isolate Python startup")
         base = git(root, "rev-parse", "--verify", f"{args.base_ref}^{{commit}}").strip()
         head = git(root, "rev-parse", "HEAD").strip()
         report.update(base_sha=base, head_sha=head)

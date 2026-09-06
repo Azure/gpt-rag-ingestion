@@ -5,9 +5,10 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import subprocess
+import sys
 import xml.etree.ElementTree as ET
 
+sys.path.append(str(Path(__file__).resolve().parent))
 import quality_policy as q
 
 
@@ -43,10 +44,12 @@ def main() -> int:
     parser.add_argument("--base-ref", required=True)
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
+    if not sys.flags.isolated:
+        parser.error("Run the evidence binder with python -I to isolate Python startup")
     record = {
         "schema_version": 1,
-        "base_sha": subprocess.check_output(["git", "rev-parse", "--verify", args.base_ref], text=True).strip(),
-        "head_sha": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+        "base_sha": q.git_output(Path.cwd(), "rev-parse", "--verify", args.base_ref).strip(),
+        "head_sha": q.git_output(Path.cwd(), "rev-parse", "HEAD").strip(),
         "run_id": os.environ.get("GITHUB_RUN_ID", "local"),
         "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT", "local"),
         "junit_sha": hashlib.sha256(args.junit.read_bytes()).hexdigest(),

@@ -6,6 +6,7 @@ import copy
 import ast
 import importlib.util
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -506,7 +507,7 @@ def policy_repository(tmp_path):
     trusted = tmp_path / "trusted"
     trusted.mkdir()
     repository = SCRIPT.parents[2]
-    for name in ("quality_policy.py", "check-quality.py", "quality-gate.py", "quality-evidence.py"):
+    for name in ("quality_policy.py", "check-quality.py", "quality-gate.py", "quality-evidence.py", "quality-tool.py"):
         shutil.copyfile(repository / ".github" / "scripts" / name, trusted / name)
     (root / ".quality").mkdir()
     (root / "main.py").write_text("def value() -> int:\n return 1\n", encoding="utf-8")
@@ -546,15 +547,141 @@ def policy_repository(tmp_path):
     return root, trusted
 
 
-def invoke_check(repository, check):
+def invoke_check(repository, check, *, env=None):
     root, trusted = repository
     report_path = root / ".artifacts" / f"{check}.json"
     result = subprocess.run(
-        [sys.executable, str(trusted / "check-quality.py"), "--repository", str(root),
+        [sys.executable, "-I", str(trusted / "check-quality.py"), "--repository", str(root),
          "--base-ref", "HEAD", "--check", check, "--report", str(report_path)],
-        cwd=root, capture_output=True, text=True, timeout=90,
+        cwd=root, capture_output=True, text=True, timeout=90, env=env,
     )
     return result, json.loads(report_path.read_text(encoding="utf-8"))
+
+
+def source_packages(root):
+    for package in ("api", "chunking", "jobs", "telemetry", "tools", "utils"):
+        (root / package).mkdir(exist_ok=True)
+        (root / package / "__init__.py").write_text(
+            "raise AssertionError('candidate package executed')\n", encoding="utf-8",
+        )
+    (root / "api" / "routes.py").write_text("from tools import client\n", encoding="utf-8")
+    (root / "tools" / "client.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+
+@pytest.mark.parametrize(("check", "shadow"), [
+    ("lint", "ruff.py"), ("typing", "mypy.py"), ("architecture", "grimp.py"),
+    ("architecture", "importlinter.py"), ("lint", "json.py"),
+])
+def test_static_tools_do_not_import_candidate_shadows(policy_repository, check, shadow):
+    root, _ = policy_repository
+    marker = root / "source-executed"
+    (root / shadow).write_text(
+        f"from pathlib import Path\nPath({str(marker)!r}).touch()\nraise SystemExit(0)\n",
+        encoding="utf-8",
+    )
+    if check == "architecture":
+        source_packages(root)
+    result, report_data = invoke_check(policy_repository, check)
+    assert not marker.exists()
+    assert result.returncode in (0, 1), report_data
+    assert check in report_data["coverage"], report_data
+
+
+@pytest.mark.parametrize("check", ["lint", "typing", "architecture", "policy"])
+def test_static_evaluator_ignores_pythonpath_startup_hooks(policy_repository, tmp_path, check):
+    root, _ = policy_repository
+    if check == "architecture":
+        source_packages(root)
+    marker = tmp_path / "hook-executed"
+    hooks = tmp_path / "hooks"
+    hooks.mkdir()
+    (hooks / "sitecustomize.py").write_text(
+        f"from pathlib import Path\nPath({str(marker)!r}).touch()\n", encoding="utf-8",
+    )
+    result, report_data = invoke_check(
+        policy_repository, check, env=dict(os.environ, PYTHONPATH=str(hooks)),
+    )
+    assert not marker.exists()
+    assert result.returncode == 0, report_data
+
+
+def test_isolated_graph_still_detects_real_forbidden_imports(policy_repository):
+    root, _ = policy_repository
+    source_packages(root)
+    result, report_data = invoke_check(policy_repository, "architecture")
+    assert result.returncode == 0, report_data
+    assert report_data["coverage"]["architecture"]["edges"] > 0
+    (root / "jobs" / "worker.py").write_text("from api import routes\n", encoding="utf-8")
+    result, report_data = invoke_check(policy_repository, "architecture")
+    assert result.returncode == 1, report_data
+    assert "import-linter-contract" in rules(report_data["findings"])
+
+
+def test_missing_source_package_is_execution_error_not_contract_failure(policy_repository):
+    result, report_data = invoke_check(policy_repository, "architecture")
+    assert result.returncode == 2
+    assert "execution-error" in rules(report_data["findings"])
+
+
+def test_static_tools_ignore_candidate_path_executables(policy_repository):
+    root, _ = policy_repository
+    source_packages(root)
+    marker = root / "path-executed"
+    script = f'#!{sys.executable}\nfrom pathlib import Path\nPath({str(marker)!r}).touch()\n'
+    for name in ("lint-imports", "git"):
+        executable = root / name
+        executable.write_text(script, encoding="utf-8")
+        executable.chmod(0o755)
+        (root / f"{name}.cmd").write_text(f"@echo executed > \"{marker}\"\n", encoding="utf-8")
+    result, report_data = invoke_check(
+        policy_repository, "architecture",
+        env=dict(os.environ, PATH=str(root) + os.pathsep + os.environ["PATH"]),
+    )
+    assert not marker.exists()
+    assert result.returncode == 0, report_data
+
+
+@pytest.mark.parametrize(("prefix", "decorator"), [
+    ("import typing", "typing.no_type_check"),
+    ("from typing import no_type_check as unchecked", "unchecked"),
+    ("import typing as t\nskip = t.no_type_check", "skip"),
+])
+def test_no_type_check_decorators_cannot_erase_type_errors(policy_repository, prefix, decorator):
+    root, _ = policy_repository
+    (root / "main.py").write_text(
+        f"{prefix}\n@{decorator}\ndef value() -> int:\n return 'bad'\n", encoding="utf-8",
+    )
+    result, report_data = invoke_check(policy_repository, "policy")
+    assert result.returncode == 1, report_data
+    assert "new-suppression" in rules(report_data["findings"])
+
+
+@pytest.mark.parametrize(("table", "setting"), [
+    ("mypy", 'plugins = ["candidate_plugin"]'),
+    ("mypy", 'python_executable = "candidate-python"'),
+    ("mypy", 'mypy_path = "candidate-path"'),
+    ("ruff", 'extend = "candidate.toml"'),
+    ("importlinter", 'contract_types = ["candidate: candidate_plugin.Contract"]'),
+])
+def test_executable_tool_configuration_rejected_before_launch(policy_repository, table, setting):
+    root, _ = policy_repository
+    marker = root / "plugin-executed"
+    (root / "candidate_plugin.py").write_text(
+        f"from pathlib import Path\nPath({str(marker)!r}).touch()\n", encoding="utf-8",
+    )
+    config = root / "pyproject.toml"
+    config.write_text(config.read_text().replace(f"[tool.{table}]", f"[tool.{table}]\n{setting}"),
+                      encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=root, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "--quiet", "-m",
+         "test: unsafe protected config\n\nCo-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>"],
+        cwd=root, check=True, capture_output=True,
+    )
+    result, report_data = invoke_check(policy_repository, "typing")
+    assert not marker.exists()
+    assert result.returncode == 2, report_data
+    assert "execution-error" in rules(report_data["findings"])
 
 
 @pytest.mark.parametrize(("record_name", "field", "value"), [

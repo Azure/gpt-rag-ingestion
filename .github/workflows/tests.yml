@@ -39,7 +39,7 @@ jobs:
       - name: Run unit tests
         run: python -m pytest tests -q --junitxml=.artifacts/pytest.xml -o junit_family=legacy
       - name: Bind test evidence
-        run: python .github/scripts/quality-evidence.py --junit .artifacts/pytest.xml --base-ref "$BASE_SHA" --report .artifacts/test-evidence.json
+        run: python -I .github/scripts/quality-evidence.py --junit .artifacts/pytest.xml --base-ref "$BASE_SHA" --report .artifacts/test-evidence.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
@@ -73,8 +73,9 @@ jobs:
           fi
       - name: Install runtime and protected quality dependencies
         run: |
-          python -m pip install -r requirements.txt
-          python -m pip install -r "$QUALITY_HOME/requirements-quality.txt"
+          cd "$RUNNER_TEMP"
+          python -I -m pip --isolated install -r "$QUALITY_HOME/requirements.txt"
+          python -I -m pip --isolated install -r "$QUALITY_HOME/requirements-quality.txt"
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         if: github.job == 'exceptions'
         with:
@@ -90,7 +91,7 @@ jobs:
           if test "$CHECK_NAME" = exceptions; then
             evidence=(--test-evidence .artifacts/test-evidence.json)
           fi
-          python "$QUALITY_HOME/.github/scripts/check-quality.py" \
+          python -I "$QUALITY_HOME/.github/scripts/check-quality.py" \
             --repository "$GITHUB_WORKSPACE" --check "$CHECK_NAME" \
             --base-ref "$BASE_SHA" --report ".artifacts/$CHECK_NAME.json" "${evidence[@]}"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -158,5 +159,5 @@ jobs:
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
         run: |
-          python "$QUALITY_HOME/.github/scripts/quality-gate.py" \
+          python -I "$QUALITY_HOME/.github/scripts/quality-gate.py" \
             --reports .artifacts --base-sha "$BASE_SHA" --head-sha "$HEAD_SHA"

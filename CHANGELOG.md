@@ -23,6 +23,12 @@
 
 ### Fixed
 
+- **Static checks cannot import candidate tool shadows.** Launch the protected
+  evaluator and tools with isolated Python, neutral working directories and
+  non-executable source package specs. Reject executable tool configuration,
+  isolate Git metadata reads, and inventory decorator-based typing suppressions
+  so candidate startup hooks, loaders and aliases cannot silently bypass checks.
+
 - **Quality-policy mutations cannot hide reviewed boundaries.** Reject malformed
   records and mismatched tool pins; retain conflicting lexical aliases, resolve
   first-party and class-member exception bindings, invalidate changed catch
