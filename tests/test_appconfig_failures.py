@@ -22,6 +22,7 @@ def provider(values):
     instance._update_lock = threading.Lock()
     instance._trim_prefixes = []
     instance._feature_flag_enabled = False
+    instance._configuration_mapper = None
     return instance
 
 
@@ -86,30 +87,47 @@ def test_constructor_preserves_selectors_and_sdk_last_selected_value(monkeypatch
     appconfig = importlib.import_module("tools.appconfig")
     monkeypatch.setenv("APP_CONFIG_ENDPOINT", "https://configuration.example.test")
     monkeypatch.delenv("allow_environment_variables", raising=False)
+    monkeypatch.delenv("AZURE_APPCONFIG_CONNECTION_STRING", raising=False)
     captured = {}
     for name in ("ChainedTokenCredential", "ManagedIdentityCredential", "AzureCliCredential",
                  "AsyncChainedTokenCredential", "AsyncManagedIdentityCredential", "AsyncAzureCliCredential"):
         monkeypatch.setattr(appconfig, name, lambda *args, **kwargs: object())
 
+    class Pages:
+        etag = "fixture-page"
+
+        def __init__(self, settings):
+            self.pages = iter([settings])
+
+        def by_page(self):
+            return self
+
+        def __iter__(self):
+            return self
+
+        def __next__(self):
+            return next(self.pages)
+
     class Service:
         def list_configuration_settings(self, *, key_filter, label_filter, **kwargs):
             assert key_filter == "*"
             label = None if label_filter in (None, "\0") else label_filter
-            return [ConfigurationSetting(key="SHARED", label=label, value={
+            return Pages([ConfigurationSetting(key="SHARED", label=label, value={
                 "gpt-rag-ingestion": "ingestion", "gpt-rag": "base", None: "unlabelled",
-            }[label])]
+            }[label])])
 
     def load(**kwargs):
         captured.update(kwargs)
         wrapper = object.__new__(_ConfigurationClientWrapper)
         wrapper._client = Service()
-        settings, _ = wrapper.load_configuration_settings(kwargs["selects"], {})
+        settings, _ = wrapper.load_configuration_settings(kwargs["selects"])
         instance = provider({})
-        instance._dict = instance._process_configurations(settings)
+        instance._dict = instance._process_configurations(settings, wrapper)
         return instance
 
     monkeypatch.setattr(appconfig, "load", load)
     config = appconfig.AppConfigClient()
+    assert isinstance(config.client, AzureAppConfigurationProvider)
     assert [item.label_filter for item in captured["selects"][:2]] == ["gpt-rag-ingestion", "gpt-rag"]
     assert len(captured["selects"]) == 3
     assert captured["selects"][2].label_filter in (None, "\0")
