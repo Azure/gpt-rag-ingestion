@@ -33,6 +33,10 @@ deletion counts now require confirmed results; worker and governance failures
 propagate, and genuine configuration-application failures are explicit.
 Confirmed configuration writes retain their existing success response if the
 best-effort local refresh fails. Startup jobs retain independent failure isolation.
+Direct `/ingest-documents` uploads now count only matching confirmed Search
+results while preserving the API-key boundary, per-record response, and ACL
+fields. Expected SDK/parser failures keep explicit error results; unexpected
+adapter failures are not retried or disguised as missing configuration/data.
 
 ## Governance and audit events
 

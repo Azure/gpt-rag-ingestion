@@ -2,6 +2,25 @@
   "schema_version": 1,
   "entries": [
     {
+      "id": "direct-upload-record-failure",
+      "module_id": "main",
+      "symbol": "ingest_documents",
+      "handler_fingerprint": "6d516c396924b6bf852e15255a06225165e05a1342f5829667d03186f3109905",
+      "caught_types": ["Exception"],
+      "boundary": "Per-record direct Search batch upload in the API-key ingestion endpoint",
+      "reason": "The established endpoint returns a 200 envelope with explicit per-record errors instead of aborting all submitted records. SDK transport and malformed-response failures must remain failed records, never inferred uploads. Confirmation is computed from matching requested keys before indexedChunks is assigned; this proposal does not cover chunking, embedding, optional Blob persistence or authorization.",
+      "failure_outcome": "explicit-failure-translation",
+      "diagnostic_path": "Per-record Batch indexing error plus stage/exception-class log without downstream payload",
+      "evidence_tests": [
+        "tests/test_ingest_documents_failures.py::test_direct_upload_requires_matching_confirmation[transport-0-1]",
+        "tests/test_ingest_documents_failures.py::test_direct_upload_requires_matching_confirmation[malformed-0-1]",
+        "tests/test_ingest_documents_failures.py::test_direct_upload_requires_matching_confirmation[duplicate-0-2]",
+        "tests/test_ingest_documents_failures.py::test_direct_upload_audit_export_failure_keeps_confirmed_result"
+      ],
+      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review_by_stage": "initial"
+    },
+    {
       "id": "audit-unexpected-sanitizer-failure",
       "module_id": "telemetry.audit",
       "symbol": "_emit",
@@ -135,6 +154,6 @@
   "review": {
     "status": "proposed",
     "reference": "https://github.com/Azure/GPT-RAG/pull/689",
-    "rationale": "Eight exact proposals: four audit boundaries, confirmed-write cache refresh and three purger cleanup boundaries. All require individual review; none is active."
+    "rationale": "Nine exact proposals: four audit boundaries, confirmed-write cache refresh, three purger cleanup boundaries and direct-upload per-record failure translation. All require individual review; none is active."
   }
 }

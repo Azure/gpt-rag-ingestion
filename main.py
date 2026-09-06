@@ -5,10 +5,11 @@ import logging
 import os
 import time
 import subprocess
+from collections import Counter
 import jsonschema
 import uvicorn
 from tzlocal import get_localzone
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -64,7 +65,7 @@ def _resolve_timezone():
     if tz_name:
         try:
             return ZoneInfo(tz_name)
-        except Exception:
+        except (ZoneInfoNotFoundError, ValueError):
             logging.warning(f"Invalid SCHEDULER_TIMEZONE '{tz_name}', defaulting to machine timezone")
     return get_localzone()
 
@@ -579,6 +580,7 @@ async def ingest_documents(request: Request):
     from chunking import DocumentChunker
     from tools import AzureOpenAIClient
     from tools import AISearchClient
+    from tools.aisearch import confirmed_result_keys
     from tools.blob import upload_bytes_to_container
     from jobs.sharepoint_ingestion_config import _make_chunk_key
 
@@ -607,7 +609,7 @@ async def ingest_documents(request: Request):
         # --- Decode base64 ---
         try:
             file_bytes = base64.b64decode(file_b64)
-        except Exception as e:
+        except ValueError as e:
             errors.append({"message": f"Error decoding base64: {e}"})
             results.append({"recordId": record_id, "errors": errors, "warnings": warnings})
             continue
@@ -713,16 +715,14 @@ async def ingest_documents(request: Request):
 
         if documents_to_upload:
             try:
-                logging.info("About to load")
                 client = await search_client.get_search_client(index_name)
                 result = await client.upload_documents(documents=documents_to_upload)
-                logging.info(result)
-
-                indexed_count = sum(1 for r in result if r.succeeded)
-
-                failed = [r for r in result if not r.succeeded]
-                for f in failed:
-                    errors.append({"message": f"Indexing failed for document id {f.key}"})
+                requested_keys = [document["id"] for document in documents_to_upload]
+                confirmed_keys = confirmed_result_keys(requested_keys, result)
+                indexed_count = len(confirmed_keys)
+                failed_keys = Counter(requested_keys) - Counter(confirmed_keys)
+                for key in failed_keys.elements():
+                    errors.append({"message": f"Indexing failed for document id {key}"})
 
                 audit.record_search_batch_result(
                     operation="upload_documents",
@@ -732,7 +732,8 @@ async def ingest_documents(request: Request):
                 )
 
             except Exception as e:
-                errors.append({"message": f"Batch indexing error: {e}"})
+                logging.error("[ingest_documents] Batch indexing failed (%s).", type(e).__name__)
+                errors.append({"message": "Batch indexing error: Search did not confirm the upload."})
 
         logging.info(
             f"[ingest_documents] File {norm_file_name}: "

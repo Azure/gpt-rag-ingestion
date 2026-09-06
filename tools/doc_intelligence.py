@@ -7,7 +7,7 @@ import requests
 from urllib.parse import urlparse, unquote
 from azure.identity import ManagedIdentityCredential, AzureCliCredential, ChainedTokenCredential
 from azure.storage.blob import BlobServiceClient
-from azure.core.exceptions import ClientAuthenticationError, ResourceNotFoundError
+from azure.core.exceptions import AzureError
 
 from dependencies import get_config
 from tools.credentials import get_azure_client_id
@@ -54,18 +54,13 @@ class DocumentIntelligenceClient:
                      f"api_version={self.api_version!r}, network_isolation={self.network_isolation}")
 
         # Credential
-        try:
-            client_id = get_azure_client_id(app_config_client)
-
-            # Prefer Azure CLI locally to avoid IMDS probes; fall back to MI when available
-            self.credential = ChainedTokenCredential(
-                AzureCliCredential(),
-                ManagedIdentityCredential(client_id=client_id)
-            )
-            logging.debug("[docintelligence] ChainedTokenCredential initialized (CLI first, then MI).")
-        except Exception as e:
-            logging.error(f"[docintelligence] Credential init failed: {e}")
-            raise
+        client_id = get_azure_client_id(app_config_client)
+        # Prefer Azure CLI locally to avoid IMDS probes; fall back to MI when available.
+        self.credential = ChainedTokenCredential(
+            AzureCliCredential(),
+            ManagedIdentityCredential(client_id=client_id)
+        )
+        logging.debug("[docintelligence] ChainedTokenCredential initialized (CLI first, then MI).")
 
     def _get_file_extension(self, filepath):
         clean = filepath.split('?')[0]
@@ -129,8 +124,8 @@ class DocumentIntelligenceClient:
                 "Content-Type": "application/json"
             }
             logging.debug(f"[docintelligence][{filename}] Request headers: {headers}")
-        except Exception as e:
-            msg = f"Auth failed: {e}"
+        except AzureError:
+            msg = "Auth failed: check the analysis service identity and access."
             logging.error(f"[docintelligence][{filename}] {msg}")
             return result, [msg]
 
@@ -145,8 +140,8 @@ class DocumentIntelligenceClient:
             logging.info(f"[docintelligence][{filename}] POST -> {resp.status_code}")
             logging.debug(f"[docintelligence][{filename}] Response headers: {resp.headers}")
             logging.debug(f"[docintelligence][{filename}] Response body (first 500 chars): {resp.text[:500]!r}…")
-        except Exception as e:
-            msg = f"Request error: {e}"
+        except requests.RequestException:
+            msg = "Request error: analysis service submission failed."
             logging.error(f"[docintelligence][{filename}] {msg}")
             return result, [msg]
 
@@ -179,8 +174,8 @@ class DocumentIntelligenceClient:
                 logging.debug(f"[docintelligence][{filename}] Poll status={r.status_code}, "
                               f"body (first 200 chars)={r.text[:200]!r}")
                 data = r.json()
-            except Exception as e:
-                msg = f"Polling error: {e}"
+            except requests.RequestException:
+                msg = "Polling error: analysis service response could not be read."
                 logging.error(f"[docintelligence][{filename}] {msg}")
                 errors.append(msg)
                 break

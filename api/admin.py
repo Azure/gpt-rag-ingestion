@@ -926,7 +926,7 @@ def _coerce_and_validate(
 
         try:
             CronTrigger.from_crontab(str(raw_value).strip())
-        except (ValueError, Exception) as exc:  # pragma: no cover - exotic input
+        except ValueError as exc:
             return None, f"{spec.key}: invalid cron expression ({exc})"
         return str(raw_value).strip(), None
 

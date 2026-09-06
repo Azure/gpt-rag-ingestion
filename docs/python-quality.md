@@ -111,9 +111,25 @@ failures produce safe warnings. SDK-result tests deserialize the pinned Search
 model, whose readonly response fields are not populated by constructor kwargs.
 Real audit export failures do not change confirmed adapter outcomes.
 
-The write-adapter evidence does **not** cover `/ingest-documents`, which uploads
-directly through the SDK. Existing endpoint tests still run, but full direct
-upload failure-contract closure is not claimed by these wrapper tests.
+`tests/test_ingest_documents_failures.py` now drives the actual
+`/ingest-documents` route through its direct SDK upload, independently of the
+write-adapter tests. Missing, duplicate and unrelated responses cannot inflate
+`indexedChunks`; requested but unconfirmed keys produce per-record errors.
+The API-key boundary, 200/per-record envelope, stable keys and ACL fields are
+unchanged. Malformed responses and transport failures retain that failure
+envelope without downstream exception payloads. A real audit exporter failure
+does not reverse the primary result. These are offline SDK-result tests, not
+live Azure upload evidence.
+
+Concrete parser catches preserve invalid cursor 422 responses, cron validation,
+timestamp/TTL defaults and invalid-timezone fallback. SDK adapters preserve
+documented failure/None outcomes for expected service errors, while unexpected
+programming failures propagate. Cosmos reads return None only for not-found;
+SharePoint provider errors no longer become empty settings. Blob download
+retries only Azure SDK failures and rethrows the original terminal failure.
+Analysis calls retain error-list results for Azure/Requests failures without
+copying their payloads into diagnostics. Constructor wrappers that only logged
+and rethrew were removed; credential order and creation are unchanged.
 
 `.quality/policy.json` inventories all runtime modules, including flat
 `main`, `dependencies`, and `constants`, package roots, and namespace chunkers.
@@ -175,13 +191,16 @@ requirements manifest must agree with the policy toolchain.
 
 ## Broad handlers and remaining acceptance
 
-The exception ledger contains eight exact **proposed**, not active, records.
+The exception ledger contains nine exact **proposed**, not active, records.
 Four cover audit boundaries: unexpected sanitizer failure, exporter failure, primary run failure
 observation/propagation, and document-audit projection failure. Each cites its
 own source fingerprint, boundary-specific rationale and executed failure tests.
 The other four cover the established post-write local refresh contract and
 each of the purger's Search, Blob and credential cleanup boundaries. They do
 not authorize primary-operation success fallbacks.
+The ninth covers only the direct upload's established per-record failure
+translation, with actual route/SDK failure evidence; it does not authorize
+unconfirmed uploads or the endpoint's other handlers.
 **No inherited handler is automatically approved.** The syntax check includes
 bare handlers, builtins aliases, tuples,
 exception groups, and logged/re-raised catches exempted by Ruff BLE001.

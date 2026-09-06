@@ -4,6 +4,7 @@ import logging
 import time
 
 import requests
+from azure.core.exceptions import AzureError
 from azure.identity import (
     AzureCliCredential,
     ChainedTokenCredential,
@@ -103,8 +104,8 @@ class ContentUnderstandingClient:
         # Acquire token
         try:
             token = self.credential.get_token(self.COGNITIVE_SCOPE).token
-        except Exception as e:
-            msg = f"Auth failed: {e}"
+        except AzureError:
+            msg = "Auth failed: check the analysis service identity and access."
             logging.error(f"[content_understanding][{filename}] {msg}")
             return result, [msg]
 
@@ -124,8 +125,8 @@ class ContentUnderstandingClient:
             logging.info(
                 f"[content_understanding][{filename}] POST -> {resp.status_code}"
             )
-        except Exception as e:
-            msg = f"Request error: {e}"
+        except requests.RequestException:
+            msg = "Request error: analysis service submission failed."
             logging.error(f"[content_understanding][{filename}] {msg}")
             return result, [msg]
 
@@ -163,8 +164,8 @@ class ContentUnderstandingClient:
             try:
                 r = requests.get(op_loc, headers=poll_headers, timeout=60)
                 data = r.json()
-            except Exception as e:
-                msg = f"Polling error: {e}"
+            except requests.RequestException:
+                msg = "Polling error: analysis service response could not be read."
                 logging.error(f"[content_understanding][{filename}] {msg}")
                 errors.append(msg)
                 break

@@ -1,7 +1,7 @@
 import logging
 from collections import Counter
 from azure.search.documents.aio import SearchClient
-from azure.search.documents.models import SearchMode
+from azure.search.documents.models import IndexingResult, SearchMode
 from azure.core.exceptions import AzureError
 from azure.identity.aio import ManagedIdentityCredential, AzureCliCredential, ChainedTokenCredential
 from typing import Any, Dict, List, Optional
@@ -15,6 +15,23 @@ _QUERY_SOURCE_AUTHORIZATION_HEADER = "x-ms-query-source-authorization"
 _ELEVATED_API_VERSION = "2025-11-01-preview"
 
 app_config_client = get_config()
+
+
+def confirmed_result_keys(key_values: List[str], result: List[IndexingResult]) -> List[str]:
+    """Return only requested keys confirmed without excess duplicate responses."""
+    requested = Counter(key_values)
+    remaining = requested.copy()
+    response_counts = Counter(res.key for res in result)
+    confirmed = []
+    for res in result:
+        if remaining[res.key] <= 0 or response_counts[res.key] > requested[res.key]:
+            logging.error("[aisearch] Search returned an unexpected result key.")
+            continue
+        remaining[res.key] -= 1
+        if res.succeeded is True:
+            confirmed.append(res.key)
+    return confirmed
+
 
 class AISearchClient:
     """
@@ -31,17 +48,12 @@ class AISearchClient:
         self.endpoint = f"https://{self.search_service_name}.search.windows.net"
 
         # Initialize the ChainedTokenCredential
-        try:
-            client_id = get_azure_client_id(app_config_client)
-
-            self.credential = ChainedTokenCredential(
-                ManagedIdentityCredential(client_id=client_id),
-                AzureCliCredential()
-            )
-            logging.debug("[aisearch] Initialized ChainedTokenCredential with ManagedIdentity and AzureCliCredential.")
-        except Exception as e:
-            logging.error(f"[aisearch] Failed to initialize credentials: {e}")
-            raise
+        client_id = get_azure_client_id(app_config_client)
+        self.credential = ChainedTokenCredential(
+            ManagedIdentityCredential(client_id=client_id),
+            AzureCliCredential()
+        )
+        logging.debug("[aisearch] Initialized ChainedTokenCredential with ManagedIdentity and AzureCliCredential.")
 
         self.clients = {}  # Cache SearchClient instances per index
 
@@ -56,17 +68,13 @@ class AISearchClient:
             SearchClient: An instance of SearchClient for the specified index.
         """
         if index_name not in self.clients:
-            try:
-                self.clients[index_name] = SearchClient(
-                    endpoint=self.endpoint,
-                    index_name=index_name,
-                    credential=self.credential,
-                    api_version=_ELEVATED_API_VERSION,
-                )
-                logging.debug(f"[aisearch] Initialized SearchClient for index '{index_name}'.")
-            except Exception as e:
-                logging.error(f"[aisearch] Failed to initialize SearchClient for index '{index_name}': {e}")
-                raise
+            self.clients[index_name] = SearchClient(
+                endpoint=self.endpoint,
+                index_name=index_name,
+                credential=self.credential,
+                api_version=_ELEVATED_API_VERSION,
+            )
+            logging.debug(f"[aisearch] Initialized SearchClient for index '{index_name}'.")
         return self.clients[index_name]
 
     async def index_document(self, index_name: str, document: dict) -> bool:
@@ -138,19 +146,7 @@ class AISearchClient:
                 key_field=key_field,
             )
 
-            # Missing, duplicate or unrelated responses cannot confirm a request.
-            requested = Counter(key_values)
-            remaining = requested.copy()
-            response_counts = Counter(res.key for res in result)
-            succeeded = 0
-            for res in result:
-                if remaining[res.key] <= 0 or response_counts[res.key] > requested[res.key]:
-                    logging.error("[aisearch] Search returned an unexpected deletion result key.")
-                    continue
-                remaining[res.key] -= 1
-                if res.succeeded is True:
-                    succeeded += 1
-
+            succeeded = len(confirmed_result_keys(key_values, result))
             failed = len(key_values) - succeeded
             logging.info(f"[aisearch] Deleted {succeeded} documents from '{index_name}'.")
             if failed > 0:

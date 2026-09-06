@@ -23,6 +23,19 @@
 
 ### Fixed
 
+- **Direct uploads require authoritative Search confirmation.** Exercise the
+  actual `/ingest-documents` route with the pinned SDK response model, reject
+  missing, duplicate and unrelated results, and retain the per-record response
+  and ACL fields. Audit exporter failure cannot reverse a confirmed upload.
+
+- **SDK and parser recovery is limited to expected failures.** Keep explicit
+  error/None outcomes for failed SDK writes, secret reads and analysis calls
+  without logging downstream payloads. Only Cosmos not-found means absence;
+  unexpected adapter and SharePoint provider failures propagate. Blob download
+  retries only SDK failures and retains the original terminal exception.
+  Cursor, cron, timestamp and JWKS parsing retain their existing invalid-input
+  outcomes without broad handlers or redundant constructor wrappers.
+
 - **Static checks cannot import candidate tool shadows.** Launch the protected
   evaluator and tools with isolated Python, neutral working directories and
   non-executable source package specs. Reject executable tool configuration,
@@ -50,7 +63,7 @@
   apply returns an error on failed scheduling; confirmed writes retain their
   existing success response when the best-effort local refresh fails. Audit
   sanitization/export/projection remains non-blocking, with payload-free warning
-  diagnostics. Eight exact audit, refresh and resource-cleanup proposals remain
+  diagnostics. Exact audit, refresh and resource-cleanup proposals remain
   unapproved; NL2SQL purge now also closes its owned Search adapter without
   masking a primary failure.
 

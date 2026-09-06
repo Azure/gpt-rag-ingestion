@@ -67,7 +67,7 @@ def _parse_cache_control_ttl(cache_control_header: str) -> int:
         if part.startswith("max-age="):
             try:
                 return int(part.split("=")[1])
-            except Exception:
+            except ValueError:
                 return 3600
     return 3600
 
@@ -99,11 +99,8 @@ async def _get_cached_jwks(tenant_id: str, jwks_url: str) -> Dict[str, Any]:
 
 
 def _force_refresh_jwks_cache(tenant_id: str) -> None:
-    try:
-        for url in _jwks_urls_for_tenant(tenant_id).values():
-            _JWKS_CACHE.pop(f"{tenant_id}|{url}", None)
-    except Exception:
-        pass
+    for url in _jwks_urls_for_tenant(tenant_id).values():
+        _JWKS_CACHE.pop(f"{tenant_id}|{url}", None)
 
 
 def _config_oauth() -> Tuple[str, str]:
