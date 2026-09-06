@@ -46,6 +46,11 @@ not an assumed success. Failed documents and cleanup remain explicit.
 Chunking preserves terminal error lists and successful chunk identity while
 allowing cancellation to propagate. Optional image extraction retains only
 confirmed partial results, and owned PDF split files are cleaned on failure.
+Operator log cleanup counts only confirmed deletions. Expected history-store
+outages retain the read-only dashboard fallback; scheduler/programming failures
+do not masquerade as missing schedules. Startup configuration failures surface
+before scheduling begins. Existing identity/edit probes, panel error statuses
+and per-record embedding/upload outcomes remain unchanged, with safe diagnostics.
 
 ## Governance and audit events
 

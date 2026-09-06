@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Coroutine, Dict, List, Optional, Tuple
 
 from apscheduler.jobstores.base import JobLookupError
+from azure.core.exceptions import AzureError
 from azure.identity.aio import (
     AzureCliCredential,
     ChainedTokenCredential,
@@ -130,8 +131,8 @@ async def _download_blob(container, blob_name: str, sem: asyncio.Semaphore) -> O
             dl = await bc.download_blob()
             raw = await dl.readall()
             return blob_name, json.loads(raw)
-        except Exception as exc:
-            logging.warning(f"[admin-api] Failed to read {blob_name}: {exc}")
+        except (AzureError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+            logging.warning("[admin-api] Failed to read run/file log (%s)", type(exc).__name__)
             return None
 
 
@@ -268,15 +269,20 @@ async def _cleanup_old_runs() -> None:
     to_delete = run_blobs[: len(run_blobs) - max_run_files]
     sem = asyncio.Semaphore(_DL_CONCURRENCY)
 
-    async def _del(name: str) -> None:
+    async def _del(name: str) -> bool:
         async with sem:
             try:
                 await container.delete_blob(name)
-            except Exception as exc:
-                logging.warning(f"[admin-api] Failed to delete {name}: {exc}")
+                return True
+            except AzureError as exc:
+                logging.warning("[admin-api] Failed to delete run log (%s)", type(exc).__name__)
+                return False
 
-    await asyncio.gather(*[_del(name) for name, _ in to_delete])
-    logging.info(f"[admin-api] Log cleanup: deleted {len(to_delete)} old run blobs (max={max_run_files})")
+    deleted = sum(await asyncio.gather(*[_del(name) for name, _ in to_delete]))
+    logging.info(
+        "[admin-api] Log cleanup: deleted %d old run blobs, failed %d (max=%d)",
+        deleted, len(to_delete) - deleted, max_run_files,
+    )
     _invalidate_cache("runs")
 
 
@@ -317,8 +323,8 @@ async def list_jobs(
                     r = {**r, "retriedFiles": retries_by_run[rid]}
                 enriched.append(r)
             runs = enriched
-    except Exception:
-        pass  # Non-critical enrichment
+    except AzureError as exc:
+        logging.warning("[admin-api] Retry history unavailable (%s)", type(exc).__name__)
 
     if indexerType:
         runs = [r for r in runs if r.get("indexerType") == indexerType]
@@ -479,10 +485,7 @@ def _cron_trigger_to_string(trigger: Any) -> Optional[str]:
     ``IntervalTrigger``, ``None``) so callers can keep the dashboard column
     blank instead of inventing a schedule.
     """
-    try:
-        from apscheduler.triggers.cron import CronTrigger
-    except Exception:  # pragma: no cover - apscheduler always installed in prod
-        return None
+    from apscheduler.triggers.cron import CronTrigger
     if not isinstance(trigger, CronTrigger):
         return None
     by_name = {getattr(f, "name", ""): f for f in getattr(trigger, "fields", [])}
@@ -579,7 +582,8 @@ async def get_jobs_queue() -> Dict[str, Any]:
     # storage; the underlying cache TTL is 60s.
     try:
         all_runs, _ = await _cached_load("runs", _load_all_runs)
-    except Exception:  # pragma: no cover - blob outages should not 500 the queue
+    except AzureError as exc:
+        logging.warning("[admin-api] Queue history unavailable (%s)", type(exc).__name__)
         all_runs = []
 
     items: List[Dict[str, Any]] = []
@@ -598,10 +602,7 @@ async def get_jobs_queue() -> Dict[str, Any]:
         # supported configuration, so we surface ``null`` rather than 500.
         next_scheduled_at: Optional[str] = None
         cron_value: Optional[str] = None
-        try:
-            job = scheduler.get_job(job_type)
-        except Exception:  # pragma: no cover - defensive; depends on scheduler state
-            job = None
+        job = scheduler.get_job(job_type)
         if job is not None:
             if getattr(job, "next_run_time", None) is not None:
                 next_scheduled_at = _iso_utc(job.next_run_time)
@@ -634,6 +635,9 @@ def _iso_utc(value) -> Optional[str]:
     """
     if value is None:
         return None
+    if not isinstance(value, datetime):
+        logging.warning("[admin-api] Invalid queue timestamp type")
+        return None
     try:
         if value.tzinfo is None:
             value = value.replace(tzinfo=timezone.utc)
@@ -641,7 +645,8 @@ def _iso_utc(value) -> Optional[str]:
         # Use millisecond precision and a literal ``Z`` so the frontend can
         # `new Date(iso)` without surprises.
         return as_utc.strftime("%Y-%m-%dT%H:%M:%S.") + f"{as_utc.microsecond // 1000:03d}Z"
-    except Exception:  # pragma: no cover - serialization should not break the response
+    except (ValueError, OverflowError):
+        logging.warning("[admin-api] Queue timestamp is outside the supported range")
         return None
 
 

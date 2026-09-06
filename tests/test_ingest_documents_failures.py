@@ -131,3 +131,61 @@ def test_direct_upload_audit_export_failure_keeps_confirmed_result(upload_route,
     assert response.json()["values"][0]["errors"] == []
     assert "Audit event export failed" in caplog.text
     assert "private-export-canary" not in response.text + caplog.text
+
+
+@pytest.mark.parametrize("stage", ["blob", "chunking", "embedding"])
+def test_direct_record_failure_keeps_safe_public_envelope(upload_route, monkeypatch, caplog, stage):
+    client, sdk = upload_route
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("private-adapter-canary")
+
+    async def upload(*, documents):
+        return [sdk_result(document["id"], True) for document in documents]
+
+    sdk.upload_documents.side_effect = upload
+    if stage == "blob":
+        original = main.app_config_client.get
+        monkeypatch.setattr(main.app_config_client, "get", lambda key, *args, **kwargs:
+                            "originals" if key == "CONVERSATION_DOCUMENTS_STORAGE_CONTAINER"
+                            else original(key, *args, **kwargs))
+        monkeypatch.setattr(sys.modules["tools.blob"], "upload_bytes_to_container", fail)
+    elif stage == "chunking":
+        monkeypatch.setattr(sys.modules["chunking"], "DocumentChunker",
+                            lambda: types.SimpleNamespace(chunk_documents=fail))
+    else:
+        monkeypatch.setattr(sys.modules["tools"], "AzureOpenAIClient",
+                            lambda: types.SimpleNamespace(get_embeddings=fail))
+    response = client.post("/ingest-documents", json=request_body())
+    assert response.status_code == 200
+    value = response.json()["values"][0]
+    assert value["recordId"] == "record"
+    if stage == "blob":
+        assert value["indexedChunks"] == 2
+        assert value["warnings"] and not value["errors"]
+    else:
+        assert value["errors"]
+        assert value.get("indexedChunks", 0) == 0
+        sdk.upload_documents.assert_not_awaited()
+    assert "private-adapter-canary" not in response.text + caplog.text
+
+
+def test_text_embedding_failure_remains_explicit_safe_record(upload_route, monkeypatch, caplog):
+    client, _ = upload_route
+
+    def embed(text):
+        if text == "fail":
+            raise RuntimeError("private-embedding-canary")
+        return [0.1, 0.2]
+
+    monkeypatch.setattr(sys.modules["tools"], "AzureOpenAIClient",
+                        lambda: types.SimpleNamespace(get_embeddings=embed))
+    response = client.post("/text-embedding", json={"values": [
+        {"recordId": "bad", "data": {"text": "fail"}},
+        {"recordId": "good", "data": {"text": "ok"}},
+    ]})
+    assert response.status_code == 200
+    bad, good = response.json()["values"]
+    assert bad["recordId"] == "bad" and bad["data"] == {} and bad["errors"]
+    assert good["data"] == {"embedding": [0.1, 0.2]} and good["errors"] == []
+    assert "private-embedding-canary" not in response.text + caplog.text

@@ -216,7 +216,7 @@ clean positive control.
 
 ## Broad handlers and remaining acceptance
 
-The exception ledger contains sixteen exact **proposed**, not active, records.
+The exception ledger contains thirty-five exact **proposed**, not active, records.
 Four cover audit boundaries: unexpected sanitizer failure, exporter failure, primary run failure
 observation/propagation, and document-audit projection failure. Each cites its
 own source fingerprint, boundary-specific rationale and executed failure tests.
@@ -249,6 +249,17 @@ PDF/ZIP/codec errors retain diagnostic, confirmed-partial-image behavior;
 unexpected implementation failures propagate. Image uploads cannot return an
 empty success-shaped URL, optional captions retain their established fallback,
 and caption/dependency payloads are omitted from diagnostics.
+Nineteen further records cover the established startup cleanup/independent-job
+boundaries, four direct skill/upload record outcomes, six operator
+probe/mutation translations, and seven panel read/write/enrichment boundaries.
+They preserve actual public contracts (including non-authoritative 200/false
+identity probes and explicit 502 panel failures), not a blanket recovery policy.
+Operator log cleanup now counts only confirmed deletes; history-store recovery
+is limited to expected SDK outages, and scheduler/import/programming defects
+cannot appear as missing schedules or timestamps. Startup flag/provider and
+logging-configuration defects surface before scheduling starts. Defaults,
+run-now locking, independent startup jobs and PUT refresh-only 200/applied
+behavior are retained.
 **No inherited handler is automatically approved.** The syntax check includes
 bare handlers, builtins aliases, tuples,
 exception groups, and logged/re-raised catches exempted by Ruff BLE001.

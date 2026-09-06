@@ -23,6 +23,14 @@
 
 ### Fixed
 
+- **Operator and startup failures retain truthful, safe outcomes.** Count only
+  confirmed log deletions, narrow optional history recovery to SDK failures,
+  and stop hiding scheduler/programming errors as missing queue data. Resolve
+  startup flags before scheduling and surface logging-configuration failures.
+  Preserve identity probes, panel HTTP errors, per-record skill results and
+  independent startup cleanup through exact inactive proposals with failure
+  evidence, while removing dependency payloads from diagnostics.
+
 - **Chunking preserves cancellation and confirmed partial results.** Remove
   return-from-finally suppression, narrow SDK/parser retries and optional
   image failures, and close PDF/image resources and owned split files.

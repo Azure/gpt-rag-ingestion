@@ -118,7 +118,8 @@ async def lifespan(app: FastAPI):
         if not is_azure_environment():
             try:
                 has_cli = subprocess.run(["az", "account", "show", "-o", "none"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
-            except Exception:
+            except OSError as exc:
+                logging.warning("[startup] Azure CLI probe unavailable (%s)", type(exc).__name__)
                 has_cli = False
 
         default_require_auth = "false" if is_azure_environment() else "true"
@@ -135,26 +136,20 @@ async def lifespan(app: FastAPI):
 
     # Reduce Azure SDK noise in local/dev logs
     def _quiet_azure_sdks():
-        try:
-            # Reduce noisy Azure SDK and HTTP logging. For the http_logging_policy
-            # (which prints request headers/body) set CRITICAL so info/debug are
-            # suppressed. Also disable propagation and attach a NullHandler to
-            # prevent the messages from reaching the root logger.
-            noisy = [
-                "azure.core.pipeline.policies.http_logging_policy",
-                "azure.core.pipeline.policies",
-                "azure.identity",
-                "azure",
-                "urllib3",
-            ]
-            for name in noisy:
-                lg = logging.getLogger(name)
-                # hide info/debug logs from these loggers
-                lg.setLevel(logging.CRITICAL if name.endswith("http_logging_policy") else logging.WARNING)
-                lg.propagate = False
-                lg.addHandler(logging.NullHandler())
-        except Exception:
-            pass
+        # HTTP logging can include request headers/body; do not silently
+        # continue if configuring its suppression fails.
+        noisy = [
+            "azure.core.pipeline.policies.http_logging_policy",
+            "azure.core.pipeline.policies",
+            "azure.identity",
+            "azure",
+            "urllib3",
+        ]
+        for name in noisy:
+            lg = logging.getLogger(name)
+            lg.setLevel(logging.CRITICAL if name.endswith("http_logging_policy") else logging.WARNING)
+            lg.propagate = False
+            lg.addHandler(logging.NullHandler())
 
     _quiet_azure_sdks()
 
@@ -191,6 +186,11 @@ async def lifespan(app: FastAPI):
     # capture itself is disabled.
     audit.configure(app_config_client)
 
+    # Resolve startup configuration before starting or populating the scheduler.
+    startup_run = (app_config_client.get("RUN_JOBS_ON_STARTUP", "true") or "").lower() in (
+        "true", "1", "yes",
+    )
+
     # Start the scheduler before scheduling any jobs
     scheduler.start()
     logging.info(f"Scheduler timezone: {local_tz}")
@@ -225,30 +225,17 @@ async def lifespan(app: FastAPI):
     from api.admin import _cleanup_old_runs
     _schedule("CRON_RUN_LOG_CLEANUP", _cleanup_old_runs, "log_cleanup", "log-cleanup", default_cron="0 * * * *")
 
-    # Optional: run scheduled jobs once at startup.
-    # WARNING: In Azure, long-running jobs can block app startup/health probes and
-    # cause the container to restart in a loop. Default to OFF in Azure.
-    try:
-        # default_startup_run = "false" if is_azure_environment() else "true"
-        default_startup_run = "true"
-        startup_run = (app_config_client.get("RUN_JOBS_ON_STARTUP", default_startup_run) or "").lower() in (
-            "true",
-            "1",
-            "yes",
-        )
-    except Exception:
-        startup_run = False
-
     startup_task: asyncio.Task | None = None
 
-    async def _run_startup_jobs() -> None:
-        # Always run log cleanup first to reduce blob count
+    async def _run_log_cleanup() -> None:
         try:
             logging.info("[startup] Running log-cleanup immediately")
             await _cleanup_old_runs()
-        except Exception:
-            logging.exception("[startup] Error running log-cleanup")
+        except Exception as exc:
+            logging.error("[startup] Error running log-cleanup (%s)", type(exc).__name__)
 
+    async def _run_startup_jobs() -> None:
+        await _run_log_cleanup()
         # Independent startup jobs retain their ordering and failure isolation.
         for job_id, scheduled, name in (
             ("blob_index", s_blob_index, "blob-storage-indexer"),
@@ -279,13 +266,7 @@ async def lifespan(app: FastAPI):
     else:
         # Even without startup jobs, always run log cleanup
         logging.info("[startup] Skipping immediate job runs (RUN_JOBS_ON_STARTUP!=true)")
-        async def _run_cleanup_only() -> None:
-            try:
-                logging.info("[startup] Running log-cleanup immediately")
-                await _cleanup_old_runs()
-            except Exception:
-                logging.exception("[startup] Error running log-cleanup")
-        startup_task = asyncio.create_task(_run_cleanup_only())
+        startup_task = asyncio.create_task(_run_log_cleanup())
 
     yield
 
@@ -507,7 +488,7 @@ async def text_embedding(request: Request):
     for item in body["values"]:
         record_id = item.get("recordId")
         input_data = item.get("data", {}).get("text", "")
-        logging.info(f'[text_embedding] Generating embeddings for: {input_data[:10]}…')
+        logging.info("[text_embedding] Generating embeddings for record")
 
         errors = []
         warnings = []
@@ -517,8 +498,8 @@ async def text_embedding(request: Request):
             contentVector = aoai_client.get_embeddings(input_data)
             data_payload = {"embedding": contentVector}
         except Exception as e:
-            error_message = f"Error generating embeddings: {e}"
-            logging.error(f'[text_embedding] {error_message}', exc_info=True)
+            error_message = "Error generating embeddings."
+            logging.error("[text_embedding] Embedding generation failed (%s)", type(e).__name__)
             errors.append({"message": error_message})
 
         values.append({
@@ -637,7 +618,8 @@ async def ingest_documents(request: Request):
                     },
                 )
             except Exception as e:
-                warnings.append({"message": f"Blob persistence failed: {e}"})
+                logging.warning("[ingest_documents] Optional Blob persistence failed (%s)", type(e).__name__)
+                warnings.append({"message": "Blob persistence failed: original file not persisted."})
         else:
             warnings.append(
                 {"message": "CONVERSATION_DOCUMENTS_STORAGE_CONTAINER not configured; original file not persisted"}
@@ -655,7 +637,8 @@ async def ingest_documents(request: Request):
             errors.extend(chunk_errors)
             warnings.extend(chunk_warnings)
         except Exception as e:
-            errors.append({"message": f"Chunking error: {e}"})
+            logging.error("[ingest_documents] Chunking failed (%s)", type(e).__name__)
+            errors.append({"message": "Chunking error: document processing failed."})
             results.append({"recordId": record_id, "errors": errors, "warnings": warnings})
             continue
 
@@ -708,7 +691,8 @@ async def ingest_documents(request: Request):
                 documents_to_upload.append(document)
 
             except Exception as e:
-                errors.append({"message": f"Embedding error: {e}"})
+                logging.error("[ingest_documents] Chunk preparation failed (%s)", type(e).__name__)
+                errors.append({"message": "Embedding error: chunk preparation failed."})
 
         # --- Batch upload ---
         indexed_count = 0
