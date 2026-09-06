@@ -8,7 +8,8 @@ from importlib.metadata import PackageNotFoundError, version
 import json
 import logging
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+import re
 import subprocess
 import sys
 import tempfile
@@ -58,49 +59,161 @@ def parse_record(text: str, name: str) -> dict:
         result = json.loads(text, object_pairs_hook=q.unique_keys)
     except json.JSONDecodeError as exc:
         raise q.QualityError(f"Invalid {name}") from exc
-    if not isinstance(result, dict) or result.get("schema_version") != 1:
+    if (not isinstance(result, dict) or type(result.get("schema_version")) is not int
+            or result["schema_version"] != 1):
         raise q.QualityError(f"Unsupported {name} version")
     return result
 
 
+def object_fields(value: object, required: set[str], optional: frozenset[str] = frozenset()) -> dict:
+    if not isinstance(value, dict) or not required <= value.keys() or value.keys() - required - optional:
+        raise q.QualityError("Missing, unknown or invalid record fields")
+    return value
+
+
+def text(value: object) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise q.QualityError("Record fields require nonempty strings")
+    return value
+
+
+def strings(value: object, *, nonempty: bool = False) -> list[str]:
+    if not isinstance(value, list) or (nonempty and not value):
+        raise q.QualityError("Expected a string list")
+    for item in value:
+        text(item)
+    if len(value) != len(set(value)):
+        raise q.QualityError("Duplicate string-list entries")
+    return value
+
+
+def record_list(value: object) -> list[dict]:
+    if not isinstance(value, list) or any(not isinstance(item, dict) for item in value):
+        raise q.QualityError("Expected a list of records")
+    return value
+
+
+def relative_path(value: object, *, python: bool = True) -> str:
+    path = text(value)
+    parsed = PurePosixPath(path)
+    if (parsed.is_absolute() or ".." in parsed.parts or parsed.as_posix() != path
+            or any(char in path for char in "\\:*?[]") or path == "."
+            or (python and not path.endswith(".py"))):
+        raise q.QualityError("Expected a canonical repository-relative path")
+    return path
+
+
+def fingerprint(value: object, length: int = 64) -> None:
+    if not re.fullmatch(rf"[0-9a-f]{{{length}}}", text(value)):
+        raise q.QualityError("Invalid source revision or fingerprint")
+
+
+def review_record(value: object) -> None:
+    review = object_fields(value, {"status", "reference"}, frozenset({"owner", "rationale"}))
+    for item in review.values():
+        text(item)
+    if review["status"] not in {"proposed", "maintainer-approved", "active", "retired"}:
+        raise q.QualityError("Invalid review lifecycle status")
+
+
 def validate_records(records: list[dict]) -> dict[str, str]:
     policy, scope, baseline, exceptions = records
-    required = {"runtime_roots", "modules", "contracts", "toolchain", "required_checks",
-                "dynamic_imports", "review", "source_revision"}
-    if not required <= policy.keys() or policy["required_checks"] != list(q.REQUIRED_CHECKS):
+    object_fields(policy, {"schema_version", "runtime_roots", "modules", "contracts", "toolchain",
+                           "required_checks", "dynamic_imports", "review", "source_revision"})
+    object_fields(scope, {"schema_version", "module_ids", "coverage_stage", "planned_expansion",
+                          "move_map", "review"})
+    for record in (baseline, exceptions):
+        object_fields(record, {"schema_version", "entries"}, frozenset({"review"}))
+    for record in records:
+        if "review" in record:
+            review_record(record["review"])
+    fingerprint(policy["source_revision"], 40)
+    for root in strings(policy["runtime_roots"], nonempty=True):
+        relative_path(root, python=False)
+        if "/" in root:
+            raise q.QualityError("Runtime roots must be flat files or top-level packages")
+    toolchain = object_fields(policy["toolchain"], {"ruff", "mypy", "import-linter", "grimp"})
+    if any(not re.fullmatch(r"\d+(?:\.\d+)+", text(pin)) for pin in toolchain.values()):
+        raise q.QualityError("Quality tool versions must be exact release pins")
+    if strings(policy["required_checks"]) != list(q.REQUIRED_CHECKS):
         raise q.QualityError("Incomplete policy or unexpected required check set")
     modules = {}
     names = set()
     paths = set()
-    for module in policy["modules"]:
+    for module in record_list(policy["modules"]):
         fields = {"id", "path", "import_name", "area", "public_exports", "private_modules",
                   "allowed_importers", "legacy_aliases", "typing_status", "responsibilities", "source_revision"}
-        if not fields <= module.keys():
-            raise q.QualityError("Incomplete module surface")
-        path = module["path"]
+        object_fields(module, fields)
+        for field in ("id", "import_name", "area", "typing_status", "responsibilities"):
+            text(module[field])
+        for field in ("public_exports", "private_modules", "allowed_importers", "legacy_aliases"):
+            strings(module[field])
+        fingerprint(module["source_revision"], 40)
+        if module["typing_status"] not in {"inventoried", "blocking"}:
+            raise q.QualityError("Invalid module typing status")
+        path = relative_path(module["path"])
         if (module["id"] in modules or path in paths or module["import_name"] in names
-                or Path(path).is_absolute() or ".." in Path(path).parts
-                or path != path.replace("\\", "/") or not path.endswith(".py")
+                or any(char in module["id"] for char in "*?[]")
                 or module["import_name"] != q.module_name(path)):
             raise q.QualityError("Duplicate or invalid module identity/path")
         modules[module["id"]] = path
         paths.add(path)
         names.add(module["import_name"])
-    if (not isinstance(scope.get("module_ids"), list)
-            or len(scope["module_ids"]) != len(set(scope["module_ids"]))
-            or not set(scope["module_ids"]) <= modules.keys()
-            or not isinstance(scope.get("move_map"), list)):
+    text(scope["coverage_stage"])
+    strings(scope["planned_expansion"])
+    if not set(strings(scope["module_ids"])) <= modules.keys():
         raise q.QualityError("Invalid typing scope")
+    for move in record_list(scope["move_map"]):
+        object_fields(move, {"module_id", "old_path", "new_path"})
+        if text(move["module_id"]) not in modules:
+            raise q.QualityError("Unknown moved module")
+        relative_path(move["old_path"])
+        relative_path(move["new_path"])
+    contracts = object_fields(policy["contracts"], {"forbidden", "areas", "private_access"})
+    if not isinstance(contracts["areas"], dict):
+        raise q.QualityError("Contract areas must be a mapping")
+    for key, value in contracts["areas"].items():
+        text(key)
+        text(value)
+    for relationship in record_list(contracts["forbidden"]):
+        object_fields(relationship, {"source", "target"})
+        for value in relationship.values():
+            text(value)
+    for access in record_list(contracts["private_access"]):
+        object_fields(access, {"importer", "target", "member"})
+        for value in access.values():
+            text(value)
+    dynamic_ids = set()
+    for entry in record_list(policy["dynamic_imports"]):
+        object_fields(entry, {"id", "module_id", "symbol", "source_fingerprint", "targets",
+                              "evidence_tests", "reason", "review"})
+        if text(entry["id"]) in dynamic_ids or text(entry["module_id"]) not in modules:
+            raise q.QualityError("Invalid dynamic-import identity")
+        dynamic_ids.add(entry["id"])
+        fingerprint(entry["source_fingerprint"])
+        strings(entry["targets"], nonempty=True)
+        strings(entry["evidence_tests"], nonempty=True)
+        text(entry["reason"])
+        text(entry["symbol"])
+        review_record(entry["review"])
     for record, field in ((baseline, "entries"), (exceptions, "entries")):
-        if not isinstance(record.get(field), list):
-            raise q.QualityError(f"Missing {field} list")
         ids = set()
-        for entry in record[field]:
-            if (not entry.get("id") or entry["id"] in ids or entry.get("module_id") not in modules
-                    or not isinstance(entry.get("review"), dict)):
+        for entry in record_list(record[field]):
+            if (text(entry.get("id")) in ids or text(entry.get("module_id")) not in modules
+                    or any(char in entry["id"] for char in "*?[]")):
                 raise q.QualityError("Invalid or duplicate debt/exception identity")
+            review_record(entry.get("review"))
             ids.add(entry["id"])
     for entry in baseline["entries"]:
+        object_fields(entry, {"id", *q.DIAGNOSTIC_KEY, "occurrences", "rationale",
+                              "introduced_at", "removal_stage", "review"})
+        fingerprint(entry["source_fingerprint"])
+        fingerprint(entry["message_fingerprint"])
+        fingerprint(entry["introduced_at"], 40)
+        if type(entry["occurrences"]) is not int or entry["occurrences"] < 1:
+            raise q.QualityError("Diagnostic multiplicity must be a positive integer")
+        for field in (*q.DIAGNOSTIC_KEY, "rationale", "introduced_at", "removal_stage"):
+            text(entry[field])
         if (not all(entry.get(field) for field in (*q.DIAGNOSTIC_KEY, "rationale", "introduced_at", "removal_stage"))
                 or entry["module_id"] not in scope["module_ids"]
                 or entry["review"].get("status") != "active"
@@ -108,13 +221,27 @@ def validate_records(records: list[dict]) -> dict[str, str]:
             raise q.QualityError("Type debt requires an individually reviewed inherited finding")
     q.compare_diagnostics([], baseline["entries"])
     for entry in exceptions["entries"]:
-        if not all(entry.get(field) for field in (
-            "symbol", "handler_fingerprint", "caught_types", "boundary", "reason",
-            "failure_outcome", "diagnostic_path", "evidence_tests", "review_by_stage",
-        )):
-            raise q.QualityError("Incomplete exception justification")
-    if not policy["modules"] or not isinstance(policy["toolchain"], dict) or not policy["toolchain"]:
-        raise q.QualityError("Missing modules or toolchain")
+        object_fields(entry, {"id", "module_id", "symbol", "handler_fingerprint", "caught_types",
+                              "boundary", "reason", "failure_outcome", "diagnostic_path",
+                              "evidence_tests", "review", "review_by_stage"})
+        fingerprint(entry["handler_fingerprint"])
+        for field in ("symbol", "boundary", "reason", "failure_outcome", "diagnostic_path", "review_by_stage"):
+            text(entry[field])
+        strings(entry["caught_types"], nonempty=True)
+        for test in strings(entry["evidence_tests"], nonempty=True):
+            file, separator, _ = test.partition("::")
+            if not separator or not file.startswith("tests/"):
+                raise q.QualityError("Evidence must name a maintained pytest node")
+            relative_path(file)
+        if entry["failure_outcome"] not in {
+            "propagation", "explicit-failure-translation", "cleanup-followed-by-propagation",
+            "contractual-best-effort-side-effect",
+        }:
+            raise q.QualityError("Unknown exception failure outcome")
+        if any(char in entry["symbol"] for char in "*?[]"):
+            raise q.QualityError("Wildcard exception symbols are not permitted")
+    if not policy["modules"]:
+        raise q.QualityError("Missing modules")
     return modules
 
 
@@ -131,6 +258,20 @@ def check_versions(policy: dict) -> dict[str, str]:
     if sys.version_info[:2] != (3, 12):
         raise q.QualityError("Run quality gates with Python 3.12")
     return installed
+
+
+def validate_pins(manifest: str, policy: dict) -> None:
+    pins = {}
+    for raw in manifest.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        match = re.fullmatch(r"([a-z0-9-]+)==(\d+(?:\.\d+)+)", line)
+        if not match or match[1] in pins:
+            raise q.QualityError("Quality requirements must contain unique exact pins only")
+        pins[match[1]] = match[2]
+    if pins != policy["toolchain"]:
+        raise q.QualityError("Quality requirements and policy toolchain differ")
 
 
 def policy_settings(config: str) -> dict:
@@ -175,6 +316,13 @@ def policy_findings(root: Path, base: str, current: list[dict], protected: list[
             protected_fields = ("area", "public_exports", "private_modules", "allowed_importers", "legacy_aliases")
             if any(surface[field] != old[field] for field in protected_fields):
                 findings.append(q.finding("protected-policy-change", surface["path"], reason="Module surface changed"))
+            contract_roots = {relationship[field] for relationship in base_policy["contracts"]["forbidden"]
+                              for field in ("source", "target")}
+            if (old["import_name"].split(".")[0] != surface["import_name"].split(".")[0]
+                    or any(q.under(old["import_name"], root) != q.under(surface["import_name"], root)
+                           for root in contract_roots)):
+                findings.append(q.finding("protected-policy-change", surface["path"],
+                                          reason="Move changes ownership or import-contract coverage"))
     for name, entries, old_entries in (
         ("typing-baseline", baseline["entries"], base_baseline["entries"]),
         ("exceptions", exceptions["entries"], base_exceptions["entries"]),
@@ -215,7 +363,8 @@ def lint(root: Path, config: Path, sources: dict, entries: list[dict],
         site["module_id"] = path_ids[site["file"]]
         matching = [record for record in q.matching_exception_records(site, entries)
                     if record["review"].get("status") == "active"
-                    and q.valid_exception_metadata(record, review_stage)]
+                    and q.valid_exception_metadata(record, review_stage)
+                    and "<dynamic>" not in site["caught_types"]]
         if len(matching) == 1:
             approved_sites.append((site, matching[0]["id"]))
     findings = []
@@ -348,6 +497,7 @@ def main() -> int:
         report.update(base_sha=base, head_sha=head)
         current = [q.read_record(root / path) for path in POLICY_FILES]
         modules = validate_records(current)
+        validate_pins((root / "requirements-quality.txt").read_text(encoding="utf-8"), current[0])
         declared_modules = dict(modules)
         raw_base = [git(root, "show", f"{base}:{path}", missing=True) for path in POLICY_FILES]
         bootstrap = not any(raw_base)
@@ -355,6 +505,8 @@ def main() -> int:
             raise q.QualityError("Incomplete protected-base policy")
         protected = current if bootstrap else [parse_record(text, name) for text, name in zip(raw_base, POLICY_FILES)]
         base_modules = {} if bootstrap else validate_records(protected)
+        if not bootstrap:
+            validate_pins(git(root, "show", f"{base}:requirements-quality.txt"), protected[0])
         policy = protected[0]
         config_text = ((root / "pyproject.toml").read_text(encoding="utf-8") if bootstrap
                        else git(root, "show", f"{base}:pyproject.toml"))

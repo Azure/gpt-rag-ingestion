@@ -12,12 +12,13 @@ from collections import Counter, deque
 import graphlib
 import hashlib
 import io
+from importlib.util import resolve_name
 import json
 from pathlib import Path, PurePosixPath
 import re
 import subprocess
 import tokenize
-from typing import Any
+from typing import Any, Iterator
 
 
 REQUIRED_CHECKS = ("lint", "typing", "architecture", "exceptions", "policy", "unit-tests")
@@ -43,7 +44,8 @@ def read_record(path: Path) -> dict:
         data = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique_keys)
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise QualityError(f"Cannot read policy record {path.name}: {type(exc).__name__}") from exc
-    if not isinstance(data, dict) or data.get("schema_version") != 1:
+    if (not isinstance(data, dict) or type(data.get("schema_version")) is not int
+            or data["schema_version"] != 1):
         raise QualityError(f"Unsupported record version in {path.name}")
     return data
 
@@ -106,24 +108,160 @@ def relative_target(path: str, node: ast.ImportFrom) -> str:
     return ".".join(part for part in (prefix, node.module) if part)
 
 
-def aliases_for(path: str, tree: ast.Module) -> dict[str, str]:
-    aliases = {}
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for item in node.names:
-                aliases[item.asname or item.name.split(".")[0]] = (
-                    item.name if item.asname else item.name.split(".")[0]
-                )
-        elif isinstance(node, ast.ImportFrom):
-            base = relative_target(path, node)
-            for item in node.names:
-                aliases[item.asname or item.name] = f"{base}.{item.name}"
-    return aliases
+class SourceBindings:
+    """Resolve static bindings without executing modules or discarding conflicts.
 
+    Bindings from all lexical depths are retained conservatively: an unrelated
+    local import cannot overwrite evidence of a broader module-level alias.
+    """
 
-def expand_alias(name: str, aliases: dict[str, str]) -> str:
-    first, _, rest = name.partition(".")
-    return ".".join(part for part in (aliases.get(first, first), rest) if part)
+    @staticmethod
+    def class_nodes(tree: ast.AST) -> Iterator[ast.AST]:
+        pending = [tree]
+        while pending:
+            node = pending.pop()
+            yield node
+            if node is not tree and isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+                continue
+            pending.extend(reversed(list(ast.iter_child_nodes(node))))
+
+    def __init__(self, trees: dict[str, ast.Module]) -> None:
+        self.bindings: dict[str, dict[str, list[tuple[str, str | ast.AST]]]] = {}
+        self.class_parents: dict[str, str] = {}
+        self.attribute_writes: dict[str, list[tuple[str, ast.AST | None]]] = {}
+        for path, tree in trees.items():
+            module = module_name(path)
+            classes = [(f"{module}.{source_context(tree, node.lineno)[0]}", node)
+                       for node in ast.walk(tree) if isinstance(node, ast.ClassDef)]
+            class_names = {id(node): name for name, node in classes}
+            self.class_parents.update({name: module for name, _ in classes})
+            for namespace, scope_tree in [(module, tree), *classes]:
+                bindings = self.bindings.setdefault(namespace, {})
+                assigned_targets = set()
+
+                def bind(name: str, kind: str, value: str | ast.AST) -> None:
+                    bindings.setdefault(name, []).append((kind, value))
+
+                for node in (ast.walk(scope_tree) if namespace == module else self.class_nodes(scope_tree)):
+                    if isinstance(node, ast.Import):
+                        for item in node.names:
+                            bind(item.asname or item.name.split(".")[0], "import",
+                                 item.name if item.asname else item.name.split(".")[0])
+                    elif isinstance(node, ast.ImportFrom):
+                        base = relative_target(path, node)
+                        for item in node.names:
+                            bind(item.asname or item.name, "import", f"{base}.{item.name}")
+                    elif isinstance(node, (ast.Assign, ast.AnnAssign, ast.NamedExpr)):
+                        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                        for target in targets:
+                            if isinstance(target, (ast.Name, ast.Attribute)):
+                                assigned_targets.add(id(target))
+                                if qualified(target):
+                                    bind(qualified(target), "value", node.value or "<dynamic>")
+                    elif isinstance(node, ast.ClassDef) and node is not scope_tree:
+                        bind(node.name, "class", class_names[id(node)])
+                    elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        bind(node.name, "unknown", "<dynamic>")
+                    elif isinstance(node, ast.arg):
+                        bind(node.arg, "unknown", "<dynamic>")
+                    elif (isinstance(node, (ast.Name, ast.Attribute)) and isinstance(node.ctx, ast.Store)
+                          and id(node) not in assigned_targets and qualified(node)):
+                        bind(qualified(node), "unknown", "<dynamic>")
+        writes = []
+        for path, tree in trees.items():
+            module = module_name(path)
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+                    targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                    for target in targets:
+                        if isinstance(target, ast.Attribute):
+                            for base in self.expression(module, target.value):
+                                if base != "<dynamic>":
+                                    value = None if isinstance(node, ast.AugAssign) else node.value
+                                    writes.append((base.removeprefix("<class>:") + "." + target.attr, module, value))
+        for target, module, value in writes:
+            self.attribute_writes.setdefault(target, []).append((module, value))
+
+    def mutation_values(self, name: str, seen: frozenset[tuple[str, str]]) -> set[str]:
+        writes = self.attribute_writes.get(name, [])
+        marker = ("<mutation>", name)
+        if writes and marker in seen:
+            return {"<dynamic>"}
+        return {target for module, value in writes
+                for target in self.expression(module, value, seen | {marker})}
+
+    def class_member(self, namespace: str, name: str, seen: frozenset[tuple[str, str]]) -> set[str]:
+        if name.split(".")[0] not in self.bindings[namespace]:
+            return self.mutation_values(namespace + "." + name, seen) or {"<dynamic>"}
+        return self.resolve(namespace, name, seen)
+
+    def imported(self, name: str, seen: frozenset[tuple[str, str]]) -> set[str]:
+        if name in self.class_parents:
+            return {"<class>:" + name}
+        if name in self.bindings:
+            return {name}
+        parts = name.split(".")
+        for split in range(len(parts) - 1, 0, -1):
+            module = ".".join(parts[:split])
+            if module in self.bindings:
+                if module in self.class_parents:
+                    return self.class_member(module, ".".join(parts[split:]), seen)
+                return self.resolve(module, ".".join(parts[split:]), seen)
+        return {name}
+
+    def resolve(self, module: str, name: str,
+                seen: frozenset[tuple[str, str]] = frozenset()) -> set[str]:
+        identity = (module, name)
+        if not name or identity in seen:
+            return {"<dynamic>"}
+        seen = seen | {identity}
+        first, _, rest = name.partition(".")
+        entries = [(kind, value, rest) for kind, value in self.bindings[module].get(first, [])]
+        if rest:
+            entries.extend((kind, value, "") for kind, value in self.bindings[module].get(name, []))
+        if not entries:
+            if module in self.class_parents:
+                return self.resolve(self.class_parents[module], name, seen)
+            return self.mutation_values(module + "." + name, seen) or {name}
+        resolved = set()
+        for kind, value, rest in entries:
+            if kind == "import" and isinstance(value, str):
+                resolved.update(self.imported(value + ("." + rest if rest else ""), seen))
+            elif kind == "class" and isinstance(value, str):
+                if rest:
+                    resolved.update(self.class_member(value, rest, seen))
+                else:
+                    resolved.add("<class>:" + value)
+            elif kind == "value" and isinstance(value, ast.AST):
+                for target in self.expression(module, value, seen):
+                    if target == "<dynamic>":
+                        resolved.add(target)
+                    else:
+                        resolved.update(self.imported(target + ("." + rest if rest else ""), seen))
+            else:
+                resolved.add("<dynamic>")
+        return resolved | self.mutation_values(module + "." + name, seen)
+
+    def expression(self, module: str, node: ast.AST | None,
+                   seen: frozenset[tuple[str, str]] = frozenset()) -> set[str]:
+        if isinstance(node, (ast.Name, ast.Attribute)):
+            return self.resolve(module, qualified(node), seen)
+        if isinstance(node, ast.Tuple):
+            return {target for item in node.elts for target in self.expression(module, item, seen)}
+        if (isinstance(node, ast.Call) and len(node.args) >= 2
+                and self.expression(module, node.func, seen) & {"getattr", "builtins.getattr"}
+                and isinstance(node.args[1], ast.Constant) and isinstance(node.args[1].value, str)):
+            return {target for base in self.expression(module, node.args[0], seen)
+                    for target in ({"<dynamic>"} if base == "<dynamic>" else
+                                   self.imported(base + "." + node.args[1].value, seen))}
+        return {"<dynamic>"}
+
+    def references(self, module: str, node: ast.AST) -> set[str]:
+        first, _, rest = qualified(node).partition(".")
+        return self.expression(module, node) | {
+            base + ("." + rest if rest else "")
+            for base in self.resolve(module, first) if base != "<dynamic>"
+        }
 
 
 def public_names(tree: ast.Module) -> set[str]:
@@ -157,6 +295,7 @@ def build_import_graph(sources: dict[str, str], contracts: dict | None = None,
     contracts = contracts or {}
     dynamic_imports = dynamic_imports or []
     trees = parse_sources(sources)
+    bindings = SourceBindings(trees)
     modules = {module_name(path): path for path in sources}
     if len(modules) != len(sources):
         raise QualityError("Duplicate module resolution (module/package collision)")
@@ -188,9 +327,17 @@ def build_import_graph(sources: dict[str, str], contracts: dict | None = None,
         access(importer, target, member, path, line)
         graph[importer].add(target)
 
+    def reference_access(importer: str, references: set[str], path: str, line: int) -> None:
+        for full in references:
+            components = full.removeprefix("<class>:").split(".")
+            for split in range(len(components) - 1, 0, -1):
+                target = ".".join(components[:split])
+                if target in known:
+                    access(importer, target, ".".join(components[split:]), path, line)
+                    break
+
     for path, tree in trees.items():
         importer = module_name(path)
-        aliases = aliases_for(path, tree)
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for item in node.names:
@@ -212,35 +359,69 @@ def build_import_graph(sources: dict[str, str], contracts: dict | None = None,
                             findings.append(finding("wildcard-import", path, node.lineno,
                                                     "Use explicit first-party imports"))
             elif isinstance(node, ast.Attribute):
-                full = expand_alias(qualified(node), aliases)
-                components = full.split(".")
-                for split in range(len(components) - 1, 0, -1):
-                    target = ".".join(components[:split])
-                    if target in known:
-                        access(importer, target, ".".join(components[split:]), path, node.lineno)
-                        break
+                reference_access(importer, bindings.references(importer, node), path, node.lineno)
             elif isinstance(node, ast.Call):
-                call = expand_alias(qualified(node.func), aliases)
-                if call not in {"importlib.import_module", "__import__", "builtins.__import__"}:
+                calls = bindings.expression(importer, node.func)
+                if calls & {"getattr", "builtins.getattr"} and len(node.args) >= 2:
+                    bases = bindings.expression(importer, node.args[0])
+                    attribute = node.args[1]
+                    if isinstance(attribute, ast.Constant) and isinstance(attribute.value, str):
+                        reference_access(importer, {base + "." + attribute.value for base in bases},
+                                         path, node.lineno)
+                    elif bases & {"importlib", "builtins"}:
+                        findings.append(finding("dynamic-import", path, node.lineno,
+                                                "Reflective loader target is not statically bounded"))
+                loaders = {"importlib.import_module", "__import__", "builtins.__import__"}
+                if not calls & loaders:
                     continue
-                if node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
-                    target = node.args[0].value
+                if calls - loaders:
+                    findings.append(finding("dynamic-import", path, node.lineno,
+                                            "Ambiguous loader binding requires resolution"))
+                kwargs = {keyword.arg: keyword.value for keyword in node.keywords}
+                name_arg = node.args[0] if node.args else kwargs.get("name")
+                if (None not in kwargs and isinstance(name_arg, ast.Constant)
+                        and isinstance(name_arg.value, str)):
+                    target = name_arg.value
+                    package_arg = node.args[1] if len(node.args) > 1 else kwargs.get("package")
+                    if calls & {"__import__", "builtins.__import__"}:
+                        level_arg = node.args[4] if len(node.args) > 4 else kwargs.get("level", ast.Constant(0))
+                        if (not isinstance(level_arg, ast.Constant) or not isinstance(level_arg.value, int)
+                                or level_arg.value < 0):
+                            findings.append(finding("dynamic-import", path, node.lineno,
+                                                    "Builtin import requires a literal nonnegative level"))
+                            continue
+                        if level_arg.value:
+                            globals_arg = node.args[1] if len(node.args) > 1 else kwargs.get("globals")
+                            if (not isinstance(globals_arg, ast.Call)
+                                    or not bindings.expression(importer, globals_arg.func) & {"globals", "builtins.globals"}
+                                    or "__package__" in bindings.bindings[importer]):
+                                findings.append(finding("dynamic-import", path, node.lineno,
+                                                        "Relative builtin import needs an established package"))
+                                continue
+                            package = importer if path.endswith("__init__.py") else importer.rpartition(".")[0]
+                            package_arg = ast.Constant(package)
+                            target = "." * level_arg.value + target
                     if target.startswith("."):
-                        if len(node.args) < 2 or not isinstance(node.args[1], ast.Constant):
+                        if not isinstance(package_arg, ast.Constant) or not isinstance(package_arg.value, str):
                             findings.append(finding("dynamic-import", path, node.lineno,
                                                     "Relative dynamic import requires a literal package"))
                             continue
-                        package = node.args[1].value
-                        if not isinstance(package, str):
-                            raise QualityError(f"Invalid literal package at {path}:{node.lineno}")
-                        level = len(target) - len(target.lstrip("."))
-                        target = ".".join(package.split(".")[:len(package.split(".")) - level + 1]) + target[level - 1:]
+                        try:
+                            target = resolve_name(target, package_arg.value)
+                        except (ImportError, ValueError):
+                            findings.append(finding("dynamic-import", path, node.lineno,
+                                                    "Relative dynamic import escapes its package"))
+                            continue
                     edge(importer, target, path, node.lineno)
                 else:
                     fingerprint = digest(ast.dump(node, include_attributes=False))
+                    symbol, _ = source_context(tree, node.lineno)
                     matches = [record for record in dynamic_imports
-                               if record.get("module_id") == importer and record.get("source_fingerprint") == fingerprint]
-                    if len(matches) != 1 or not matches[0].get("targets") or not matches[0].get("evidence_tests"):
+                               if record.get("module_id") == importer and record.get("symbol") == symbol
+                               and record.get("source_fingerprint") == fingerprint]
+                    if (len(matches) != 1 or not matches[0].get("targets") or not matches[0].get("evidence_tests")
+                            or matches[0].get("review", {}).get("status") != "active"
+                            or matches[0]["id"] in dynamic_used):
                         findings.append(finding("dynamic-import", path, node.lineno,
                                                 "Uninventoried variable dynamic import"))
                         continue
@@ -315,25 +496,45 @@ def handler_sites(sources: dict[str, str]) -> list[dict]:
         "SyntaxError", "SystemError", "TypeError", "UnicodeError", "ValueError",
         "ZeroDivisionError", "TimeoutError", "ConnectionError", "OverflowError",
         "UnicodeDecodeError", "UnicodeEncodeError", "KeyboardInterrupt", "SystemExit",
+        "BlockingIOError", "BrokenPipeError", "BufferError", "BytesWarning", "ChildProcessError",
+        "ConnectionAbortedError", "ConnectionRefusedError", "ConnectionResetError", "DeprecationWarning",
+        "EncodingWarning", "FileExistsError", "FloatingPointError", "FutureWarning", "GeneratorExit",
+        "ImportWarning", "IndentationError", "InterruptedError", "IsADirectoryError",
+        "ModuleNotFoundError", "NotADirectoryError", "PendingDeprecationWarning", "ProcessLookupError",
+        "RecursionError", "ReferenceError", "ResourceWarning", "RuntimeWarning", "SyntaxWarning",
+        "TabError", "UnboundLocalError", "UnicodeTranslateError", "UnicodeWarning", "UserWarning", "Warning",
     }
-    for path, tree in parse_sources(sources).items():
-        aliases = aliases_for(path, tree)
-        assigned = {target.id for node in ast.walk(tree) if isinstance(node, ast.Assign)
-                    for target in node.targets if isinstance(target, ast.Name)}
-        classes = {node.name: node for node in ast.walk(tree) if isinstance(node, ast.ClassDef)}
+    broad_builtins = {"Exception", "BaseException", "ExceptionGroup", "BaseExceptionGroup"}
+    trees = parse_sources(sources)
+    bindings = SourceBindings(trees)
+    for path, tree in trees.items():
         for node in ast.walk(tree):
             if not isinstance(node, (ast.Try, ast.TryStar)):
                 continue
             for handler in node.handlers:
                 caught = handler.type.elts if isinstance(handler.type, ast.Tuple) else [handler.type]
-                names = [expand_alias(qualified(item), aliases) if item else "<bare>" for item in caught]
+                names = list(dict.fromkeys(
+                    name for item in caught
+                    for name in (sorted(bindings.expression(module_name(path), item)) if item else ["<bare>"])
+                ))
+                names = list(dict.fromkeys(
+                    "<dynamic>" if (
+                        "." not in name.removeprefix("builtins.")
+                        and name.removeprefix("builtins.") not in narrow_builtins | broad_builtins | {"<bare>"}
+                        and not name.startswith("<class>:")
+                    ) else name
+                    for name in names
+                ))
                 broad = False
-                for item, name in zip(caught, names):
-                    if name in {"<bare>", "Exception", "BaseException", "builtins.Exception", "builtins.BaseException"}:
+                for name in names:
+                    if name.startswith("<class>:"):
+                        continue
+                    if name == "<bare>" or name.removeprefix("builtins.") in broad_builtins:
                         broad = True
-                    elif not name or (isinstance(item, ast.Name) and item.id in assigned):
-                        broad = True
-                    elif "." not in name and name not in narrow_builtins and name not in classes:
+                    elif name == "<dynamic>" or (
+                        "." not in name.removeprefix("builtins.")
+                        and name.removeprefix("builtins.") not in narrow_builtins
+                    ):
                         broad = True
                 if broad:
                     symbol, _ = source_context(tree, handler.lineno)
@@ -375,6 +576,10 @@ def exception_findings(sources: dict[str, str], records: list[dict], evidence: d
         matching = matching_exception_records(site, records)
         proposed.update(record["id"] for record in matching if record.get("review", {}).get("status") == "proposed")
         matches = [record for record in matching if record.get("review", {}).get("status") == "active"]
+        if "<dynamic>" in site["caught_types"]:
+            findings.append(finding("unresolved-exception-type", site["file"], site["line"],
+                                    "Resolve the catch binding before proposing an allowance"))
+            matches = []
         if len(matches) != 1 or identities[identity] > 1:
             findings.append(finding("unapproved-handler", site["file"], site["line"],
                                     "Requires one exact reviewed boundary record", **{

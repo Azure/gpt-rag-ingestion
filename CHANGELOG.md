@@ -23,6 +23,13 @@
 
 ### Fixed
 
+- **Quality-policy mutations cannot hide reviewed boundaries.** Reject malformed
+  records and mismatched tool pins; retain conflicting lexical aliases, resolve
+  first-party and class-member exception bindings, invalidate changed catch
+  breadth, and require review for ownership-changing moves. Dynamic-import
+  allowances are exact-symbol, active, single-use records rather than reusable
+  call-expression exemptions.
+
 - **Primary failures no longer masquerade as confirmed work.** Search deletion
   uses the SDK delete operation and counts matching confirmed outcomes rather
   than submissions; NL2SQL purge propagates failed scans and partial deletion.

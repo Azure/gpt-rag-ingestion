@@ -100,6 +100,15 @@ must agree with the AST collector. Import Linter enforces package-to-API
 prohibitions; the complete graph also covers flat roots, all cycles, private
 access and transitive forbidden directions. Unknown variable dynamic loading
 requires an exact target inventory and executed behavior evidence.
+The resolver retains conflicting lexical bindings instead of letting an
+unrelated local import hide a module-level alias. It follows first-party
+reexports, class-member exception aliases and static attribute assignments;
+unresolved catch types cannot consume an approval. A changed resolved catch
+type invalidates its record even when the handler body itself is unchanged.
+Variable-loader records are bound to the qualified symbol and call syntax,
+must be active, and cannot be reused for a second site. Relative literal
+imports use Python's package resolution, including keyword package arguments;
+escaping or unbounded reflective loaders fail explicitly.
 
 Blocking typing starts with `telemetry/audit_contract.py`,
 `telemetry/audit_sanitizer.py`, and the new `jobs/runtime.py`. New runtime files
@@ -115,6 +124,12 @@ stage. Same-count substitutions, duplication and stale allowances fail.
 Moves require one-to-one mappings retaining coverage and identity. Removed
 annotations, shifted/new suppressions, nested configs and reduced scope fail
 policy review. Mypy's cache is not a debt baseline.
+Cross-root moves, and moves that change coverage of a protected import
+relationship, also require policy review even if the stable module ID and
+declared area are retained. Record parsing rejects missing/unknown fields,
+invalid nested types and unsupported lifecycle values before running checks.
+Boolean or floating-point schema versions are not version 1. The exact
+requirements manifest must agree with the policy toolchain.
 
 ## Broad handlers and remaining acceptance
 
