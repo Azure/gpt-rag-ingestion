@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 import sys
 import types
+from unittest.mock import AsyncMock
 
 from azure.core.exceptions import AzureError
 import pytest
@@ -198,3 +199,31 @@ async def test_run_success_publishes_confirmed_totals_and_closes_owned_clients(p
     assert summary["status"] == "finished"
     assert summary["results"] == [{"kind": "queries", "deleted": 2, "before": 2, "after": 0}]
     assert purger._ai_search.close_calls == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["_ensure_container", "_write_run_summary"])
+@pytest.mark.parametrize("failure", [AzureError("private-log"), RuntimeError("defect")])
+async def test_optional_purge_logs_only_recover_sdk_failures(purger, method, failure, caplog):
+    container = purger._blob_service.container
+    container.create_container = AsyncMock(side_effect=failure)
+    container.upload_blob = AsyncMock(side_effect=failure)
+    args = ("jobs",) if method == "_ensure_container" else ("jobs", {"status": "finished"})
+    if isinstance(failure, RuntimeError):
+        with pytest.raises(RuntimeError) as raised:
+            await getattr(purger, method)(*args)
+        assert raised.value is failure
+    else:
+        await getattr(purger, method)(*args)
+        assert "AzureError" in caplog.text
+    assert "private-log" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_partial_purger_initialization_always_closes_owned_resources(purger):
+    purger._ensure_clients = AsyncMock(side_effect=RuntimeError("init failed"))
+    with pytest.raises(RuntimeError, match="init failed"):
+        await purger.run()
+    assert purger._ai_search.close_calls == 1
+    assert purger._blob_service.close_calls == 1
+    assert purger._credential.close_calls == 1

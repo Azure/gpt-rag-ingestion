@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 import sys
 import types
+from unittest.mock import AsyncMock
 
 from azure.core.exceptions import AzureError
 from azure.search.documents.models import IndexingResult
@@ -186,3 +187,64 @@ async def test_audit_export_failure_cannot_change_a_confirmed_sdk_outcome(
         assert await boundary.delete_documents("index", "id", ["a"]) == {"deleted": 1, "failed": 0}
     assert "Audit event export failed" in caplog.text
     assert "private exporter detail" not in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("late_failure", [False, True])
+async def test_service_reference_iterator_has_no_top_cap_and_propagates_pages(search_boundary, late_failure):
+    boundary, client, _ = search_boundary
+
+    async def documents():
+        for number in range(1001):
+            yield {"relatedImages": [str(number)]}
+        if late_failure:
+            raise AzureError("page failed")
+
+    client.search = AsyncMock(return_value=documents())
+    observed = []
+    if late_failure:
+        with pytest.raises(AzureError, match="page failed"):
+            async for document in boundary.iter_documents("index", ["relatedImages"]):
+                observed.append(document)
+    else:
+        async for document in boundary.iter_documents("index", ["relatedImages"]):
+            observed.append(document)
+    assert len(observed) == 1001
+    kwargs = client.search.await_args.kwargs
+    assert kwargs["select"] == ["relatedImages"]
+    assert kwargs["headers"] == {"x-ms-enable-elevated-read": "true"}
+    assert "top" not in kwargs and "skip" not in kwargs
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", [AzureError("private-search-query"), RuntimeError("private-search-query")])
+async def test_query_translation_is_explicit_failure_without_payloads(search_boundary, failure, caplog):
+    boundary, client, _ = search_boundary
+    client.search = AsyncMock(side_effect=failure)
+    outcome = await boundary.search_documents("index")
+    assert outcome["documents"] == [] and outcome["count"] == 0
+    assert outcome["error"]
+    assert "private-search-query" not in caplog.text + str(outcome)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failed_resource", ["first", "second", "credential"])
+async def test_search_close_attempts_every_resource_and_propagates_failure(search_boundary, failed_resource):
+    boundary, _, _ = search_boundary
+    calls = []
+    failure = AzureError("cleanup failed")
+
+    def resource(name):
+        async def close():
+            calls.append(name)
+            if name == failed_resource:
+                raise failure
+        return types.SimpleNamespace(close=close)
+
+    boundary.clients = {"first": resource("first"), "second": resource("second")}
+    boundary.credential = resource("credential")
+    with pytest.raises(AzureError) as raised:
+        await boundary.close()
+    assert raised.value is failure
+    assert calls == ["first", "second", "credential"]
+    assert boundary.clients == {}

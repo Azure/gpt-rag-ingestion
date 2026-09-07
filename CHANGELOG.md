@@ -23,6 +23,28 @@
 
 ### Fixed
 
+- **Worker failures cannot fabricate ACLs or Search success.** Require matching
+  upload/delete confirmations in Blob and SharePoint workers, propagate retry
+  exhaustion and datasource/permission failures, and preserve explicit failed
+  document outcomes rather than indexing with missing ACLs. Observe collection
+  task errors, cancel owned children, and close resources after partial
+  initialization or diagnostic failure. Preserve the existing credential,
+  configuration and per-record contracts with payload-safe diagnostics.
+
+- **Image and SharePoint purge outcomes require complete evidence.** Scan all
+  image references before any deletion instead of using a 1,000-result cap or
+  failed/partial reference set. Use asynchronous Blob listing/deletion and
+  close owned resources on failure/cancellation. SharePoint counts only
+  matching positive SDK deletion results and propagates count, late-page and
+  unconfirmed-delete failures instead of publishing a finished purge summary.
+
+- **Every retained broad handler has an exact inactive disposition.** Narrow
+  parser, SDK, Graph and optional-log recovery without concealing programming
+  defects. Individually propose the remaining existing public translations,
+  cleanup and audit protocol boundaries with executed failure evidence.
+  Preserve constructor source fallback, post-write refresh-only 200/applied,
+  hostile audit-value omission and audit wire bytes; no approval is activated.
+
 - **Operator and startup failures retain truthful, safe outcomes.** Count only
   confirmed log deletions, narrow optional history recovery to SDK failures,
   and stop hiding scheduler/programming errors as missing queue data. Resolve

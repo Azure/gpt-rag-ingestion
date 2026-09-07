@@ -13,6 +13,7 @@ import pytest
 from tenacity import wait_none
 
 from tools.appconfig import AppConfigClient
+from unittest.mock import Mock
 
 
 def provider(values):
@@ -178,3 +179,35 @@ async def test_provider_read_failure_reaches_startup_before_scheduler_starts(mon
         async with main.lifespan(main.app):
             pass
     assert starts == []
+
+
+@pytest.mark.parametrize("fallback", ["environment", "connection", "connection-failure"])
+def test_constructor_fallback_keeps_source_contract_without_payloads(monkeypatch, caplog, fallback):
+    appconfig = importlib.import_module("tools.appconfig")
+    monkeypatch.setenv("APP_CONFIG_ENDPOINT", "https://configuration.example")
+    monkeypatch.setenv("FALLBACK_VALUE", "environment")
+    monkeypatch.delenv("allow_environment_variables", raising=False)
+    if fallback == "environment":
+        monkeypatch.delenv("AZURE_APPCONFIG_CONNECTION_STRING", raising=False)
+    else:
+        monkeypatch.setenv("AZURE_APPCONFIG_CONNECTION_STRING", "private-connection")
+    for name in ("ChainedTokenCredential", "ManagedIdentityCredential", "AzureCliCredential",
+                 "AsyncChainedTokenCredential", "AsyncManagedIdentityCredential", "AsyncAzureCliCredential"):
+        monkeypatch.setattr(appconfig, name, lambda *args, **kwargs: object())
+    failure = RuntimeError("private-connection-error")
+    load = Mock(side_effect=[
+        RuntimeError("private-endpoint-error"),
+        failure if fallback == "connection-failure" else provider({"FALLBACK_VALUE": "connection"}),
+    ])
+    monkeypatch.setattr(appconfig, "load", load)
+    if fallback == "connection-failure":
+        with pytest.raises(RuntimeError) as raised:
+            AppConfigClient()
+        assert raised.value is failure
+    else:
+        config = AppConfigClient()
+        assert config.get("FALLBACK_VALUE") == fallback
+    assert load.call_count == (1 if fallback == "environment" else 2)
+    if fallback != "environment":
+        assert load.call_args.kwargs["connection_string"] == "private-connection"
+    assert "private-" not in caplog.text

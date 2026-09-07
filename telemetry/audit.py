@@ -68,7 +68,8 @@ def _read_service_version() -> str:
         return _service_version
     try:
         _service_version = _VERSION_FILE.read_text(encoding="utf-8").strip() or "0.0.0"
-    except Exception:
+    except (OSError, UnicodeError) as exc:
+        _warning_logger.warning("Audit service version unavailable (%s)", type(exc).__name__)
         _service_version = "0.0.0"
     return _service_version
 
@@ -89,7 +90,8 @@ def configure(config: Any) -> GovernanceSettings:
             default=config.get("AZURE_ENV_NAME", default="unknown", allow_none=True),
             allow_none=True,
         )
-    except Exception:
+    except Exception as exc:
+        _warning_logger.warning("Optional audit environment context unavailable (%s)", type(exc).__name__)
         env_value = "unknown"
     _environment = str(env_value or "unknown")[:MAX_ENVIRONMENT_LENGTH]
     _logger.setLevel(logging.INFO)

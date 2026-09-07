@@ -85,25 +85,16 @@ class AppConfigClient:
             )
         except Exception as e:
             logging.error(
-                "Unable to connect to Azure App Configuration via endpoint. %s",
-                e,
-                exc_info=True,
+                "Unable to load Azure App Configuration via endpoint (%s); trying configured fallback.",
+                type(e).__name__,
             )
             # Attempt 2: Fallback to connection string-based auth (less secure, for legacy scenarios)
             connection_string = os.environ.get("AZURE_APPCONFIG_CONNECTION_STRING")
             if connection_string:
-                try:
-                    self.client = load(
-                        connection_string=connection_string,
-                        key_vault_options=AzureAppConfigurationKeyVaultOptions(credential=self.credential),
-                    )
-                except Exception as e2:
-                    logging.error(
-                        "Unable to connect to Azure App Configuration via connection string. %s",
-                        e2,
-                        exc_info=True,
-                    )
-                    raise
+                self.client = load(
+                    connection_string=connection_string,
+                    key_vault_options=AzureAppConfigurationKeyVaultOptions(credential=self.credential),
+                )
             else:
                 # Attempt 3: Last resort fallback - direct environment variable reads (no Azure dependency)
                 logging.warning(

@@ -1,10 +1,12 @@
 import logging
 from collections import Counter
+from contextlib import AsyncExitStack
+from math import isfinite
 from azure.search.documents.aio import SearchClient
 from azure.search.documents.models import IndexingResult, SearchMode
-from azure.core.exceptions import AzureError
+from azure.core.exceptions import AzureError, HttpResponseError
 from azure.identity.aio import ManagedIdentityCredential, AzureCliCredential, ChainedTokenCredential
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 from dependencies import get_config
 from tools.credentials import get_azure_client_id
 from telemetry import audit
@@ -31,6 +33,31 @@ def confirmed_result_keys(key_values: List[str], result: List[IndexingResult]) -
         if res.succeeded is True:
             confirmed.append(res.key)
     return confirmed
+
+
+def require_confirmed_batch(documents: List[Dict[str, Any]], result: List[IndexingResult]) -> None:
+    """Reject a worker batch unless Search confirms every requested document."""
+    keys = [document["id"] for document in documents]
+    if len(confirmed_result_keys(keys, result)) != len(keys):
+        raise AzureError("Search did not confirm every requested document operation.")
+
+
+def search_retry_delay(error: HttpResponseError, default: float) -> float:
+    """Honor SDK retry headers without treating seconds as milliseconds."""
+    headers = error.response.headers if error.response is not None else {}
+    milliseconds = headers.get("retry-after-ms")
+    raw = milliseconds if milliseconds is not None else headers.get("Retry-After")
+    if not raw:
+        return default
+    try:
+        seconds = float(raw) / 1000.0 if milliseconds is not None else float(raw)
+    except (TypeError, ValueError):
+        logging.warning("[aisearch] Invalid retry delay header; using exponential backoff.")
+        return default
+    if not isfinite(seconds) or seconds < 0:
+        logging.warning("[aisearch] Non-finite or negative retry delay; using exponential backoff.")
+        return default
+    return max(default, seconds)
 
 
 class AISearchClient:
@@ -226,22 +253,33 @@ class AISearchClient:
             }
 
         except AzureError as e:
-            logging.error(f"[aisearch] AzureError while searching documents in '{index_name}': {e}")
-            return {"count": 0, "documents": [], "error": str(e)}
+            logging.error("[aisearch] Search query failed (%s)", type(e).__name__)
+            return {"count": 0, "documents": [], "error": "Azure AI Search query failed."}
         except Exception as e:
-            logging.error(f"[aisearch] Unexpected error while searching documents in '{index_name}': {e}")
-            return {"count": 0, "documents": [], "error": str(e)}
+            logging.error("[aisearch] Unexpected Search query failure (%s)", type(e).__name__)
+            return {"count": 0, "documents": [], "error": "Azure AI Search query failed."}
+
+    async def iter_documents(
+        self, index_name: str, select_fields: List[str],
+    ) -> AsyncIterator[Dict[str, Any]]:
+        """Stream every page for service-side maintenance; never return a partial success."""
+        client = await self.get_search_client(index_name)
+        results = await client.search(
+            search_text="*", select=select_fields, headers=_ELEVATED_HEADERS,
+            search_mode=SearchMode.ALL,
+        )
+        async for document in results:
+            yield document
 
     async def close(self):
         """
         Closes all SearchClient instances and the credential.
         """
-        for index_name, client in self.clients.items():
-            await client.close()
-            logging.debug(f"[aisearch] Closed SearchClient for index '{index_name}'.")
+        clients = list(self.clients.values())
         self.clients.clear()
-
-        # Close the ChainedTokenCredential if it has a close method
-        if hasattr(self.credential, "close"):
-            await self.credential.close()
-            logging.debug("[aisearch] Closed ChainedTokenCredential.")
+        async with AsyncExitStack() as cleanup:
+            if hasattr(self.credential, "close"):
+                cleanup.push_async_callback(self.credential.close)
+            for client in reversed(clients):
+                cleanup.push_async_callback(client.close)
+        logging.debug("[aisearch] Closed Search clients and credential.")

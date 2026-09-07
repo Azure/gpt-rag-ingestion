@@ -8,6 +8,7 @@ from typing import Optional, Set, List, Dict
 from azure.identity.aio import AzureCliCredential, ManagedIdentityCredential, ChainedTokenCredential
 from azure.storage.blob.aio import BlobServiceClient
 from azure.storage.blob import ContentSettings
+from azure.core.exceptions import AzureError, ResourceExistsError
 
 from dependencies import get_config
 from tools.credentials import get_azure_client_id
@@ -89,7 +90,6 @@ class NL2SQLPurger:
             )
 
     async def run(self) -> None:
-        await self._ensure_clients()
         run_started_at = datetime.now(timezone.utc)
         run_id = run_started_at.strftime("%Y%m%dT%H%M%SZ")
         start_iso = run_started_at.isoformat()
@@ -102,6 +102,7 @@ class NL2SQLPurger:
         )
 
         try:
+            await self._ensure_clients()
             await self._ensure_container(self.cfg.jobs_log_container)
 
             # Gather all existing blob names under nl2sql container
@@ -201,8 +202,10 @@ class NL2SQLPurger:
         try:
             cc = self._blob_service.get_container_client(name)
             await cc.create_container()
-        except Exception:
+        except ResourceExistsError:
             pass
+        except AzureError as exc:
+            logging.warning("[nl2sql-purger] Optional log container unavailable (%s)", type(exc).__name__)
 
     async def _write_run_summary(self, container: str, summary: dict):
         cc = self._blob_service.get_container_client(container)
@@ -215,8 +218,8 @@ class NL2SQLPurger:
                 overwrite=True,
                 content_settings=ContentSettings(content_type="application/json"),
             )
-        except Exception:
-            logging.exception(f"[nl2sql-purger] failed to write run summary {name}")
+        except AzureError as exc:
+            logging.warning("[nl2sql-purger] Run summary write failed (%s)", type(exc).__name__)
 
     async def _close_clients_safely(self):
         try:

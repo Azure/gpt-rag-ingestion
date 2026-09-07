@@ -26,15 +26,17 @@ class BlobClient:
 
         # 2. Parse the blob URL => account_url, container_name, blob_name
         try:
+            if not isinstance(self.file_url, str):
+                raise ValueError("Blob URL must be a string.")
             parsed_url = urlparse(self.file_url)
             self.account_url = f"{parsed_url.scheme}://{parsed_url.netloc}"   # e.g. https://mystorage.blob.core.windows.net
             self.container_name = parsed_url.path.split("/")[1]              # e.g. 'mycontainer'
             # Blob name is everything after "/{container_name}/"
             self.blob_name = unquote(parsed_url.path[len(f"/{self.container_name}/"):])
             logging.debug(f"[blob][{self.blob_name}] Parsed blob URL successfully.")
-        except Exception as e:
-            logging.error(f"[blob] Invalid blob URL '{self.file_url}': {e}")
-            raise EnvironmentError(f"Invalid blob URL '{self.file_url}': {e}")
+        except (ValueError, IndexError) as e:
+            logging.error("[blob] Invalid blob URL (%s)", type(e).__name__)
+            raise EnvironmentError("Invalid blob URL; check the account, container and blob path.") from None
 
         # 3. Initialize the BlobServiceClient
         self.blob_service_client = BlobServiceClient(

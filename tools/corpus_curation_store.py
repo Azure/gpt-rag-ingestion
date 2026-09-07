@@ -45,7 +45,7 @@ from datetime import datetime, timezone
 from typing import List, Optional, Tuple
 
 from azure.core import MatchConditions
-from azure.core.exceptions import ResourceModifiedError, ResourceNotFoundError
+from azure.core.exceptions import AzureError, ResourceModifiedError, ResourceNotFoundError
 from azure.identity.aio import (
     AzureCliCredential,
     ChainedTokenCredential,
@@ -156,8 +156,8 @@ class CorpusCurationStore:
                     dl = await bc.download_blob()
                     raw = await dl.readall()
                     return name, json.loads(raw)
-                except Exception as exc:  # pragma: no cover - defensive
-                    logging.warning(f"[corpus-curation] could not read {name}: {exc}")
+                except (AzureError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+                    logging.warning("[corpus-curation] could not read file log (%s)", type(exc).__name__)
                     return None
 
         for result in await asyncio.gather(*[_download(n) for n in blob_names]):

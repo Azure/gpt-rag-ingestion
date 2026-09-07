@@ -117,7 +117,8 @@ Use the jobs-owned test seam when patching scheduling.
 Exact exception records are proposed for audit boundaries, post-write local
 refresh, indexer/purger resource cleanup, explicit per-record failure
 translations, and optional auth diagnostics. None is active.
-Other inherited handler/lint findings remain blocking. This is not
+Broad handlers remain blocking until protected review activates their exact
+records with passing same-run evidence. This is not
 an active required-merge claim. Protected policy
 review, a clean reference PR and administrative rule activation are separate
 acceptance requirements; no agent may change GitHub settings to bypass them.

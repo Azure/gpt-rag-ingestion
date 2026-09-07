@@ -4,7 +4,8 @@ This is the ingestion implementation of
 [Azure/GPT-RAG#681](https://github.com/Azure/GPT-RAG/issues/681) and the accepted
 [ADR-0005](https://github.com/Azure/GPT-RAG/blob/feature/python-module-boundaries/docs/adr/ADR-0005-python-quality-gates-and-ui-package.md).
 It is **not yet an activated, green merge policy**. The draft intentionally
-reports inherited broad handlers and lint findings instead of blessing them.
+reports necessary, individually proposed broad handlers instead of approving
+them automatically.
 The parent coordination PR is
 [Azure/GPT-RAG#689](https://github.com/Azure/GPT-RAG/pull/689); published
 contributor documentation is coordinated in
@@ -111,6 +112,25 @@ failures produce safe warnings. SDK-result tests deserialize the pinned Search
 model, whose readonly response fields are not populated by constructor kwargs.
 Real audit export failures do not change confirmed adapter outcomes.
 
+Blob and SharePoint worker retries now require matching SDK confirmations and
+propagate exhaustion, honoring seconds versus millisecond retry headers.
+Permission acquisition failures produce explicit failed items, never empty
+ACL fallback. Datasource configuration failures do not become an empty loaded
+configuration; malformed staged JSON is not silently skipped. SharePoint
+collection failures are observed, and source failure/timeout cancels and joins
+owned item tasks. An outer cleanup guard also covers partial initialization and
+diagnostic-finalization defects.
+
+SharePoint purge totals retain valid partial confirmations but reject missing,
+duplicate and unrelated results. Count, late-page and failed-delete paths
+propagate with failed summaries and cleanup. Image maintenance uses an uncapped
+service-side Search iterator, validates the complete relatedImages collection
+before deletion, and awaits asynchronous Blob operations with the same
+managed-identity/CLI selection. A failed reference scan cannot become an empty
+index. Search adapter disposal attempts all owned clients and its credential
+even if an earlier close fails. These are contract-restoring error paths, not
+a new snapshot-isolation guarantee for concurrently changing sources/indexes.
+
 `tests/test_ingest_documents_failures.py` now drives the actual
 `/ingest-documents` route through its direct SDK upload, independently of the
 write-adapter tests. Missing, duplicate and unrelated responses cannot inflate
@@ -216,50 +236,29 @@ clean positive control.
 
 ## Broad handlers and remaining acceptance
 
-The exception ledger contains thirty-five exact **proposed**, not active, records.
-Four cover audit boundaries: unexpected sanitizer failure, exporter failure, primary run failure
-observation/propagation, and document-audit projection failure. Each cites its
-own source fingerprint, boundary-specific rationale and executed failure tests.
-The other four cover the established post-write local refresh contract and
-each of the purger's Search, Blob and credential cleanup boundaries. They do
-not authorize primary-operation success fallbacks.
-The ninth covers only the direct upload's established per-record failure
-translation, with actual route/SDK failure evidence; it does not authorize
-unconfirmed uploads or the endpoint's other handlers.
-Two further records preserve only optional auth diagnostic logging, never
-signature/claims validation or JWKS acquisition; real-token failure tests prove
-that their failure cannot grant access or replace the verified outcome.
-Four NL2SQL indexer records preserve its existing explicit failed-document
-result and independent Search/Blob/credential cleanup. Optional log-container,
-read/write and existence-check failures are narrowed to actual Azure/JSON
-errors, not covered by those broad-handler proposals. A failed optional
-existence check may trigger idempotent reindexing with the same key, never
-an assumed upload success. Unexpected adapter failures reach the failed
-document outcome instead of being treated as absent logs/documents.
-Resource-close warnings cannot replace a primary exception or confirmed
-summary; persisted error text names the failure class rather than copying
-dependency payloads.
-The document-chunking proposal preserves the existing terminal errors-list
-translation around arbitrary format chunkers. Cancellation and process
-interrupts are no longer suppressed by a return in `finally`; successful
-chunk IDs, order, content, metadata and embedding inputs remain unchanged.
-Analysis retries cover declared SDK/Requests failures, and temporary split
-files owned by the chunker are cleaned on success and failure. Expected
-PDF/ZIP/codec errors retain diagnostic, confirmed-partial-image behavior;
-unexpected implementation failures propagate. Image uploads cannot return an
-empty success-shaped URL, optional captions retain their established fallback,
-and caption/dependency payloads are omitted from diagnostics.
-Nineteen further records cover the established startup cleanup/independent-job
-boundaries, four direct skill/upload record outcomes, six operator
-probe/mutation translations, and seven panel read/write/enrichment boundaries.
-They preserve actual public contracts (including non-authoritative 200/false
-identity probes and explicit 502 panel failures), not a blanket recovery policy.
-Operator log cleanup now counts only confirmed deletes; history-store recovery
-is limited to expected SDK outages, and scheduler/import/programming defects
-cannot appear as missing schedules or timestamps. Startup flag/provider and
-logging-configuration defects surface before scheduling starts. Defaults,
-run-now locking, independent startup jobs and PUT refresh-only 200/applied
-behavior are retained.
+The exception ledger contains **65 exact proposed records and zero active
+approvals**. Every inventoried broad handler now has an individual disposition;
+there are no unproposed sites or ordinary Ruff findings. The remaining 60
+BLE001 findings overlap those same 65 handlers; the independent exception
+check also covers logged/rethrown catches that Ruff does not report.
+
+Each record identifies its exact source, necessity, existing public contract,
+diagnostic path and executed failure tests. Categories include explicit
+per-document/API failure translations, worker failure observation, independent
+resource cleanup, optional operator/auth diagnostics, audit emission and hostile
+Mapping/Sequence sanitization. They are not blanket approvals by category.
+The endpoint-constructor proposal preserves only the explicitly required
+configuration source fallback: a failed chosen connection-string load still
+propagates, as do later authoritative provider reads. This is not a best-effort
+primary configuration operation. The separate post-write refresh proposal
+preserves confirmed writes as 200/applied.
+
+Cleanup proposals cover disposal only, not source access, authentication or
+unconfirmed writes/deletes. Audit protocol proposals retain bounded omission
+markers and unchanged required identifiers without exporting hostile values.
+Operator probes remain non-authoritative and panel/query failures retain their
+explicit HTTP failure statuses. Chunking retains its established terminal
+errors list; cancellation and process interrupts are not suppressed.
 **No inherited handler is automatically approved.** The syntax check includes
 bare handlers, builtins aliases, tuples,
 exception groups, and logged/re-raised catches exempted by Ruff BLE001.
@@ -273,17 +272,12 @@ file or rule. This does not waive the separate required exceptions job:
 without passing same-run behavior evidence, the aggregate still fails.
 Proposal records cannot waive either check.
 
-The repository still contains inherited broad-handler and lint violations.
-Remediation must classify each operation and add boundary-specific failure
-tests before narrowing or proposing a record. In particular, existing
-configuration fallbacks and indexing/deletion success-shaped fallbacks cannot
-be approved merely because they log. Audit sanitization/export remains
-contractually best-effort; it must not become a primary-operation failure,
-nor be used to excuse indexing, deletion, configuration or authentication
-failures. The concrete Search/NL2SQL/governance/configuration defects above
-have regression coverage, but this draft does not claim the entire legacy
-failure inventory is complete: T025 still needs individual legacy dispositions
-and their associated failure evidence; SC-003 acceptance is not complete.
+The retained sites remain blocking until genuine protected review activates
+their individual records. Logging alone is not a justification, and no record
+may convert an unconfirmed primary operation into success. T025's graph,
+handler-disposition and per-site evidence implementation is complete;
+SC-003 administrative/policy acceptance is not. This is not a certification
+of every possible failure in inherited code or of a live Azure topology.
 
 ### Delivered task milestones
 
@@ -292,21 +286,21 @@ and their associated failure evidence; SC-003 acceptance is not complete.
 | T003 | Flat-root/module/public-surface inventory and source-base reconciliation | Review proposed surface policy |
 | T007 | Exact development pins and closed, typed parsing of all four records | Bootstrap policy approval |
 | T010 | Q6 regression fixtures, real aggregate CLI failures and isolated-tool controls | Administrative merge-eligibility exercise, not more fixture setup |
-| T013 | Ruff/mypy enforcement, individual diagnostic identities and monotonic scope | Resolve inherited runtime findings |
+| T013 | Ruff/mypy enforcement, individual diagnostic identities and monotonic scope; no ordinary lint debt | Protected review of necessary exact handler proposals |
 | T016 | Protected-base evaluator, verified policy owner and same-workflow aggregate dependencies | Actual protected review, bootstrap and required-check activation |
 | T019 | Flat/package/late/type-only/private/cycle/dynamic-loader fixtures | Policy approval |
 | T022 | Jobs-owned scheduler singleton/registry/lock and lifecycle/run-now regressions | No remaining implementation gap identified |
-| T025 | Complete static graph and independent broad-handler enforcement | Remaining legacy handler dispositions and necessary per-site evidence |
+| T025 | Complete static graph, independent broad-handler enforcement, all sites narrowed/removed or individually proposed with failure evidence | Human review/activation of 65 exact proposals; no automatic approvals |
 | T028 | Scheduler, actual direct upload, confirmed Search/purge, provider startup/precedence, real JWT and audit-independence cases | Not a certification of every inherited failure handler or live Azure topology |
 | T040 | Contributor commands, ownership, recovery and coordinated PR evidence | Keep final PR/docs receipts synchronized |
-| T045 (component) | Full Python/asset evidence; existing frontend commands attempted | Frontend restore is blocked by the existing React 19/React DOM 18 peer conflict; final immutable CI and unavailable live/deployment evidence remain separate |
+| T045 (component) | Full Python/asset evidence and coordinated frontend validation | Final immutable CI/frontend receipts and unavailable live/deployment evidence remain separate |
 
 ## CI trust and separate administrative activation
 
 `.github/workflows/tests.yml` keeps the existing pytest job and adds actual
 `lint`, `typing`, `architecture`, `exceptions`, and `policy` jobs. The
 always-evaluated **quality-gate** depends on those jobs and `unit-tests` in the
-same workflow. Existing frontend assets/workflows are unchanged.
+same workflow. Existing frontend workflows are preserved.
 Actions are SHA-pinned, permissions are read-only, credentials are not
 persisted, and no privileged `pull_request_target` execution is introduced.
 

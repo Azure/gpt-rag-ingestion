@@ -23,34 +23,29 @@ For full documentation, visit the **[GPT-RAG documentation site](https://azure.g
 
 ## Contributor quality bootstrap
 
-Python 3.12 contributor commands, the jobs-owned scheduler interface,
-incremental typing scope, import/error policy and recovery guidance are in
-[Python quality gates](docs/python-quality.md). The bootstrap reports inherited
-violations without blanket exemptions; required-check activation and remaining
-failure-boundary review are explicitly pending. Existing successful response
-shapes, schema bytes and authentication remain unchanged. Search and NL2SQL
-deletion counts now require confirmed results; worker and governance failures
-propagate, and genuine configuration-application failures are explicit.
-Confirmed configuration writes retain their existing success response if the
-best-effort local refresh fails. Startup jobs retain independent failure isolation.
-Direct `/ingest-documents` uploads now count only matching confirmed Search
-results while preserving the API-key boundary, per-record response, and ACL
-fields. Expected SDK/parser failures keep explicit error results; unexpected
-adapter failures are not retried or disguised as missing configuration/data.
-Model-service retries and JWT rejection statuses retain their established
-contracts. Analysis diagnostics omit authorization headers and response bodies;
-polling HTTP errors cannot become confirmed analysis results.
-NL2SQL optional job-log failures preserve confirmed primary document outcomes;
-an unavailable unchanged-document check triggers reindexing with the same key,
-not an assumed success. Failed documents and cleanup remain explicit.
-Chunking preserves terminal error lists and successful chunk identity while
-allowing cancellation to propagate. Optional image extraction retains only
-confirmed partial results, and owned PDF split files are cleaned on failure.
-Operator log cleanup counts only confirmed deletions. Expected history-store
-outages retain the read-only dashboard fallback; scheduler/programming failures
-do not masquerade as missing schedules. Startup configuration failures surface
-before scheduling begins. Existing identity/edit probes, panel error statuses
-and per-record embedding/upload outcomes remain unchanged, with safe diagnostics.
+Python 3.12 contributor commands, scheduler ownership, incremental typing,
+import/error policy and recovery guidance are in
+[Python quality gates](docs/python-quality.md). Every retained broad handler
+has an exact, individually justified proposal with failure evidence; **none is
+active**. Protected review, bootstrap and required-check activation remain
+separate acceptance steps.
+
+Search uploads/deletes, including direct `/ingest-documents`, require matching
+SDK confirmations. Blob/SharePoint permission failures cannot become empty ACLs;
+worker, provider and genuine configuration-application failures remain visible.
+Confirmed configuration writes retain **200/applied** if only the established
+best-effort local refresh fails. Selector order, constructor source fallback,
+schema/audit bytes, authentication and successful per-record responses remain
+unchanged. Expected SDK/parser recovery is bounded; diagnostic payloads are safe.
+
+Image purging completes its reference scan before deleting anything, including
+references beyond 1,000 results, and uses asynchronous Blob operations.
+Source-page, count and unconfirmed-delete failures cannot become successful
+SharePoint purge summaries. Worker-owned resources close on initialization,
+failure and cancellation paths; collection children are cancelled and observed.
+Optional audit/diagnostic failures do not authorize primary-operation success.
+Code or artifact rollback does not undo persisted configuration or restore
+deleted documents.
 
 ## Governance and audit events
 
