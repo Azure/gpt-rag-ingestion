@@ -23,6 +23,13 @@
 
 ### Fixed
 
+- **Operator frontend restores without invalid peer combinations.** Align
+  React DOM/types with the existing React 19 dependency and wire Tailwind 4's
+  PostCSS plugin to the existing theme. Correct the React JSX and Vitest
+  configuration type imports without redesigning the dashboard. Run plain
+  `npm ci`, tests, lint and build on compatible Node 22 in the existing test
+  workflow; the aggregate rejects missing/skipped/failed frontend execution.
+
 - **Worker failures cannot fabricate ACLs or Search success.** Require matching
   upload/delete confirmations in Blob and SharePoint workers, propagate retry
   exhaustion and datasource/permission failures, and preserve explicit failed

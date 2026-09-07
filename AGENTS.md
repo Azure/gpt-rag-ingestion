@@ -128,6 +128,9 @@ then broaden according to the changed boundary. The repository has maintained
 Python tests under `tests/` and frontend lint, build, and test scripts under
 `frontend/package.json`; do not repeat the historical claim that no test suite
 exists.
+The operator frontend uses compatible Node 22 for `npm ci`, tests, lint and
+build. Its actual same-workflow result is required by `quality-gate`; a missing
+or skipped frontend job is not successful validation.
 
 Changes to chunking or live Azure integration may also require a local
 container or `scripts/deploy.*` validation and confirmation that expected

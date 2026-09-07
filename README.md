@@ -29,6 +29,9 @@ import/error policy and recovery guidance are in
 has an exact, individually justified proposal with failure evidence; **none is
 active**. Protected review, bootstrap and required-check activation remain
 separate acceptance steps.
+The operator frontend's dependency/build compatibility is repaired without
+peer-validation bypasses; CI runs its maintained test, lint and build commands
+on compatible Node 22 as a required aggregate dependency.
 
 Search uploads/deletes, including direct `/ingest-documents`, require matching
 SDK confirmations. Blob/SharePoint permission failures cannot become empty ACLs;

@@ -487,7 +487,7 @@ def report(name):
 
 
 def test_aggregate_requires_fixed_actual_results_and_fresh_reports():
-    jobs = {name: "success" for name in quality.REQUIRED_CHECKS}
+    jobs = dict({name: "success" for name in quality.REQUIRED_CHECKS}, **{"frontend-checks": "success"})
     reports = {name: report(name) for name in quality.REQUIRED_CHECKS if name != "unit-tests"}
     assert not quality.aggregate(jobs, reports, "b" * 40, "c" * 40)
     for bad in ("skipped", "cancelled", "failure", "neutral", None):
@@ -498,6 +498,18 @@ def test_aggregate_requires_fixed_actual_results_and_fresh_reports():
     assert quality.aggregate(jobs, stale, "b" * 40, "c" * 40)
     assert quality.aggregate(jobs, {}, "b" * 40, "c" * 40)
     assert quality.aggregate({}, reports, "b" * 40, "c" * 40)
+
+
+@pytest.mark.parametrize("status", [None, "skipped", "failure", "error", "cancelled", "neutral", "success"])
+def test_aggregate_requires_actual_frontend_execution(status):
+    jobs = {name: "success" for name in quality.REQUIRED_CHECKS}
+    reports = {name: report(name) for name in quality.REQUIRED_CHECKS[:-1]}
+    if status is not None:
+        jobs["frontend-checks"] = status
+    findings = quality.aggregate(jobs, reports, "b" * 40, "c" * 40)
+    assert bool(findings) is (status != "success")
+    if findings:
+        assert any(item["rule"] == "required-execution" and "frontend-checks" in item["reason"] for item in findings)
 
 
 @pytest.fixture
@@ -561,11 +573,13 @@ def test_malformed_ruff_diagnostics_are_execution_errors(checker, monkeypatch, t
 
 @pytest.mark.parametrize("mutation", [
     "none", "missing-job", "skipped-job", "error-job", "missing-report",
+    "missing-frontend-job", "skipped-frontend-job", "error-frontend-job",
     "wrong-head", "wrong-base", "wrong-policy", "wrong-source", "wrong-run", "wrong-attempt",
     "status-contradiction", "skipped-test", "stale-test", "wrong-test-attempt", "duplicate-test-key",
 ])
 def test_aggregate_cli_requires_actual_consistent_current_receipts(tmp_path, mutation):
     jobs = {name: {"result": "success"} for name in quality.REQUIRED_CHECKS}
+    jobs["frontend-checks"] = {"result": "success"}
     for name in quality.REQUIRED_CHECKS[:-1]:
         data = dict(report(name), repository="Azure/gpt-rag-ingestion", source_sha="a" * 64,
                     run_id="123", run_attempt="1")
@@ -587,6 +601,10 @@ def test_aggregate_cli_requires_actual_consistent_current_receipts(tmp_path, mut
         del jobs["unit-tests"]
     elif mutation in {"skipped-job", "error-job"}:
         jobs["unit-tests"]["result"] = mutation.removesuffix("-job")
+    elif mutation == "missing-frontend-job":
+        del jobs["frontend-checks"]
+    elif mutation in {"skipped-frontend-job", "error-frontend-job"}:
+        jobs["frontend-checks"]["result"] = mutation.split("-")[0]
     evidence = {
         "schema_version": 1, "base_sha": "b" * 40,
         "head_sha": "e" * 40 if mutation == "stale-test" else "c" * 40,

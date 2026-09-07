@@ -24,6 +24,7 @@ from typing import Any, Iterator
 
 
 REQUIRED_CHECKS = ("lint", "typing", "architecture", "exceptions", "policy", "unit-tests")
+REQUIRED_JOBS = (*REQUIRED_CHECKS, "frontend-checks")
 NON_RUNTIME = (".github/", "tests/", "scripts/", "samples/", "frontend/", ".artifacts/")
 DIAGNOSTIC_KEY = ("module_id", "symbol", "source_fingerprint", "rule", "message_fingerprint")
 EXCEPTION_KEY = ("module_id", "symbol", "handler_fingerprint", "caught_types")
@@ -751,10 +752,10 @@ def source_policy(base_sources: dict[str, str], sources: dict[str, str],
 def aggregate(jobs: dict, reports: dict, base_sha: str, head_sha: str) -> list[dict]:
     result = []
     policy_shas = set()
-    for name in REQUIRED_CHECKS:
+    for name in REQUIRED_JOBS:
         if jobs.get(name) != "success":
             result.append(finding("required-execution", reason=f"{name}: {jobs.get(name, 'missing')}"))
-        if name == "unit-tests":
+        if name in ("unit-tests", "frontend-checks"):
             continue
         report = reports.get(name, {})
         if not all((

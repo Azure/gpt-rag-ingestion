@@ -63,7 +63,28 @@ Pinned versions exercised locally: Python 3.12.9, Ruff 0.16.5, mypy 2.3.1,
 Import Linter 2.14, Grimp 3.16. The plan's Ruff 0.16.6, Import Linter 2.15 and
 Grimp 3.17 candidates were unavailable from the configured package index.
 The available versions were installed and exercised rather than describing
-the proposed versions as validated. No runtime dependency pin was changed.
+the proposed versions as validated. No Python runtime dependency pin was changed.
+
+### Operator frontend
+
+Use a compatible Node runtime (Node 22 is used in CI; Node 22.14.0 was exercised
+locally). The existing Vite 8 toolchain does not support local Node 20.14.0.
+From `frontend`, run the maintained commands without peer-validation bypasses:
+
+```text
+npm ci
+npm test
+npm run lint
+npm run build
+```
+
+React DOM and its types now match the already-declared React 19 major.
+Tailwind 4 uses its matching PostCSS plugin and imports the existing theme
+configuration, while Vitest's configuration type and React's JSX type imports
+match the declared tools. No dashboard redesign, Docker base-image change or
+Python runtime pin change is involved. The same-workflow `frontend-checks` job
+runs all four commands; `quality-gate` requires its actual successful result
+and fails for missing, skipped, cancelled or failed frontend execution.
 
 ## Ownership and coverage
 
@@ -293,14 +314,17 @@ of every possible failure in inherited code or of a live Azure topology.
 | T025 | Complete static graph, independent broad-handler enforcement, all sites narrowed/removed or individually proposed with failure evidence | Human review/activation of 65 exact proposals; no automatic approvals |
 | T028 | Scheduler, actual direct upload, confirmed Search/purge, provider startup/precedence, real JWT and audit-independence cases | Not a certification of every inherited failure handler or live Azure topology |
 | T040 | Contributor commands, ownership, recovery and coordinated PR evidence | Keep final PR/docs receipts synchronized |
-| T045 (component) | Full Python/asset evidence and coordinated frontend validation | Final immutable CI/frontend receipts and unavailable live/deployment evidence remain separate |
+| T045 (component) | Full Python/asset evidence, coordinated frontend test/lint/build and same-workflow execution | Exact final CI receipts belong in the PR; live/deployment/recovery and administrative reference-PR exercises remain separately unavailable |
 
 ## CI trust and separate administrative activation
 
 `.github/workflows/tests.yml` keeps the existing pytest job and adds actual
 `lint`, `typing`, `architecture`, `exceptions`, and `policy` jobs. The
-always-evaluated **quality-gate** depends on those jobs and `unit-tests` in the
-same workflow. Existing frontend workflows are preserved.
+always-evaluated **quality-gate** depends on those jobs, `unit-tests` and
+`frontend-checks` in the same workflow. No pre-existing frontend CI job was
+present; the new job supplies the missing maintained test/lint/build execution
+without removing other workflows. Python reports retain their five-check
+artifact contract; the two behavior jobs also require authoritative success.
 Actions are SHA-pinned, permissions are read-only, credentials are not
 persisted, and no privileged `pull_request_target` execution is introduced.
 
@@ -343,8 +367,9 @@ The source baseline is ingestion `38a395586ee1d440a8e1ca8233413f8c25b3fdc2`
 (`9b64a5b962067161cb55252c6e0917a2738ba984`) and UI `v2.6.2`
 (`f59cca919f0bc59631d7bba7f3e223dff3718244`). No unmerged peer is required.
 Schema bytes/hashes, audit event formats, App Configuration selectors,
-credentials, successful API response shapes, `VERSION` and runtime dependency
-pins remain unchanged. The `/config/apply` 200-to-500 correction on genuine
+credentials, successful API response shapes, `VERSION` and Python runtime
+dependency pins remain unchanged. Frontend compatibility repairs are described
+above. The `/config/apply` 200-to-500 correction on genuine
 application failure and propagated worker/provider errors are observable
 contract-restoring changes, not behaviorally identical failure paths.
 Exact candidate SHA and command results belong in the component PR.

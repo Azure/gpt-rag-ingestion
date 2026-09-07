@@ -14,6 +14,27 @@ env:
   HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
 jobs:
+  frontend-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ env.HEAD_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run lint
+      - run: npm run build
+
   unit-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -125,7 +146,7 @@ jobs:
 
   quality-gate:
     name: quality-gate
-    needs: [lint, typing, architecture, exceptions, policy, unit-tests]
+    needs: [lint, typing, architecture, exceptions, policy, unit-tests, frontend-checks]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
