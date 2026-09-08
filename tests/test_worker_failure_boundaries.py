@@ -1,6 +1,7 @@
 """Actual worker boundaries must not infer ACLs or Search success from failures."""
 
 from datetime import datetime, timezone
+import asyncio
 import importlib.util
 from pathlib import Path
 import sys
@@ -180,6 +181,44 @@ def test_sdk_retry_header_units_and_invalid_values(worker_module, headers, expec
         headers=headers, status_code=503, reason="unavailable",
     ))
     assert search_retry_delay(error, 1.0) == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cancelled", [False, True])
+@pytest.mark.parametrize("secondary", [RuntimeError, asyncio.CancelledError])
+async def test_blob_primary_survives_summary_failure(worker_module, cancelled, secondary, caplog):
+    module = worker_module("blob_storage_indexer")
+    worker = object.__new__(module.BlobStorageDocumentIndexer)
+    worker.cfg = module.BlobIndexerConfig(storage_account_name="storage", source_container="source")
+    worker._ensure_clients = AsyncMock()
+    worker._ensure_container = AsyncMock()
+    primary = asyncio.CancelledError("private-primary") if cancelled else ValueError("private-primary")
+    worker._load_latest_index_state = AsyncMock(side_effect=primary)
+    uploads = []
+
+    async def upload(**kwargs):
+        import json
+        summary = json.loads(kwargs["data"])
+        uploads.append(summary)
+        if summary["status"] != "started":
+            raise secondary("private-summary")
+
+    worker._blob_service = SimpleNamespace(
+        get_container_client=lambda name: SimpleNamespace(upload_blob=upload),
+        close=AsyncMock(),
+    )
+    worker._search_client = SimpleNamespace(close=AsyncMock())
+    worker._credential = SimpleNamespace(close=AsyncMock())
+    with pytest.raises(type(primary)) as caught:
+        await worker.run()
+    assert caught.value is primary
+    assert uploads[-1]["status"] == ("cancelled" if cancelled else "failed")
+    assert all(item["status"] != "finished" for item in uploads)
+    for resource in (worker._blob_service, worker._search_client, worker._credential):
+        resource.close.assert_awaited_once()
+    assert "summary" in caplog.text.lower()
+    assert "private-primary" not in caplog.text
+    assert "private-summary" not in caplog.text
 
 
 @pytest.mark.asyncio

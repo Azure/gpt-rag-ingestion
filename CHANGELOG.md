@@ -23,6 +23,14 @@
 
 ### Fixed
 
+- **Preserve primary failures and cancellation during finalization.** Keep
+  retrieval's sanitized query failure across Search cleanup errors, prevent
+  Blob terminal-summary errors from replacing established run failures or
+  cancellation, and propagate NL2SQL child cancellation through run/audit
+  handling instead of reporting a finished run with a failed-document count.
+  Cleanup and summary writes remain attempts with safe diagnostics, not
+  guarantees.
+
 - **Operator frontend restores without invalid peer combinations.** Align
   React DOM/types with the existing React 19 dependency and wire Tailwind 4's
   PostCSS plugin to the existing theme. Correct the React JSX and Vitest

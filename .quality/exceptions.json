@@ -2,6 +2,34 @@
   "schema_version": 1,
   "entries": [
     {
+      "id": "retrieval-primary-cleanup-preservation",
+      "module_id": "api.retrieval",
+      "symbol": "retrieve",
+      "handler_fingerprint": "1f0af04e138a9d9b6fe67fbfccae4ac3e92e90cd509b96858946f558ed87a0bf",
+      "caught_types": ["Exception", "asyncio.CancelledError"],
+      "boundary": "Search close attempt after public query",
+      "reason": "Preserve an established sanitized query failure or cancellation. Diagnose secondary cleanup failure by class only; with no primary, propagate cleanup failure. Cleanup is attempted, not guaranteed.",
+      "failure_outcome": "explicit-failure-translation",
+      "diagnostic_path": "Class-only cleanup warning and established primary propagation",
+      "evidence_tests": ["tests/test_retrieval.py::test_query_outcome_survives_close_failure[exception]", "tests/test_retrieval.py::test_query_outcome_survives_close_failure[envelope]", "tests/test_retrieval.py::test_query_outcome_survives_close_failure[cancel]", "tests/test_retrieval.py::test_query_outcome_survives_close_failure[success]"],
+      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review_by_stage": "initial"
+    },
+    {
+      "id": "blob-primary-summary-preservation",
+      "module_id": "jobs.blob_storage_indexer",
+      "symbol": "BlobStorageDocumentIndexer._run_pipeline",
+      "handler_fingerprint": "577b68842e7a7ab51cf5af30f3171e40bb23dfd44c1fe892370b4c1ef2f405f6",
+      "caught_types": ["Exception", "asyncio.CancelledError"],
+      "boundary": "Terminal Blob summary attempt during primary failure or cancellation",
+      "reason": "A secondary terminal summary failure must not replace established run failure or cancellation. Without a primary it propagates. Summary persistence and client cleanup are attempted, not guaranteed.",
+      "failure_outcome": "explicit-failure-translation",
+      "diagnostic_path": "Class-only terminal-summary warning, original primary propagation and outer resource cleanup attempt",
+      "evidence_tests": ["tests/test_worker_failure_boundaries.py::test_blob_primary_survives_summary_failure[RuntimeError-False]", "tests/test_worker_failure_boundaries.py::test_blob_primary_survives_summary_failure[RuntimeError-True]", "tests/test_worker_failure_boundaries.py::test_blob_primary_survives_summary_failure[CancelledError-False]", "tests/test_worker_failure_boundaries.py::test_blob_primary_survives_summary_failure[CancelledError-True]", "tests/test_worker_failure_boundaries.py::test_blob_summary_defect_cannot_skip_resource_cleanup[final-summary]"],
+      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review_by_stage": "initial"
+    },
+    {
       "id": "retrieval-public-query-failure",
       "module_id": "api.retrieval",
       "symbol": "retrieve",
@@ -10,8 +38,8 @@
       "boundary": "Delegated-user retrieval query to the existing HTTP 502 envelope",
       "reason": "The public retrieval contract hides downstream query payloads and returns 502 on query failure, including unexpected adapter failures. Feature gating and delegated-user validation run before this boundary, and this record does not exempt authentication or authorize an elevated read.",
       "failure_outcome": "explicit-failure-translation",
-      "diagnostic_path": "Exception-class-only query diagnostic, HTTP 502 and Search client finalization",
-      "evidence_tests": ["tests/test_retrieval.py::test_search_exception_is_sanitized_and_client_is_closed"],
+      "diagnostic_path": "Exception-class-only query diagnostic and HTTP 502 preserved across attempted Search cleanup",
+      "evidence_tests": ["tests/test_retrieval.py::test_search_exception_is_sanitized_and_client_is_closed", "tests/test_retrieval.py::test_query_outcome_survives_close_failure[exception]", "tests/test_retrieval.py::test_query_outcome_survives_close_failure[envelope]", "tests/test_retrieval.py::test_query_outcome_survives_close_failure[cancel]", "tests/test_retrieval.py::test_query_outcome_survives_close_failure[success]"],
       "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
       "review_by_stage": "initial"
     },
@@ -336,15 +364,19 @@
       "id": "blob-run-failure-observation",
       "module_id": "jobs.blob_storage_indexer",
       "symbol": "BlobStorageDocumentIndexer._run_pipeline",
-      "handler_fingerprint": "f719ee1a5494d25f58a2c783192c244ebfecfa121485385c1a4db536c70383b6",
+      "handler_fingerprint": "b93f3166e8acab9f2a20da9324d4a8c563798424a8f48b3a2a5ade9cc380202e",
       "caught_types": ["Exception"],
       "boundary": "Blob run summary failure observation followed by original exception propagation",
-      "reason": "The worker must persist its failed terminal state for the operator while propagating the original index-scan/source failure to the scheduler and audit wrapper. Arbitrary failures are observed, not converted to successful completion. Late source-page and initial index-scan failures retain failed summaries and close resources.",
+      "reason": "The worker attempts to persist failed terminal state while propagating the original index-scan/source failure to the scheduler and audit wrapper. Arbitrary failures are observed, not converted to successful completion. Terminal summary and resource cleanup are attempted, not guaranteed; secondary summary errors cannot replace the primary.",
       "failure_outcome": "explicit-failure-translation",
-      "diagnostic_path": "Failed summary and safe error class followed by re-raising the original exception",
+      "diagnostic_path": "Failed summary attempt and safe error class followed by re-raising the original exception",
       "evidence_tests": [
         "tests/test_worker_failure_boundaries.py::test_blob_run_failure_propagates_and_closes_without_finished_summary[index-scan]",
-        "tests/test_worker_failure_boundaries.py::test_blob_run_failure_propagates_and_closes_without_finished_summary[late-source-page]"
+        "tests/test_worker_failure_boundaries.py::test_blob_run_failure_propagates_and_closes_without_finished_summary[late-source-page]",
+        "tests/test_worker_failure_boundaries.py::test_blob_primary_survives_summary_failure[RuntimeError-False]",
+        "tests/test_worker_failure_boundaries.py::test_blob_primary_survives_summary_failure[RuntimeError-True]",
+        "tests/test_worker_failure_boundaries.py::test_blob_primary_survives_summary_failure[CancelledError-False]",
+        "tests/test_worker_failure_boundaries.py::test_blob_primary_survives_summary_failure[CancelledError-True]"
       ],
       "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
       "review_by_stage": "initial"
@@ -773,7 +805,9 @@
         "tests/test_nl2sql_indexer_failures.py::test_document_failure_is_explicit_and_does_not_expose_dependency_payload[embedding]",
         "tests/test_nl2sql_indexer_failures.py::test_document_failure_is_explicit_and_does_not_expose_dependency_payload[upload]",
         "tests/test_nl2sql_indexer_failures.py::test_run_counts_unconfirmed_document_as_failed_not_indexed",
-        "tests/test_nl2sql_indexer_failures.py::test_document_cancellation_is_not_a_failed_record"
+        "tests/test_nl2sql_indexer_failures.py::test_document_cancellation_is_not_a_failed_record",
+        "tests/test_nl2sql_indexer_failures.py::test_run_propagates_child_cancellation_without_finished_summary[False]",
+        "tests/test_nl2sql_indexer_failures.py::test_run_propagates_child_cancellation_without_finished_summary[True]"
       ],
       "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
       "review_by_stage": "initial"

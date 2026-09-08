@@ -1,4 +1,4 @@
-<!-- 
+<!--
 page_type: sample
 languages:
 - azdeveloper
@@ -44,9 +44,17 @@ unchanged. Expected SDK/parser recovery is bounded; diagnostic payloads are safe
 Image purging completes its reference scan before deleting anything, including
 references beyond 1,000 results, and uses asynchronous Blob operations.
 Source-page, count and unconfirmed-delete failures cannot become successful
-SharePoint purge summaries. Worker-owned resources close on initialization,
+SharePoint purge summaries. Worker-owned resource cleanup is attempted on initialization,
 failure and cancellation paths; collection children are cancelled and observed.
 Optional audit/diagnostic failures do not authorize primary-operation success.
+Retrieval query failures retain their sanitized `502` response, and query
+cancellation propagates, even when Search cleanup fails. A cleanup failure
+without a prior query failure still propagates. Blob terminal-summary writes
+cannot replace an established run failure or cancellation; failed summary
+attempts emit class-only diagnostics. Neither summary persistence nor cleanup
+is guaranteed. NL2SQL child cancellation propagates through the run/audit
+wrapper rather than producing a finished run with an ordinary failed-document
+count; ordinary document errors retain their existing per-record behavior.
 Code or artifact rollback does not undo persisted configuration or restore
 deleted documents.
 

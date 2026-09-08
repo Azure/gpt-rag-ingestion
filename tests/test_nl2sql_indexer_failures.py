@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock
 
 from azure.core.exceptions import AzureError, ResourceExistsError, ResourceNotFoundError
 import pytest
+import main
 
 
 @pytest.fixture
@@ -272,6 +273,32 @@ async def test_run_counts_unconfirmed_document_as_failed_not_indexed(indexer, ca
     assert summary["byKind"]["queries"]["vectorsGenerated"] == 0
     assert '"itemsIndexed": 0' in caplog.text
     assert '"itemsFailed": 1' in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cleanup_failed", [False, True])
+async def test_run_propagates_child_cancellation_without_finished_summary(indexer, cleanup_failed, caplog, monkeypatch):
+    caplog.set_level(logging.INFO)
+    indexer.blob.download_blob.side_effect = asyncio.CancelledError("private-cancel")
+    if cleanup_failed:
+        indexer.search.close.side_effect = RuntimeError("private-close")
+    runtime = __import__("jobs.runtime", fromlist=["track_running"])
+    monkeypatch.setitem(sys.modules, "jobs.nl2sql_indexer", indexer.module)
+    monkeypatch.setattr(indexer.module, "NL2SQLIndexer", lambda: indexer.instance)
+    wrapped = runtime.track_running("p1-nl2sql", main.run_nl2sql_index)
+    with pytest.raises(asyncio.CancelledError):
+        await wrapped()
+    assert "p1-nl2sql" not in runtime.running_jobs
+    assert [record.event_type for record in caplog.records if record.name == "gptrag.audit"] == [
+        "ingestion.run.started", "ingestion.run.cancelled",
+    ]
+    assert "RUN-COMPLETE" not in caplog.text
+    indexer.logs.upload_blob.assert_not_awaited()
+    indexer.search.index_document.assert_not_awaited()
+    for name in ("_ai_search", "_blob_service", "_credential"):
+        getattr(indexer.instance, name).close.assert_awaited_once()
+    assert "private-cancel" not in caplog.text
+    assert "private-close" not in caplog.text
 
 
 @pytest.mark.asyncio

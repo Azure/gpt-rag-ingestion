@@ -152,6 +152,11 @@ class NL2SQLIndexer:
                     return await self._process_one(name, run_id)
 
             results = await asyncio.gather(*(_wrap(n) for n in blob_names), return_exceptions=True)
+            # gather returns child cancellation as a value, not an ordinary
+            # failed document. Preserve control flow before aggregating counts.
+            for result in results:
+                if isinstance(result, BaseException) and not isinstance(result, Exception):
+                    raise result
             for r in results:
                 if isinstance(r, dict) and r.get("status") == "success":
                     total_candidates += 1

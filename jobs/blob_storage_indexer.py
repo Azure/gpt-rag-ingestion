@@ -1,5 +1,6 @@
 # connectors/blob_storage_indexer.py
 import asyncio
+import sys
 import time
 import inspect
 import base64
@@ -317,6 +318,7 @@ class BlobStorageDocumentIndexer:
         total_chunks = 0
         skipped_no_change = 0
         skipped_blocked = 0
+        pipeline_completed = False
 
         try:
             # ensure log containers exist (best-effort)
@@ -383,10 +385,10 @@ class BlobStorageDocumentIndexer:
             })
             await self._write_run_summary(self.cfg.jobs_log_container, summary, run_id)
 
+            pipeline_completed = True
         except asyncio.CancelledError:
             summary["status"] = "cancelled"
             summary["runFinishedAt"] = _utc_now()
-            await self._write_run_summary(self.cfg.jobs_log_container, summary, run_id)
             self._log_event(logging.WARNING, "RUN-CANCELLED", runId=run_id)
             logging.info(f"[{self.cfg.indexer_name}] Run cancelled: runId={run_id}")
             raise
@@ -394,10 +396,10 @@ class BlobStorageDocumentIndexer:
             logging.error("[%s] Run failed (%s)", self.cfg.indexer_name, type(exc).__name__)
             summary["error"] = f"Run failed ({type(exc).__name__})."
             summary["status"] = "failed"
-            await self._write_run_summary(self.cfg.jobs_log_container, summary, run_id)
             self._log_event(logging.ERROR, "RUN-ERROR", runId=run_id, error=summary["error"])
             raise
         finally:
+            primary = None if pipeline_completed else sys.exception()
             summary.update({
                 "runFinishedAt": summary.get("runFinishedAt") or _utc_now(),
                 "sourceFiles": source_files,
@@ -413,7 +415,15 @@ class BlobStorageDocumentIndexer:
             if summary.get("status") not in {"failed", "cancelled"}:
                 summary["status"] = "finished"
 
-            await self._write_run_summary(self.cfg.jobs_log_container, summary, run_id)
+            try:
+                await self._write_run_summary(self.cfg.jobs_log_container, summary, run_id)
+            except (Exception, asyncio.CancelledError) as exc:
+                logging.warning(
+                    "[%s] Terminal summary attempt failed (%s).",
+                    self.cfg.indexer_name, type(exc).__name__,
+                )
+                if primary is None:
+                    raise
             duration_seconds: Optional[float] = None
             try:
                 start_dt = _as_datetime(summary.get("runStartedAt"))

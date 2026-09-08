@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import asyncio
 import importlib.util
 import sys
 import types
@@ -15,6 +16,47 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
 
 import dependencies as real_dependencies
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome", ["exception", "envelope", "cancel", "success"])
+async def test_query_outcome_survives_close_failure(monkeypatch, caplog, outcome):
+    primary = asyncio.CancelledError("private-query") if outcome == "cancel" else RuntimeError("private-query")
+
+    def query(kwargs):
+        if outcome in {"exception", "cancel"}:
+            raise primary
+        return {"error": "private-query"} if outcome == "envelope" else {"documents": []}
+
+    client, state = _build_client(monkeypatch, search_behavior=query)
+    endpoint = sys.modules["api.retrieval"].retrieve
+    search_type = sys.modules["tools.aisearch"].AISearchClient
+
+    async def close(self):
+        state["close_calls"].append(True)
+        raise RuntimeError("private-close")
+
+    monkeypatch.setattr(search_type, "close", close)
+    body = endpoint.__globals__["RetrieveRequest"](query="hello")
+    request = Request({"type": "http", "headers": [(b"authorization", b"Bearer user-a-token")]})
+    if outcome in {"exception", "envelope"}:
+        response = _post(client)
+        assert response.status_code == 502
+        assert response.json() == {"detail": "Azure AI Search query failed."}
+    else:
+        expected = asyncio.CancelledError if outcome == "cancel" else RuntimeError
+        # A caller's handled exception is not a primary query failure.
+        try:
+            raise ValueError("handled caller error")
+        except ValueError:
+            with pytest.raises(expected) as caught:
+                await endpoint(body, request)
+        if outcome == "cancel":
+            assert caught.value is primary
+    assert state["close_calls"] == [True]
+    assert state["search_calls"][0]["use_elevated_read"] is False
+    assert "private-query" not in caplog.text
+    assert "private-close" not in caplog.text
 
 
 @pytest.mark.asyncio
