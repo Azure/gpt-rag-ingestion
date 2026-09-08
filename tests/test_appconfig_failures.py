@@ -84,12 +84,13 @@ def test_real_missing_keys_defaults_empty_values_and_opt_in_environment_preceden
     assert config.get("NUMBER", type=int) == 7
 
 
-def test_constructor_preserves_selectors_and_sdk_last_selected_value(monkeypatch):
+@pytest.mark.parametrize("source", ["endpoint", "connection"])
+def test_constructor_preserves_selectors_and_sdk_last_selected_value(monkeypatch, source):
     appconfig = importlib.import_module("tools.appconfig")
     monkeypatch.setenv("APP_CONFIG_ENDPOINT", "https://configuration.example.test")
     monkeypatch.delenv("allow_environment_variables", raising=False)
-    monkeypatch.delenv("AZURE_APPCONFIG_CONNECTION_STRING", raising=False)
-    captured = {}
+    monkeypatch.setenv("AZURE_APPCONFIG_CONNECTION_STRING", "private-connection")
+    captured = []
     for name in ("ChainedTokenCredential", "ManagedIdentityCredential", "AzureCliCredential",
                  "AsyncChainedTokenCredential", "AsyncManagedIdentityCredential", "AsyncAzureCliCredential"):
         monkeypatch.setattr(appconfig, name, lambda *args, **kwargs: object())
@@ -113,12 +114,16 @@ def test_constructor_preserves_selectors_and_sdk_last_selected_value(monkeypatch
         def list_configuration_settings(self, *, key_filter, label_filter, **kwargs):
             assert key_filter == "*"
             label = None if label_filter in (None, "\0") else label_filter
-            return Pages([ConfigurationSetting(key="SHARED", label=label, value={
-                "gpt-rag-ingestion": "ingestion", "gpt-rag": "base", None: "unlabelled",
-            }[label])])
+            value = {"gpt-rag-ingestion": "ingestion", "gpt-rag": "base", None: "unlabelled"}[label]
+            return Pages([
+                ConfigurationSetting(key="SHARED", label=label, value=value),
+                ConfigurationSetting(key=f"ONLY_{value.upper()}", label=label, value=value),
+            ])
 
     def load(**kwargs):
-        captured.update(kwargs)
+        captured.append(kwargs)
+        if source == "connection" and len(captured) == 1:
+            raise RuntimeError("private-endpoint-error")
         wrapper = object.__new__(_ConfigurationClientWrapper)
         wrapper._client = Service()
         settings, _ = wrapper.load_configuration_settings(kwargs["selects"])
@@ -129,11 +134,14 @@ def test_constructor_preserves_selectors_and_sdk_last_selected_value(monkeypatch
     monkeypatch.setattr(appconfig, "load", load)
     config = appconfig.AppConfigClient()
     assert isinstance(config.client, AzureAppConfigurationProvider)
-    assert [item.label_filter for item in captured["selects"][:2]] == ["gpt-rag-ingestion", "gpt-rag"]
-    assert len(captured["selects"]) == 3
-    assert captured["selects"][2].label_filter in (None, "\0")
-    assert captured["credential"] is config.credential
+    assert len(captured) == (1 if source == "endpoint" else 2)
+    assert [item.label_filter for item in captured[-1]["selects"][:2]] == ["gpt-rag-ingestion", "gpt-rag"]
+    assert len(captured[-1]["selects"]) == 3
+    assert captured[-1]["selects"][2].label_filter in (None, "\0")
+    assert captured[0]["credential"] is config.credential
     assert config.get("SHARED") == "unlabelled"
+    for value in ("ingestion", "base", "unlabelled"):
+        assert config.get(f"ONLY_{value.upper()}") == value
 
 
 @pytest.mark.asyncio
@@ -207,7 +215,15 @@ def test_constructor_fallback_keeps_source_contract_without_payloads(monkeypatch
     else:
         config = AppConfigClient()
         assert config.get("FALLBACK_VALUE") == fallback
+        monkeypatch.setenv("allow_environment_variables", "1")
+        assert config.get("FALLBACK_VALUE") == "environment"
     assert load.call_count == (1 if fallback == "environment" else 2)
     if fallback != "environment":
         assert load.call_args.kwargs["connection_string"] == "private-connection"
+        primary, secondary = [call.kwargs for call in load.call_args_list]
+        assert set(secondary) == {"connection_string", "selects", "key_vault_options"}
+        assert [(item.key_filter, item.label_filter) for item in secondary["selects"]] == [
+            (item.key_filter, item.label_filter) for item in primary["selects"]
+        ]
+        assert secondary["key_vault_options"].credential is primary["credential"]
     assert "private-" not in caplog.text

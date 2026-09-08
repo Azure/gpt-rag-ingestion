@@ -240,16 +240,18 @@
       "id": "appconfig-established-constructor-fallback",
       "module_id": "tools.appconfig",
       "symbol": "AppConfigClient.__init__",
-      "handler_fingerprint": "0bf4f7dc03e30df18d912168bc7b1243ef32e35eacc7f6de836f58d3a07a5170",
+      "handler_fingerprint": "6848ae26eec55ff5c8dad49f18a57c19478292b26fd84472013bf18a98ee2956",
       "caught_types": ["Exception"],
       "boundary": "Existing endpoint constructor fallback to configured connection string or environment adapter",
-      "reason": "The maintainer explicitly requires preservation of this pre-existing bootstrap source contract, including unexpected constructor failure. Only endpoint construction is recoverable here. A configured connection-string load failure still propagates, and later provider reads do not become defaults. Selector order and unlabelled-last-wins remain unchanged.",
+      "reason": "Bounded P9 follow-up preserves the existing endpoint-to-configured-connection-string ordering, or environment-only adapter when no connection string is configured. Both provider loads now receive the same gpt-rag-ingestion, gpt-rag and no-label wildcard selectors in the existing last-selection-wins order. Connection-string load failures still propagate; environment override opt-in and later provider read failures are unchanged. H1 remains open: preserving this behavior is not approval of a future fallback-credential policy or of this broad-handler exception. SDK merge evidence exercises the declared provider 2.5.0, not an older ambient installation.",
       "failure_outcome": "explicit-failure-translation",
-      "diagnostic_path": "Safe endpoint-fallback diagnostic, actual selected fallback values or propagated connection-string error",
+      "diagnostic_path": "Safe endpoint-fallback diagnostic, identical configured selectors and Key Vault credential on fallback, actual selected fallback values or propagated connection-string error; no new source or permission",
       "evidence_tests": [
         "tests/test_appconfig_failures.py::test_constructor_fallback_keeps_source_contract_without_payloads[environment]",
         "tests/test_appconfig_failures.py::test_constructor_fallback_keeps_source_contract_without_payloads[connection]",
-        "tests/test_appconfig_failures.py::test_constructor_fallback_keeps_source_contract_without_payloads[connection-failure]"
+        "tests/test_appconfig_failures.py::test_constructor_fallback_keeps_source_contract_without_payloads[connection-failure]",
+        "tests/test_appconfig_failures.py::test_constructor_preserves_selectors_and_sdk_last_selected_value[endpoint]",
+        "tests/test_appconfig_failures.py::test_constructor_preserves_selectors_and_sdk_last_selected_value[connection]"
       ],
       "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
       "review_by_stage": "initial"
@@ -713,10 +715,16 @@
       "handler_fingerprint": "3d5d1a3feef9a8070e7adcf9d7e555655bd710bd892f9d33339ed5ca8d9974cc",
       "caught_types": ["Exception"],
       "boundary": "Existing optional feedback enrichment of the jobs/files overview",
-      "reason": "The established overview contract and failure regression retain primary jobs/files data when optional feedback summary loading fails. Keep this bounded read-only enrichment behavior, with warning; do not extend it to feedback writes, strict operator metrics or authorization. No source/index outcome is fabricated.",
+      "reason": "Bounded P9 characterization only; H2 remains open. The real /api/panel/overview response model requires integer feedback counts and has no feedback availability/error channel; historyAvailable describes conversation history only. The frontend consumes the separate /panel/overview/metrics contract, whose null counts mean privacy suppression, not legacy feedback unavailability. Constructor/read failure, including SDK iteration failure after rows were collected inside the materializing Cosmos adapter, leaves legacy HTTP 200 with zero feedback counts. An injected aggregation defect after valid rows leaves partial counts (up=1, down=1, total=2), also HTTP 200. Both retain nonempty jobs/files and emit only a server warning: unavailable is not truthfully signaled to the caller. Tests document this limitation, not approval of the contract or broad handler. No response field, schema, availability semantics, authorization or write behavior is changed.",
       "failure_outcome": "contractual-best-effort-side-effect",
-      "diagnostic_path": "Feedback summary warning while independently loaded jobs/files remain available",
-      "evidence_tests": ["tests/test_panel_api.py::test_overview_degrades_gracefully_when_cosmos_unavailable"],
+      "diagnostic_path": "Sanitized server-side feedback warning without exception payload; jobs/files survive, but HTTP 200 feedback counts remain indistinguishable from complete counts (zero or partial)",
+      "evidence_tests": [
+        "tests/test_panel_api.py::test_overview_degrades_gracefully_when_cosmos_unavailable",
+        "tests/test_panel_api.py::test_overview_failure_keeps_legacy_counts_without_availability_signal[constructor]",
+        "tests/test_panel_api.py::test_overview_failure_keeps_legacy_counts_without_availability_signal[read]",
+        "tests/test_panel_api.py::test_overview_failure_keeps_legacy_counts_without_availability_signal[partial-read]",
+        "tests/test_panel_api.py::test_overview_failure_keeps_legacy_counts_without_availability_signal[partial-aggregation]"
+      ],
       "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
       "review_by_stage": "initial"
     },

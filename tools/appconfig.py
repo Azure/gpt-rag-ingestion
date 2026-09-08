@@ -92,6 +92,7 @@ class AppConfigClient:
             connection_string = os.environ.get("AZURE_APPCONFIG_CONNECTION_STRING")
             if connection_string:
                 self.client = load(
+                    selects=[app_label_selector, base_label_selector, no_label_selector],
                     connection_string=connection_string,
                     key_vault_options=AzureAppConfigurationKeyVaultOptions(credential=self.credential),
                 )
