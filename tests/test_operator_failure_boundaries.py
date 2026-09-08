@@ -5,9 +5,9 @@ import builtins
 from datetime import datetime, timezone
 import logging
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
-from azure.core.exceptions import AzureError
+from azure.core.exceptions import AzureError, ResourceNotFoundError
 import pytest
 
 from tests.test_admin_jobs_queue import _build_client
@@ -203,19 +203,53 @@ def test_optional_retry_enrichment_only_recovers_sdk_outages(monkeypatch, caplog
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("failure", [AzureError("private-read"), RuntimeError("private-read")])
-async def test_unblock_read_failure_preserves_404_without_writing(monkeypatch, caplog, failure):
-    from fastapi import HTTPException
-
-    _, _, admin = _build_client(monkeypatch)
-    blob = SimpleNamespace(download_blob=AsyncMock(side_effect=failure), upload_blob=AsyncMock())
+@pytest.mark.parametrize("stage", ["download", "read"])
+@pytest.mark.parametrize("failure,status", [
+    (ResourceNotFoundError("private-read"), 404),
+    (AzureError("private-read"), 500),
+    (RuntimeError("private-read BlobNotFound"), 500),
+])
+async def test_unblock_read_failure_without_writing(monkeypatch, caplog, stage, failure, status):
+    client, _, admin = _build_client(monkeypatch)
+    reader = SimpleNamespace(readall=AsyncMock(return_value=b"{}"))
+    blob = SimpleNamespace(download_blob=AsyncMock(return_value=reader), upload_blob=AsyncMock())
+    (blob.download_blob if stage == "download" else reader.readall).side_effect = failure
     container = SimpleNamespace(get_blob_client=lambda name: blob)
     monkeypatch.setattr(admin, "_get_blob_service", AsyncMock(return_value=SimpleNamespace(
         get_container_client=lambda name: container,
     )))
-    with pytest.raises(HTTPException) as raised:
-        await admin.unblock_file("job/files/document.json")
-    assert raised.value.status_code == 404
-    assert raised.value.detail == "File log not found"
+    invalidate = Mock()
+    monkeypatch.setattr(admin, "_invalidate_cache", invalidate)
+    response = client.post("/api/files/unblock", params={"blobName": "job/files/document.json"})
+    assert response.status_code == status
+    assert response.json()["detail"] == ("File log not found" if status == 404 else "File log could not be read")
     blob.upload_blob.assert_not_awaited()
+    invalidate.assert_not_called()
     assert "private-read" not in caplog.text
+    assert "private-read" not in response.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("raw", [b"private-corrupt", b"\xff", b"[]", b"null", b'"private-corrupt"', b"{}"])
+async def test_unblock_requires_valid_log_before_writing(monkeypatch, caplog, raw):
+    client, _, admin = _build_client(monkeypatch)
+    blob = SimpleNamespace(
+        download_blob=AsyncMock(return_value=SimpleNamespace(readall=AsyncMock(return_value=raw))),
+        upload_blob=AsyncMock(),
+    )
+    monkeypatch.setattr(admin, "_get_blob_service", AsyncMock(return_value=SimpleNamespace(
+        get_container_client=lambda name: SimpleNamespace(get_blob_client=lambda name: blob),
+    )))
+    invalidate = Mock()
+    monkeypatch.setattr(admin, "_invalidate_cache", invalidate)
+    response = client.post("/api/files/unblock", params={"blobName": "job/files/document.json"})
+    if raw == b"{}":
+        assert response.status_code == 200
+        blob.upload_blob.assert_awaited_once()
+        invalidate.assert_called_once_with("files")
+    else:
+        assert response.status_code == 500
+        assert response.json()["detail"] == "File log is invalid"
+        blob.upload_blob.assert_not_awaited()
+        invalidate.assert_not_called()
+    assert "private-corrupt" not in response.text + caplog.text

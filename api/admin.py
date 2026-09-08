@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Coroutine, Dict, List, Optional, Tuple
 
 from apscheduler.jobstores.base import JobLookupError
-from azure.core.exceptions import AzureError
+from azure.core.exceptions import AzureError, ResourceNotFoundError
 from azure.identity.aio import (
     AzureCliCredential,
     ChainedTokenCredential,
@@ -720,9 +720,19 @@ async def unblock_file(blobName: str = Query(..., min_length=1)):
     try:
         dl = await bc.download_blob()
         raw = await dl.readall()
+    except ResourceNotFoundError as exc:
+        raise HTTPException(404, "File log not found") from exc
+    except Exception as exc:
+        logging.error("Unblock file log read failed")
+        raise HTTPException(500, "File log could not be read") from exc
+
+    try:
         data = json.loads(raw)
-    except Exception:
-        raise HTTPException(404, "File log not found")
+        if not isinstance(data, dict):
+            raise ValueError("File log must be an object")
+    except (ValueError, UnicodeDecodeError) as exc:
+        logging.error("Unblock file log is invalid")
+        raise HTTPException(500, "File log is invalid") from exc
 
     data["blocked"] = False
     data["blockedAt"] = None
