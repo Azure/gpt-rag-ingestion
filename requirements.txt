@@ -10,7 +10,7 @@ azure-appconfiguration==1.8.1
 azure-appconfiguration-provider==2.5.0
 azure-identity==1.25.3
 azure-keyvault-secrets==4.9.0
-azure-mgmt-storage==22.1.1
+azure-mgmt-storage==25.1.0
 azure-mgmt-web==8.0.0
 azure-search-documents==11.5.2
 azure-storage-blob==12.24.1
