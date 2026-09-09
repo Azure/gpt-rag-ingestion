@@ -371,6 +371,26 @@ def test_proposed_exception_is_not_an_approval():
     assert not accepted
 
 
+def test_administratively_active_exception_still_requires_passing_evidence():
+    source = "try:\n work()\nexcept Exception:\n raise"
+    record = handler_record(source)
+    record["review"]["reference"] = (
+        "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"
+    )
+    accepted = []
+    result = quality.exception_findings(
+        {"a.py": source}, [record], {}, accepted_ids=accepted,
+    )
+    assert result
+    assert not accepted
+    result = quality.exception_findings(
+        {"a.py": source}, [record],
+        {record["evidence_tests"][0]: "passed"}, accepted_ids=accepted,
+    )
+    assert not result
+    assert accepted == [record["id"]]
+
+
 def diagnostic(**updates):
     finding = {
         "module_id": "audit", "symbol": "sanitize", "source_fingerprint": "syntax-a",

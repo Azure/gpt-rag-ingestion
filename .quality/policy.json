@@ -1749,9 +1749,9 @@
   ],
   "dynamic_imports": [],
   "review": {
-    "status": "proposed",
+    "status": "active",
     "owner": "@placerda",
-    "reference": "https://github.com/Azure/GPT-RAG/pull/689",
-    "rationale": "Component implementation of accepted ADR-0005. Concrete surfaces and exception policy remain subject to latest-head maintainer review."
+    "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634",
+    "rationale": "Component implementation of accepted ADR-0005, explicitly approved by Paulo (@placerda) for administrative initial adoption at 0ae3759356935830c532ce3f2c48d3753b01da73. This is not independent GitHub review; protected-base bootstrap findings and separate reference validation/settings activation remain explicit."
   }
 }

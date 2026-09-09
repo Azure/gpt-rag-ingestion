@@ -13,6 +13,13 @@
 
 ### Changed
 
+- **Administratively approved initial quality adoption.** Activate exactly 67
+  existing, individually justified ingestion exception records under
+  [Paulo's explicit authorization](https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634).
+  Preserve all fingerprints, outcomes, evidence selectors and pins. This
+  supersedes the proposal status below, not same-run evidence requirements;
+  it is neither independent GitHub review nor required-check activation.
+
 - **Jobs-owned scheduler coordination without API-to-entrypoint cycles.**
   Move the shared scheduler reference, registry, cron map, running-job
   dictionary/lock and tracking wrapper to `jobs.runtime`, retaining the same

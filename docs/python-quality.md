@@ -3,9 +3,12 @@
 This is the ingestion implementation of
 [Azure/GPT-RAG#681](https://github.com/Azure/GPT-RAG/issues/681) and the accepted
 [ADR-0005](https://github.com/Azure/GPT-RAG/blob/feature/python-module-boundaries/docs/adr/ADR-0005-python-quality-gates-and-ui-package.md).
-It is **not yet an activated, green merge policy**. The draft intentionally
-reports necessary, individually proposed broad handlers instead of approving
-them automatically.
+It is **not yet an activated, green merge policy**. Paulo (@placerda) explicitly
+approved administrative initial adoption of the 67 existing ingestion records
+at `0ae3759356935830c532ce3f2c48d3753b01da73` in
+[the authorization audit](https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634).
+The records are active with that reference. This is not independent GitHub
+review, automatic approval, or a claim that bootstrap policy checks pass.
 The parent coordination PR is
 [Azure/GPT-RAG#689](https://github.com/Azure/GPT-RAG/pull/689); published
 contributor documentation is coordinated in
@@ -193,9 +196,9 @@ remain non-authoritative even if their logging sink fails.
 `main`, `dependencies`, and `constants`, package roots, and namespace chunkers.
 Syntax-derived exports describe the bootstrap surface, not a promise that
 every incidental imported name is a new supported external API. The concrete
-surface policy still needs maintainer review. Leading-underscore modules and
+surface policy has explicit administrative initial-adoption approval. Leading-underscore modules and
 members are private across areas. Four exact existing compatibility accesses
-are proposed for review, without granting access to any other member:
+are included in that approval, without granting access to any other member:
 
 | Consumer | Existing helper | Why preserve it |
 | --- | --- | --- |
@@ -257,10 +260,9 @@ clean positive control.
 
 ## Broad handlers and remaining acceptance
 
-The exception ledger contains **65 exact proposed records and zero active
-approvals**. Every inventoried broad handler now has an individual disposition;
-there are no unproposed sites or ordinary Ruff findings. The remaining 60
-BLE001 findings overlap those same 65 handlers; the independent exception
+The exception ledger contains **67 exact administratively approved active
+records**. Activation changes review metadata only, preserving fingerprints,
+failure outcomes and named evidence selectors. The independent exception
 check also covers logged/rethrown catches that Ruff does not report.
 
 Each record identifies its exact source, necessity, existing public contract,
@@ -293,8 +295,10 @@ file or rule. This does not waive the separate required exceptions job:
 without passing same-run behavior evidence, the aggregate still fails.
 Proposal records cannot waive either check.
 
-The retained sites remain blocking until genuine protected review activates
-their individual records. Logging alone is not a justification, and no record
+The initial adoption is explicitly administratively approved, but the base
+without policy still produces blocking bootstrap findings. Once adopted,
+the protected records still require exact matching and same-run evidence.
+Logging alone is not a justification, and no record
 may convert an unconfirmed primary operation into success. T025's graph,
 handler-disposition and per-site evidence implementation is complete;
 SC-003 administrative/policy acceptance is not. This is not a certification
@@ -304,14 +308,14 @@ of every possible failure in inherited code or of a live Azure topology.
 
 | Task | Implemented evidence | Remaining acceptance |
 | --- | --- | --- |
-| T003 | Flat-root/module/public-surface inventory and source-base reconciliation | Review proposed surface policy |
-| T007 | Exact development pins and closed, typed parsing of all four records | Bootstrap policy approval |
+| T003 | Flat-root/module/public-surface inventory and source-base reconciliation | Administrative approval recorded; reference validation remains |
+| T007 | Exact development pins and closed, typed parsing of all four records | Administrative approval recorded; bootstrap adoption remains |
 | T010 | Q6 regression fixtures, real aggregate CLI failures and isolated-tool controls | Administrative merge-eligibility exercise, not more fixture setup |
-| T013 | Ruff/mypy enforcement, individual diagnostic identities and monotonic scope; no ordinary lint debt | Protected review of necessary exact handler proposals |
-| T016 | Protected-base evaluator, verified policy owner and same-workflow aggregate dependencies | Actual protected review, bootstrap and required-check activation |
-| T019 | Flat/package/late/type-only/private/cycle/dynamic-loader fixtures | Policy approval |
+| T013 | Ruff/mypy enforcement, individual diagnostic identities and monotonic scope; no ordinary lint debt | Exact active records retain same-run evidence requirements |
+| T016 | Protected-base evaluator, verified policy owner and same-workflow aggregate dependencies | Administratively approved bootstrap, reference and required-check activation |
+| T019 | Flat/package/late/type-only/private/cycle/dynamic-loader fixtures | Administrative approval recorded; reference validation remains |
 | T022 | Jobs-owned scheduler singleton/registry/lock and lifecycle/run-now regressions | No remaining implementation gap identified |
-| T025 | Complete static graph, independent broad-handler enforcement, all sites narrowed/removed or individually proposed with failure evidence | Human review/activation of 65 exact proposals; no automatic approvals |
+| T025 | Complete static graph, independent broad-handler enforcement, all sites narrowed/removed or individually justified with failure evidence | 67 exact records administratively activated; no automatic approvals |
 | T028 | Scheduler, actual direct upload, confirmed Search/purge, provider startup/precedence, real JWT and audit-independence cases | Not a certification of every inherited failure handler or live Azure topology |
 | T040 | Contributor commands, ownership, recovery and coordinated PR evidence | Keep final PR/docs receipts synchronized |
 | T045 (component) | Full Python/asset evidence, coordinated frontend test/lint/build and same-workflow execution | Exact final CI receipts belong in the PR; live/deployment/recovery and administrative reference-PR exercises remain separately unavailable |
@@ -356,9 +360,10 @@ green claim. A repository administrator must **separately**:
 4. Prove a clean reference PR can pass and controlled failing/skipped/stale/
    self-approval PRs cannot merge under the active rules.
 
-No settings were changed by this work. Bootstrap review, actual rule
-activation, controlled merge-eligibility evidence and latest-head review are
-pending, not implied by the YAML or this document.
+No settings were changed by this work. Explicit administrative bootstrap
+approval is recorded above, not an independent latest-head GitHub review.
+Actual rule activation and controlled merge-eligibility evidence remain
+separate coordinator-owned tasks, not implied by the YAML or this document.
 
 ## Compatibility, recovery and evidence
 

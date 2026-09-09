@@ -114,13 +114,14 @@ and handler checks include flat roots, late/type-only imports and package
 facades. `main` compatibility re-exports are not another owner of mutable state.
 Use the jobs-owned test seam when patching scheduling.
 
-Exact exception records are proposed for audit boundaries, post-write local
+Exactly 67 existing exception records are active for audit boundaries, post-write local
 refresh, indexer/purger resource cleanup, explicit per-record failure
-translations, and optional auth diagnostics. None is active.
-Broad handlers remain blocking until protected review activates their exact
-records with passing same-run evidence. This is not
-an active required-merge claim. Protected policy
-review, a clean reference PR and administrative rule activation are separate
+translations, and optional auth diagnostics under
+[explicit administrative initial-adoption approval](https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634).
+This is not independent GitHub review. Exact matching and passing same-run
+evidence remain mandatory; candidate metadata cannot authorize future changes.
+This is not an active required-merge claim. Bootstrap adoption,
+a clean reference PR and administrative rule activation are separate
 acceptance requirements; no agent may change GitHub settings to bypass them.
 
 Load the `ingestion-validation` skill. Run the narrowest existing test first,

@@ -12,7 +12,7 @@
       "failure_outcome": "explicit-failure-translation",
       "diagnostic_path": "Class-only cleanup warning and established primary propagation",
       "evidence_tests": ["tests/test_retrieval.py::test_query_outcome_survives_close_failure[exception]", "tests/test_retrieval.py::test_query_outcome_survives_close_failure[envelope]", "tests/test_retrieval.py::test_query_outcome_survives_close_failure[cancel]", "tests/test_retrieval.py::test_query_outcome_survives_close_failure[success]"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -26,7 +26,7 @@
       "failure_outcome": "explicit-failure-translation",
       "diagnostic_path": "Class-only terminal-summary warning, original primary propagation and outer resource cleanup attempt",
       "evidence_tests": ["tests/test_worker_failure_boundaries.py::test_blob_primary_survives_summary_failure[RuntimeError-False]", "tests/test_worker_failure_boundaries.py::test_blob_primary_survives_summary_failure[RuntimeError-True]", "tests/test_worker_failure_boundaries.py::test_blob_primary_survives_summary_failure[CancelledError-False]", "tests/test_worker_failure_boundaries.py::test_blob_primary_survives_summary_failure[CancelledError-True]", "tests/test_worker_failure_boundaries.py::test_blob_summary_defect_cannot_skip_resource_cleanup[final-summary]"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -40,7 +40,7 @@
       "failure_outcome": "explicit-failure-translation",
       "diagnostic_path": "Exception-class-only query diagnostic and HTTP 502 preserved across attempted Search cleanup",
       "evidence_tests": ["tests/test_retrieval.py::test_search_exception_is_sanitized_and_client_is_closed", "tests/test_retrieval.py::test_query_outcome_survives_close_failure[exception]", "tests/test_retrieval.py::test_query_outcome_survives_close_failure[envelope]", "tests/test_retrieval.py::test_query_outcome_survives_close_failure[cancel]", "tests/test_retrieval.py::test_query_outcome_survives_close_failure[success]"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -54,7 +54,7 @@
       "failure_outcome": "contractual-best-effort-side-effect",
       "diagnostic_path": "Safe Search cleanup warning and subsequent resource close attempts",
       "evidence_tests": ["tests/test_sharepoint_purger_failures.py::test_purger_cleanup_preserves_primary_and_attempts_every_resource[_search_client]"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -68,7 +68,7 @@
       "failure_outcome": "contractual-best-effort-side-effect",
       "diagnostic_path": "Safe Blob cleanup warning followed by Key Vault and credential close",
       "evidence_tests": ["tests/test_sharepoint_purger_failures.py::test_purger_cleanup_preserves_primary_and_attempts_every_resource[_blob_service]"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -82,7 +82,7 @@
       "failure_outcome": "contractual-best-effort-side-effect",
       "diagnostic_path": "Safe Key Vault cleanup warning and independent credential closure",
       "evidence_tests": ["tests/test_sharepoint_purger_failures.py::test_purger_cleanup_preserves_primary_and_attempts_every_resource[_kv]"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -96,7 +96,7 @@
       "failure_outcome": "contractual-best-effort-side-effect",
       "diagnostic_path": "Safe credential cleanup warning with original purge failure preserved",
       "evidence_tests": ["tests/test_sharepoint_purger_failures.py::test_purger_cleanup_preserves_primary_and_attempts_every_resource[_credential]"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -110,7 +110,7 @@
       "failure_outcome": "contractual-best-effort-side-effect",
       "diagnostic_path": "Safe summary-write failure warning; original primary exception remains observable",
       "evidence_tests": ["tests/test_sharepoint_purger_failures.py::test_purger_summary_failure_is_secondary"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -128,7 +128,7 @@
         "tests/test_sharepoint_purger_failures.py::test_purge_run_requires_complete_scan_and_deletion[late-page]",
         "tests/test_sharepoint_purger_failures.py::test_purge_run_requires_complete_scan_and_deletion[delete]"
       ],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -146,7 +146,7 @@
         "tests/test_sharepoint_purger_failures.py::test_purge_counts_only_matching_positive_sdk_results[malformed-expected5]",
         "tests/test_sharepoint_purger_failures.py::test_purge_counts_only_matching_positive_sdk_results[partial-expected1]"
       ],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -160,7 +160,7 @@
       "failure_outcome": "contractual-best-effort-side-effect",
       "diagnostic_path": "Audit warning with exception class, unknown context label and unchanged resolved governance",
       "evidence_tests": ["tests/test_audit_failure_boundaries.py::test_optional_environment_context_failure_does_not_change_governance"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -174,7 +174,7 @@
       "failure_outcome": "contractual-best-effort-side-effect",
       "diagnostic_path": "Bounded omitted_fields path in the sanitized event; no hostile value or error text exported",
       "evidence_tests": ["tests/test_audit_failure_boundaries.py::test_hostile_nested_protocol_is_omitted_without_changing_required_event[mapping-initial]"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -188,7 +188,7 @@
       "failure_outcome": "contractual-best-effort-side-effect",
       "diagnostic_path": "Optional value absent and its bounded path present in omitted_fields",
       "evidence_tests": ["tests/test_audit_failure_boundaries.py::test_hostile_nested_protocol_is_omitted_without_changing_required_event[sequence-initial]"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -202,7 +202,7 @@
       "failure_outcome": "contractual-best-effort-side-effect",
       "diagnostic_path": "Bounded omitted_fields path and required event identifiers preserved",
       "evidence_tests": ["tests/test_audit_failure_boundaries.py::test_hostile_nested_protocol_is_omitted_without_changing_required_event[mapping-late]"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -219,7 +219,7 @@
         "tests/test_audit_failure_boundaries.py::test_hostile_diagnostic_path_sequence_is_recorded_as_omitted[omitted_fields]",
         "tests/test_audit_failure_boundaries.py::test_hostile_diagnostic_path_sequence_is_recorded_as_omitted[truncated_fields]"
       ],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -233,7 +233,7 @@
       "failure_outcome": "explicit-failure-translation",
       "diagnostic_path": "Exception-class-only diagnostic and nonempty error field with no returned documents",
       "evidence_tests": ["tests/test_search_write_failures.py::test_query_translation_is_explicit_failure_without_payloads[failure1]"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -254,7 +254,7 @@
         "tests/test_appconfig_failures.py::test_constructor_preserves_selectors_and_sdk_last_selected_value[endpoint]",
         "tests/test_appconfig_failures.py::test_constructor_preserves_selectors_and_sdk_last_selected_value[connection]"
       ],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -268,7 +268,7 @@
       "failure_outcome": "contractual-best-effort-side-effect",
       "diagnostic_path": "Safe Search cleanup warning, original primary exception and remaining close attempts",
       "evidence_tests": ["tests/test_sharepoint_failure_boundaries.py::test_sharepoint_cleanup_does_not_mask_primary[_search_client]"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -282,7 +282,7 @@
       "failure_outcome": "contractual-best-effort-side-effect",
       "diagnostic_path": "Safe Blob cleanup warning and independent subsequent resource closures",
       "evidence_tests": ["tests/test_sharepoint_failure_boundaries.py::test_sharepoint_cleanup_does_not_mask_primary[_blob_service]"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -296,7 +296,7 @@
       "failure_outcome": "contractual-best-effort-side-effect",
       "diagnostic_path": "Safe Key Vault cleanup warning without secret or dependency payload",
       "evidence_tests": ["tests/test_sharepoint_failure_boundaries.py::test_sharepoint_cleanup_does_not_mask_primary[_kv]"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -310,7 +310,7 @@
       "failure_outcome": "contractual-best-effort-side-effect",
       "diagnostic_path": "Safe credential cleanup warning and original primary exception identity",
       "evidence_tests": ["tests/test_sharepoint_failure_boundaries.py::test_sharepoint_cleanup_does_not_mask_primary[_credential]"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -327,7 +327,7 @@
         "tests/test_sharepoint_failure_boundaries.py::test_sharepoint_run_propagates_failures_and_always_closes[configuration]",
         "tests/test_sharepoint_failure_boundaries.py::test_sharepoint_run_propagates_failures_and_always_closes[collection]"
       ],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -341,7 +341,7 @@
       "failure_outcome": "contractual-best-effort-side-effect",
       "diagnostic_path": "Safe summary failure/timeout warning; primary exception remains authoritative",
       "evidence_tests": ["tests/test_sharepoint_failure_boundaries.py::test_optional_summary_failure_preserves_primary_exception"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -360,7 +360,7 @@
         "tests/test_sharepoint_failure_boundaries.py::test_collection_failure_cancels_and_observes_its_children[late-page]",
         "tests/test_sharepoint_failure_boundaries.py::test_collection_failure_cancels_and_observes_its_children[timeout]"
       ],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -381,7 +381,7 @@
         "tests/test_worker_failure_boundaries.py::test_blob_primary_survives_summary_failure[CancelledError-False]",
         "tests/test_worker_failure_boundaries.py::test_blob_primary_survives_summary_failure[CancelledError-True]"
       ],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -398,7 +398,7 @@
         "tests/test_worker_failure_boundaries.py::test_blob_metadata_failure_cannot_become_empty_acl[failure0]",
         "tests/test_worker_failure_boundaries.py::test_blob_metadata_failure_cannot_become_empty_acl[failure1]"
       ],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -412,7 +412,7 @@
       "failure_outcome": "contractual-best-effort-side-effect",
       "diagnostic_path": "Search cleanup warning, original primary exception and subsequent close attempts",
       "evidence_tests": ["tests/test_worker_failure_boundaries.py::test_blob_cleanup_attempts_all_clients_without_masking_primary[_search_client-BlobStorageDocumentIndexer]"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -426,7 +426,7 @@
       "failure_outcome": "contractual-best-effort-side-effect",
       "diagnostic_path": "Blob cleanup warning and continued credential close without changing the primary outcome",
       "evidence_tests": ["tests/test_worker_failure_boundaries.py::test_blob_cleanup_attempts_all_clients_without_masking_primary[_blob_service-BlobStorageDocumentIndexer]"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -440,7 +440,7 @@
       "failure_outcome": "contractual-best-effort-side-effect",
       "diagnostic_path": "Credential cleanup warning while the original primary exception propagates",
       "evidence_tests": ["tests/test_worker_failure_boundaries.py::test_blob_cleanup_attempts_all_clients_without_masking_primary[_credential-BlobStorageDocumentIndexer]"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -454,7 +454,7 @@
       "failure_outcome": "contractual-best-effort-side-effect",
       "diagnostic_path": "Safe Search cleanup warning followed by Blob and credential closure",
       "evidence_tests": ["tests/test_worker_failure_boundaries.py::test_blob_cleanup_attempts_all_clients_without_masking_primary[_search_client-BlobStorageDeletedItemsCleaner]"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -468,7 +468,7 @@
       "failure_outcome": "contractual-best-effort-side-effect",
       "diagnostic_path": "Safe Blob cleanup warning and unchanged primary exception",
       "evidence_tests": ["tests/test_worker_failure_boundaries.py::test_blob_cleanup_attempts_all_clients_without_masking_primary[_blob_service-BlobStorageDeletedItemsCleaner]"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -482,7 +482,7 @@
       "failure_outcome": "contractual-best-effort-side-effect",
       "diagnostic_path": "Safe credential cleanup warning; primary exception identity is retained",
       "evidence_tests": ["tests/test_worker_failure_boundaries.py::test_blob_cleanup_attempts_all_clients_without_masking_primary[_credential-BlobStorageDeletedItemsCleaner]"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -499,7 +499,7 @@
         "tests/test_startup_failure_boundaries.py::test_cleanup_failure_cannot_replace_startup_or_leak_payload[true]",
         "tests/test_startup_failure_boundaries.py::test_cleanup_failure_cannot_replace_startup_or_leak_payload[false]"
       ],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -516,7 +516,7 @@
         "tests/test_main_job_failures.py::test_startup_continues_independent_jobs_after_one_worker_fails",
         "tests/test_main_job_failures.py::test_worker_failure_reaches_scheduler_and_clears_running_slot[run_blob_index-jobs.blob_storage_indexer-BlobStorageDocumentIndexer]"
       ],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -530,7 +530,7 @@
       "failure_outcome": "explicit-failure-translation",
       "diagnostic_path": "Safe embedding error in the existing 200 per-record envelope and error-class log",
       "evidence_tests": ["tests/test_ingest_documents_failures.py::test_text_embedding_failure_remains_explicit_safe_record"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -544,7 +544,7 @@
       "failure_outcome": "contractual-best-effort-side-effect",
       "diagnostic_path": "Original file not persisted warning and safe error-class log; Search independently confirms indexedChunks",
       "evidence_tests": ["tests/test_ingest_documents_failures.py::test_direct_record_failure_keeps_safe_public_envelope[blob]"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -558,7 +558,7 @@
       "failure_outcome": "explicit-failure-translation",
       "diagnostic_path": "Safe chunking error, unchanged recordId, no Search upload for the failed record",
       "evidence_tests": ["tests/test_ingest_documents_failures.py::test_direct_record_failure_keeps_safe_public_envelope[chunking]"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -572,7 +572,7 @@
       "failure_outcome": "explicit-failure-translation",
       "diagnostic_path": "Safe embedding/preparation errors and no upload/count for failed chunks",
       "evidence_tests": ["tests/test_ingest_documents_failures.py::test_direct_record_failure_keeps_safe_public_envelope[embedding]"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -589,7 +589,7 @@
         "tests/test_operator_failure_boundaries.py::test_read_only_auth_probe_stays_200_but_never_grants_admin[failure0-/api/identity]",
         "tests/test_admin_run_now.py::test_run_now_auth_enabled_no_token_rejected"
       ],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -606,7 +606,7 @@
         "tests/test_operator_failure_boundaries.py::test_read_only_auth_probe_stays_200_but_never_grants_admin[failure0-/api/config]",
         "tests/test_admin_config.py::test_put_config_requires_admin_when_auth_enabled"
       ],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -620,7 +620,7 @@
       "failure_outcome": "explicit-failure-translation",
       "diagnostic_path": "Failed to schedule job HTTP 500 and safe job/error-class log",
       "evidence_tests": ["tests/test_admin_run_now.py::test_run_now_scheduler_failure_is_not_queued_and_releases_reservation"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -647,7 +647,7 @@
         "tests/test_operator_failure_boundaries.py::test_unblock_requires_valid_log_before_writing[\"private-corrupt\"]",
         "tests/test_operator_failure_boundaries.py::test_unblock_requires_valid_log_before_writing[{}]"
       ],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -661,7 +661,7 @@
       "failure_outcome": "explicit-failure-translation",
       "diagnostic_path": "207 applied/failed/rescheduled payload and safe key/error-class diagnostic",
       "evidence_tests": ["tests/test_operator_failure_boundaries.py::test_put_schedule_failure_preserves_write_and_reports_partial_failure"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -675,7 +675,7 @@
       "failure_outcome": "explicit-failure-translation",
       "diagnostic_path": "HTTP 500 with failed and rescheduled keys, safe scheduler error class",
       "evidence_tests": ["tests/test_admin_config.py::test_apply_does_not_report_ok_when_scheduler_fails"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -689,7 +689,7 @@
       "failure_outcome": "explicit-failure-translation",
       "diagnostic_path": "Failed to read feedback from Cosmos DB HTTP 502, payload-free error log",
       "evidence_tests": ["tests/test_panel_api.py::test_feedback_list_returns_502_on_cosmos_failure"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -706,7 +706,7 @@
         "tests/test_panel_api.py::test_feedback_create_returns_502_on_cosmos_exception",
         "tests/test_panel_api.py::test_feedback_create_returns_502_on_cosmos_failure"
       ],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -727,7 +727,7 @@
         "tests/test_panel_api.py::test_overview_failure_marks_feedback_unavailable[partial-read]",
         "tests/test_panel_api.py::test_overview_failure_marks_feedback_unavailable[partial-aggregation]"
       ],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -741,7 +741,7 @@
       "failure_outcome": "explicit-failure-translation",
       "diagnostic_path": "Panel metadata store query failed HTTP 502 with correlation-id diagnostic",
       "evidence_tests": ["tests/test_panel_operator_api.py::test_overview_metrics_cosmos_failure_is_502"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -755,7 +755,7 @@
       "failure_outcome": "explicit-failure-translation",
       "diagnostic_path": "Corpus control store query failed HTTP 502 with safe correlation-id log",
       "evidence_tests": ["tests/test_panel_operator_api.py::test_overview_metrics_control_store_failure_is_safe_502"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -769,7 +769,7 @@
       "failure_outcome": "explicit-failure-translation",
       "diagnostic_path": "Corpus control store query failed HTTP 502 and correlation-id diagnostic",
       "evidence_tests": ["tests/test_panel_operator_api.py::test_curation_queue_store_failure_is_502"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -786,7 +786,7 @@
         "tests/test_panel_operator_api.py::test_decision_unexpected_write_failure_is_safe_502",
         "tests/test_panel_operator_api.py::test_decision_replay_is_idempotent"
       ],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -806,7 +806,7 @@
         "tests/test_chunking_failure_boundaries.py::test_document_metadata_failure_is_not_replaced_by_unbound_local",
         "tests/test_chunking_failure_boundaries.py::test_document_success_preserves_chunk_identity_and_order"
       ],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -829,7 +829,7 @@
         "tests/test_nl2sql_indexer_failures.py::test_run_propagates_child_cancellation_without_finished_summary[False]",
         "tests/test_nl2sql_indexer_failures.py::test_run_propagates_child_cancellation_without_finished_summary[True]"
       ],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -846,7 +846,7 @@
         "tests/test_nl2sql_indexer_failures.py::test_cleanup_preserves_primary_outcome_and_attempts_all_clients[True-_ai_search]",
         "tests/test_nl2sql_indexer_failures.py::test_cleanup_preserves_primary_outcome_and_attempts_all_clients[False-_ai_search]"
       ],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -863,7 +863,7 @@
         "tests/test_nl2sql_indexer_failures.py::test_cleanup_preserves_primary_outcome_and_attempts_all_clients[True-_blob_service]",
         "tests/test_nl2sql_indexer_failures.py::test_cleanup_preserves_primary_outcome_and_attempts_all_clients[False-_blob_service]"
       ],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -880,7 +880,7 @@
         "tests/test_nl2sql_indexer_failures.py::test_cleanup_preserves_primary_outcome_and_attempts_all_clients[True-_credential]",
         "tests/test_nl2sql_indexer_failures.py::test_cleanup_preserves_primary_outcome_and_attempts_all_clients[False-_credential]"
       ],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -897,7 +897,7 @@
         "tests/test_bearer_jwt_failures.py::test_optional_auth_diagnostic_failure_cannot_change_verification[integrity]",
         "tests/test_bearer_jwt_failures.py::test_real_jwt_malformed_header_is_401[e30.e30.bad]"
       ],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -913,7 +913,7 @@
       "evidence_tests": [
         "tests/test_bearer_jwt_failures.py::test_optional_auth_diagnostic_failure_cannot_change_verification[graph-hint]"
       ],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -932,7 +932,7 @@
         "tests/test_ingest_documents_failures.py::test_direct_upload_requires_matching_confirmation[duplicate-0-2]",
         "tests/test_ingest_documents_failures.py::test_direct_upload_audit_export_failure_keeps_confirmed_result"
       ],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -946,7 +946,7 @@
       "failure_outcome": "contractual-best-effort-side-effect",
       "diagnostic_path": "gptrag.audit_warning: dropped event type and exception class, without exception payload",
       "evidence_tests": ["tests/test_audit_emitter.py::test_audit_side_effect_failure_is_nonblocking_and_does_not_log_payload[sanitizer]"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -963,7 +963,7 @@
         "tests/test_audit_emitter.py::test_broken_exporter_does_not_raise_and_does_not_fail_the_run",
         "tests/test_audit_emitter.py::test_audit_side_effect_failure_is_nonblocking_and_does_not_log_payload[exporter]"
       ],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -980,7 +980,7 @@
         "tests/test_audit_emitter.py::test_unhandled_exception_emits_failed_and_reraises",
         "tests/test_audit_emitter.py::test_cancelled_error_is_preserved_and_emits_cancelled_event"
       ],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -997,7 +997,7 @@
         "tests/test_audit_emitter.py::test_document_audit_never_raises_even_with_a_malformed_result",
         "tests/test_audit_emitter.py::test_audit_side_effect_failure_is_nonblocking_and_does_not_log_payload[document]"
       ],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -1011,7 +1011,7 @@
       "failure_outcome": "contractual-best-effort-side-effect",
       "diagnostic_path": "Warning naming the post-write cache-refresh stage and exception class, without downstream payload",
       "evidence_tests": ["tests/test_admin_config.py::test_written_config_with_failed_refresh_preserves_applied_success"],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -1028,7 +1028,7 @@
         "tests/test_nl2sql_purge_failures.py::test_cleanup_failure_cannot_replace_primary_failure_or_skip_other_clients[_ai_search]",
         "tests/test_nl2sql_purge_failures.py::test_cleanup_failure_preserves_confirmed_primary_summary[_ai_search]"
       ],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -1045,7 +1045,7 @@
         "tests/test_nl2sql_purge_failures.py::test_cleanup_failure_cannot_replace_primary_failure_or_skip_other_clients[_blob_service]",
         "tests/test_nl2sql_purge_failures.py::test_cleanup_failure_preserves_confirmed_primary_summary[_blob_service]"
       ],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     },
     {
@@ -1062,13 +1062,14 @@
         "tests/test_nl2sql_purge_failures.py::test_cleanup_failure_cannot_replace_primary_failure_or_skip_other_clients[_credential]",
         "tests/test_nl2sql_purge_failures.py::test_cleanup_failure_preserves_confirmed_primary_summary[_credential]"
       ],
-      "review": {"status": "proposed", "reference": "https://github.com/Azure/gpt-rag-ingestion/pull/296"},
+      "review": {"status": "active", "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634"},
       "review_by_stage": "initial"
     }
   ],
   "review": {
-    "status": "proposed",
-    "reference": "https://github.com/Azure/GPT-RAG/pull/689",
-    "rationale": "Each remaining broad handler has an individually justified, source-bound proposal and named failure evidence. Records cover necessary existing public failure translations, primary-error observation, independent resource cleanup, optional diagnostics, audit sanitization/emission, confirmed-write refresh and the explicitly preserved bootstrap fallback. All require individual human review; none is active and no record exempts unconfirmed indexing, deletion or authorization."
+    "status": "active",
+    "owner": "@placerda",
+    "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634",
+    "rationale": "Explicit administrative initial-adoption approval by Paulo (@placerda) activates exactly the 67 individually justified existing records at 0ae3759356935830c532ce3f2c48d3753b01da73. This is not independent GitHub review or a green bootstrap claim. Same-run failure evidence remains mandatory; no record exempts unconfirmed indexing, deletion or authorization."
   }
 }

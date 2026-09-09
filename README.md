@@ -26,9 +26,10 @@ For full documentation, visit the **[GPT-RAG documentation site](https://azure.g
 Python 3.12 contributor commands, scheduler ownership, incremental typing,
 import/error policy and recovery guidance are in
 [Python quality gates](docs/python-quality.md). Every retained broad handler
-has an exact, individually justified proposal with failure evidence; **none is
-active**. Protected review, bootstrap and required-check activation remain
-separate acceptance steps.
+has an exact, individually justified record with failure evidence; **67 records
+are active under [explicit administrative initial-adoption approval](https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634)**,
+not independent GitHub review. Bootstrap adoption, real reference validation
+and required-check activation remain separate acceptance steps.
 The operator frontend's dependency/build compatibility is repaired without
 peer-validation bypasses; CI runs its maintained test, lint and build commands
 on compatible Node 22 as a required aggregate dependency.
