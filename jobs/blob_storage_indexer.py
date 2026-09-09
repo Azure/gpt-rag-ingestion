@@ -1,5 +1,6 @@
 # connectors/blob_storage_indexer.py
 import asyncio
+import sys
 import time
 import inspect
 import base64
@@ -14,7 +15,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from azure.identity.aio import AzureCliCredential, ManagedIdentityCredential, ChainedTokenCredential
-from azure.core.exceptions import HttpResponseError, ServiceRequestError
+from azure.core.exceptions import AzureError, HttpResponseError, ResourceExistsError, ResourceNotFoundError, ServiceRequestError
 from azure.storage.blob.aio import BlobServiceClient
 from azure.storage.blob import ContentSettings
 from azure.search.documents.aio import SearchClient as AsyncSearchClient
@@ -63,7 +64,7 @@ def _extract_custom_metadata(meta: Optional[Dict[str, Any]]) -> List[Dict[str, s
         if raw_key is None:
             continue
         key = str(raw_key).strip().lower()
-        if not key or key in _RESERVED_BLOB_METADATA_KEYS:
+        if not key or key.replace("-", "_") in _RESERVED_BLOB_METADATA_KEYS:
             continue
         if raw_value is None:
             continue
@@ -272,6 +273,12 @@ class BlobStorageDocumentIndexer:
 
     # ---------- Public entrypoint ----------
     async def run(self) -> None:
+        try:
+            await self._run_pipeline()
+        finally:
+            await self._close_clients_safely()
+
+    async def _run_pipeline(self) -> None:
         await self._ensure_clients()
         # create a runId that matches the run summary filename and capture start time (ISO)
         run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -311,6 +318,7 @@ class BlobStorageDocumentIndexer:
         total_chunks = 0
         skipped_no_change = 0
         skipped_blocked = 0
+        pipeline_completed = False
 
         try:
             # ensure log containers exist (best-effort)
@@ -377,20 +385,21 @@ class BlobStorageDocumentIndexer:
             })
             await self._write_run_summary(self.cfg.jobs_log_container, summary, run_id)
 
+            pipeline_completed = True
         except asyncio.CancelledError:
             summary["status"] = "cancelled"
             summary["runFinishedAt"] = _utc_now()
-            await self._write_run_summary(self.cfg.jobs_log_container, summary, run_id)
             self._log_event(logging.WARNING, "RUN-CANCELLED", runId=run_id)
             logging.info(f"[{self.cfg.indexer_name}] Run cancelled: runId={run_id}")
             raise
         except Exception as exc:
-            logging.exception(f"[{self.cfg.indexer_name}] run() failed")
-            summary["error"] = str(exc)
+            logging.error("[%s] Run failed (%s)", self.cfg.indexer_name, type(exc).__name__)
+            summary["error"] = f"Run failed ({type(exc).__name__})."
             summary["status"] = "failed"
-            await self._write_run_summary(self.cfg.jobs_log_container, summary, run_id)
-            self._log_event(logging.ERROR, "RUN-ERROR", runId=run_id, error=str(exc))
+            self._log_event(logging.ERROR, "RUN-ERROR", runId=run_id, error=summary["error"])
+            raise
         finally:
+            primary = None if pipeline_completed else sys.exception()
             summary.update({
                 "runFinishedAt": summary.get("runFinishedAt") or _utc_now(),
                 "sourceFiles": source_files,
@@ -406,14 +415,22 @@ class BlobStorageDocumentIndexer:
             if summary.get("status") not in {"failed", "cancelled"}:
                 summary["status"] = "finished"
 
-            await self._write_run_summary(self.cfg.jobs_log_container, summary, run_id)
+            try:
+                await self._write_run_summary(self.cfg.jobs_log_container, summary, run_id)
+            except (Exception, asyncio.CancelledError) as exc:
+                logging.warning(
+                    "[%s] Terminal summary attempt failed (%s).",
+                    self.cfg.indexer_name, type(exc).__name__,
+                )
+                if primary is None:
+                    raise
             duration_seconds: Optional[float] = None
             try:
                 start_dt = _as_datetime(summary.get("runStartedAt"))
                 finish_dt = _as_datetime(summary.get("runFinishedAt"))
                 if start_dt and finish_dt:
                     duration_seconds = max((finish_dt - start_dt).total_seconds(), 0.0)
-            except Exception:
+            except (ValueError, OverflowError):
                 duration_seconds = None
 
             self._log_event(
@@ -431,27 +448,26 @@ class BlobStorageDocumentIndexer:
                 durationSeconds=duration_seconds,
             )
             logging.info(f"[{self.cfg.indexer_name}] Summary: {json.dumps(summary)}")
-            await self._close_clients_safely()
 
     async def _close_clients_safely(self):
         # Gracefully close async clients/credentials to avoid aiohttp SSL shutdown warnings
         try:
             if self._search_client:
                 await self._search_client.close()
-        except Exception:
-            logging.debug("[indexer] ignoring error while closing search client", exc_info=True)
+        except Exception as exc:
+            logging.warning("[indexer] Search cleanup failed (%s)", type(exc).__name__)
         try:
             if self._blob_service:
                 await self._blob_service.close()
-        except Exception:
-            logging.debug("[indexer] ignoring error while closing blob service", exc_info=True)
+        except Exception as exc:
+            logging.warning("[indexer] Blob cleanup failed (%s)", type(exc).__name__)
         try:
             if self._credential and hasattr(self._credential, "close"):
                 res = self._credential.close()
                 if inspect.isawaitable(res):
                     await res
-        except Exception:
-            logging.debug("[indexer] ignoring error while closing credential", exc_info=True)
+        except Exception as exc:
+            logging.warning("[indexer] Credential cleanup failed (%s)", type(exc).__name__)
 
     # ---------- Core per-blob flow ----------
     async def _read_file_log(self, file_log_key: str) -> Optional[Dict[str, Any]]:
@@ -464,7 +480,10 @@ class BlobStorageDocumentIndexer:
             download = await blob_client.download_blob()
             raw = await download.readall()
             return json.loads(raw)
-        except Exception:
+        except ResourceNotFoundError:
+            return None
+        except (AzureError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+            logging.warning("[indexer] Previous file log unavailable (%s)", type(exc).__name__)
             return None
 
     async def _process_one(
@@ -545,53 +564,48 @@ class BlobStorageDocumentIndexer:
             return {"status": "skipped-blocked", "chunks": 0}
 
         await self._write_file_log(self.cfg.jobs_log_container, f"{file_log_key}.json", per_file_log)
+        _temp_path: Optional[str] = None
         try:
             # Fetch blob metadata to capture ACL info if provided
             security_user_ids: List[str] = []
             security_group_ids: List[str] = []
             custom_metadata: List[Dict[str, str]] = []
             rbac_scope = self._get_container_rbac_scope()
-            try:
-                props = await blob_client.get_blob_properties()
-                meta = (getattr(props, "metadata", None) or {})
-                # Azure stores metadata keys as lowercase
-                raw_users = (
-                    meta.get("metadata_security_user_ids")
-                    or meta.get("metadata-security-user-ids")
-                    or meta.get("metadata_security_user_ids".lower())
-                )
-                raw_groups = (
-                    meta.get("metadata_security_group_ids")
-                    or meta.get("metadata-security-group-ids")
-                    or meta.get("metadata_security_group_ids".lower())
-                )
+            props = await blob_client.get_blob_properties()
+            meta = (getattr(props, "metadata", None) or {})
+            # Azure stores metadata keys as lowercase
+            raw_users = (
+                meta.get("metadata_security_user_ids")
+                or meta.get("metadata-security-user-ids")
+                or meta.get("metadata_security_user_ids".lower())
+            )
+            raw_groups = (
+                meta.get("metadata_security_group_ids")
+                or meta.get("metadata-security-group-ids")
+                or meta.get("metadata_security_group_ids".lower())
+            )
 
-                if raw_users:
-                    security_user_ids = self._parse_security_ids(raw_users)
-                if raw_groups:
-                    security_group_ids = self._parse_security_ids(raw_groups)
+            if raw_users:
+                security_user_ids = self._parse_security_ids(raw_users)
+            if raw_groups:
+                security_group_ids = self._parse_security_ids(raw_groups)
 
-                # Backward compat: if a blob still has legacy metadata_security_id, treat it as user IDs.
-                if not security_user_ids:
-                    raw_legacy = meta.get("metadata_security_id") or meta.get("metadata-security-id")
-                    if raw_legacy:
-                        security_user_ids = self._parse_security_ids(raw_legacy)
+            # Backward compat: if a blob still has legacy metadata_security_id, treat it as user IDs.
+            if not security_user_ids:
+                raw_legacy = meta.get("metadata_security_id") or meta.get("metadata-security-id")
+                if raw_legacy:
+                    security_user_ids = self._parse_security_ids(raw_legacy)
 
-                security_user_ids = self._normalize_acl_ids(
-                    security_user_ids,
-                    field_name="metadata_security_user_ids",
-                )
-                security_group_ids = self._normalize_acl_ids(
-                    security_group_ids,
-                    field_name="metadata_security_group_ids",
-                )
+            security_user_ids = self._normalize_acl_ids(
+                security_user_ids,
+                field_name="metadata_security_user_ids",
+            )
+            security_group_ids = self._normalize_acl_ids(
+                security_group_ids,
+                field_name="metadata_security_group_ids",
+            )
 
-                custom_metadata = _extract_custom_metadata(meta)
-            except Exception as _:
-                # Non-fatal: continue without security IDs or custom metadata
-                security_user_ids = []
-                security_group_ids = []
-                custom_metadata = []
+            custom_metadata = _extract_custom_metadata(meta)
 
             # --- Memory guard: check blob size before downloading ---
             blob_props = await blob_client.get_blob_properties()
@@ -605,7 +619,6 @@ class BlobStorageDocumentIndexer:
 
             # --- Download: use temp file for PDFs to reduce memory pressure ---
             _ext = os.path.splitext(blob_name)[1].lower()
-            _temp_path: Optional[str] = None
 
             _t_wall_start = time.monotonic()
             _t_download = time.monotonic()
@@ -780,15 +793,16 @@ class BlobStorageDocumentIndexer:
             return {"status": "success", "chunks": total_chunks_uploaded}
 
         except Exception as e:
-            logging.exception(f"[{self.cfg.indexer_name}] Failed processing {blob_name}")
+            error = f"Document processing failed ({type(e).__name__})."
+            logging.error("[%s] %s", self.cfg.indexer_name, error)
             should_block = processing_attempts >= self.cfg.max_file_processing_attempts
             _finished = _utc_now()
             _history = per_file_log.get("runHistory", [])
-            _history = [{"runId": run_id, "status": "error", "startedAt": per_file_log.get("startedAt"), "finishedAt": _finished, "error": str(e)}] + _history
+            _history = [{"runId": run_id, "status": "error", "startedAt": per_file_log.get("startedAt"), "finishedAt": _finished, "error": error}] + _history
             per_file_log["runHistory"] = _history
             per_file_log.update({
                 "status": "error",
-                "error": str(e),
+                "error": error,
                 "finishedAt": _finished,
                 "blocked": should_block,
                 "blockedAt": _finished if should_block else per_file_log.get("blockedAt"),
@@ -814,9 +828,9 @@ class BlobStorageDocumentIndexer:
                 status="error",
                 contentType=content_type or "application/octet-stream",
                 fileUrl=file_url,
-                error=str(e),
+                error=error,
             )
-            return {"status": "error", "error": str(e)}
+            return {"status": "error", "error": error}
         finally:
             # Cleanup temp file used for large PDF download
             if _temp_path:
@@ -1004,10 +1018,7 @@ class BlobStorageDocumentIndexer:
         if not (filename.endswith(".xlsx") or filename.endswith(".xls")):
             return False
         # Only stage when row-wise processing is enabled.
-        try:
-            return (self._app.get("SPREADSHEET_CHUNKING_BY_ROW", "false").lower() in ("true", "1", "yes"))
-        except Exception:
-            return False
+        return (self._app.get("SPREADSHEET_CHUNKING_BY_ROW", "false").lower() in ("true", "1", "yes"))
 
     def _make_staging_prefix(self, parent_id: str) -> str:
         """Stable prefix for all staged artifacts of a parent document."""
@@ -1192,13 +1203,7 @@ class BlobStorageDocumentIndexer:
             blob_client = container.get_blob_client(b.name)
             download = await blob_client.download_blob()
             raw = await download.readall()
-            try:
-                doc = json.loads(raw)
-            except Exception:
-                logging.warning(
-                    f"[{self.cfg.indexer_name}] failed to parse staged doc {b.name}; skipping"
-                )
-                continue
+            doc = json.loads(raw)
 
             # Restore datetime fields that Azure SDK expects as datetime objects.
             for field in ("metadata_storage_last_modified",):
@@ -1261,11 +1266,8 @@ class BlobStorageDocumentIndexer:
             try:
                 await container.delete_blob(b.name)
                 deleted += 1
-            except Exception:
-                logging.debug(
-                    f"[{self.cfg.indexer_name}] ignoring delete error for staging blob {b.name}",
-                    exc_info=True,
-                )
+            except AzureError as exc:
+                logging.warning("[%s] Staging cleanup delete failed (%s)", self.cfg.indexer_name, type(exc).__name__)
 
         return deleted
 
@@ -1386,27 +1388,24 @@ class BlobStorageDocumentIndexer:
             await self._with_backoff(self._search_client.upload_documents, documents=batch)
 
     async def _with_backoff(self, func, **kwargs):
+        from tools.aisearch import require_confirmed_batch, search_retry_delay
+
         # Respect retry-after-ms if present; exponential fallback
         delay = 1.0
         for attempt in range(8):
             try:
                 result = await func(**kwargs)
             except HttpResponseError as e:
-                ra = None
-                try:
-                    ra = e.response.headers.get("retry-after-ms") or e.response.headers.get("Retry-After")
-                except Exception:
-                    pass
-                if ra:
-                    try:
-                        delay = max(delay, float(ra) / 1000.0)
-                    except Exception:
-                        pass
-                logging.warning(f"[{self.cfg.indexer_name}] backoff {delay}s on {type(e).__name__}: {e}")
+                if attempt == 7:
+                    raise
+                delay = search_retry_delay(e, delay)
+                logging.warning("[%s] Search retry in %ss (%s)", self.cfg.indexer_name, delay, type(e).__name__)
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 30)
             except ServiceRequestError as e:
-                logging.warning(f"[{self.cfg.indexer_name}] network error; retrying in {delay}s: {e}")
+                if attempt == 7:
+                    raise
+                logging.warning("[%s] Search network retry in %ss (%s)", self.cfg.indexer_name, delay, type(e).__name__)
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 30)
             else:
@@ -1416,6 +1415,8 @@ class BlobStorageDocumentIndexer:
                     result=result,
                     source_type=self.cfg.indexer_name,
                 )
+                if getattr(func, "__name__", "") in {"upload_documents", "delete_documents"}:
+                    require_confirmed_batch(kwargs["documents"], result)
                 return result
 
     # ---------- Logging helpers ----------
@@ -1423,9 +1424,12 @@ class BlobStorageDocumentIndexer:
         try:
             cc = self._blob_service.get_container_client(name)
             await cc.create_container()
-        except Exception:
-            # likely already exists
+        except ResourceExistsError:
             pass
+        except AzureError as exc:
+            if name != self.cfg.jobs_log_container:
+                raise
+            logging.warning("[%s] Optional log container unavailable (%s)", self.cfg.indexer_name, type(exc).__name__)
 
     async def _write_file_log(self, container: str, blob_name: str, payload: Dict[str, Any]):
         await self._ensure_clients()
@@ -1437,8 +1441,8 @@ class BlobStorageDocumentIndexer:
                 overwrite=True,
                 content_settings=ContentSettings(content_type="application/json"),
             )
-        except Exception:
-            logging.exception(f"[{self.cfg.indexer_name}] failed to write file log {blob_name}")
+        except AzureError as exc:
+            logging.warning("[%s] File log write failed (%s)", self.cfg.indexer_name, type(exc).__name__)
 
     async def _write_run_summary(self, container: str, summary: Dict[str, Any], run_id: str):
         await self._ensure_clients()
@@ -1451,8 +1455,8 @@ class BlobStorageDocumentIndexer:
                 overwrite=True,
                 content_settings=ContentSettings(content_type="application/json"),
             )
-        except Exception:
-            logging.exception(f"[{self.cfg.indexer_name}] failed to write run summary {name}")
+        except AzureError as exc:
+            logging.warning("[%s] Run summary write failed (%s)", self.cfg.indexer_name, type(exc).__name__)
 
     # ---------- Utilities ----------
     def _make_parent_id(self, blob_name: str) -> str:
@@ -1512,14 +1516,14 @@ class BlobStorageDocumentIndexer:
             parsed = json.loads(raw_val)
             if isinstance(parsed, list):
                 return [str(x).strip() for x in parsed if str(x).strip()]
-        except Exception:
+        except json.JSONDecodeError:
             pass
         # Try Python literal (e.g., "['a', 'b']")
         try:
             lit = ast.literal_eval(raw_val)
             if isinstance(lit, list):
                 return [str(x).strip() for x in lit if str(x).strip()]
-        except Exception:
+        except (ValueError, SyntaxError):
             pass
         # Fallback: strip surrounding brackets, split on comma or semicolon
         s = raw_val.strip()
@@ -1637,11 +1641,11 @@ class BlobStorageDeletedItemsCleaner:
             )
 
     async def run(self) -> None:
-        await self._ensure_clients()
         start_iso = _utc_now()
         logging.info(f"[blob-storage-purger] Starting @ {start_iso}")
 
         try:
+            await self._ensure_clients()
             # Ensure jobs log container exists
             await self._ensure_container(self.cfg.jobs_log_container)
 
@@ -1914,39 +1918,34 @@ class BlobStorageDeletedItemsCleaner:
         try:
             if self._search_client:
                 await self._search_client.close()
-        except Exception:
-            logging.debug("[purger] ignoring error while closing search client", exc_info=True)
+        except Exception as exc:
+            logging.warning("[purger] Search cleanup failed (%s)", type(exc).__name__)
         try:
             if self._blob_service:
                 await self._blob_service.close()
-        except Exception:
-            logging.debug("[purger] ignoring error while closing blob service", exc_info=True)
+        except Exception as exc:
+            logging.warning("[purger] Blob cleanup failed (%s)", type(exc).__name__)
         try:
             if self._credential and hasattr(self._credential, "close"):
                 res = self._credential.close()
                 if inspect.isawaitable(res):
                     await res
-        except Exception:
-            logging.debug("[purger] ignoring error while closing credential", exc_info=True)
+        except Exception as exc:
+            logging.warning("[purger] Credential cleanup failed (%s)", type(exc).__name__)
 
     # --- shared helpers (same as indexer; duplicated for clarity) ---
     async def _with_backoff(self, func, **kwargs):
+        from tools.aisearch import require_confirmed_batch, search_retry_delay
+
         delay = 1.0
         for attempt in range(8):
             try:
                 result = await func(**kwargs)
             except HttpResponseError as e:
-                ra = None
-                try:
-                    ra = e.response.headers.get("retry-after-ms") or e.response.headers.get("Retry-After")
-                except Exception:
-                    pass
-                if ra:
-                    try:
-                        delay = max(delay, float(ra) / 1000.0)
-                    except Exception:
-                        pass
-                logging.warning(f"[blob-storage-purger] backoff {delay}s on {type(e).__name__}: {e}")
+                if attempt == 7:
+                    raise
+                delay = search_retry_delay(e, delay)
+                logging.warning("[blob-storage-purger] Search retry in %ss (%s)", delay, type(e).__name__)
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 30)
             else:
@@ -1956,14 +1955,18 @@ class BlobStorageDeletedItemsCleaner:
                     result=result,
                     source_type=self.cfg.indexer_name,
                 )
+                if getattr(func, "__name__", "") in {"upload_documents", "delete_documents"}:
+                    require_confirmed_batch(kwargs["documents"], result)
                 return result
 
     async def _ensure_container(self, name: str):
         try:
             cc = self._blob_service.get_container_client(name)
             await cc.create_container()
-        except Exception:
+        except ResourceExistsError:
             pass
+        except AzureError as exc:
+            logging.warning("[blob-storage-purger] Log container unavailable (%s)", type(exc).__name__)
 
     async def _write_file_log(self, container: str, blob_name: str, payload: Dict[str, Any]):
         cc = self._blob_service.get_container_client(container)
@@ -1974,8 +1977,8 @@ class BlobStorageDeletedItemsCleaner:
                 overwrite=True,
                 content_settings=ContentSettings(content_type="application/json"),
             )
-        except Exception:
-            logging.exception(f"[blob-storage-purger] failed to write file log {blob_name}")
+        except AzureError as exc:
+            logging.warning("[blob-storage-purger] File log write failed (%s)", type(exc).__name__)
 
     async def _write_run_summary(self, container: str, summary: Dict[str, Any]):
         cc = self._blob_service.get_container_client(container)
@@ -1988,8 +1991,8 @@ class BlobStorageDeletedItemsCleaner:
                 overwrite=True,
                 content_settings=ContentSettings(content_type="application/json"),
             )
-        except Exception:
-            logging.exception(f"[blob-storage-purger] failed to write run summary {name}")
+        except AzureError as exc:
+            logging.warning("[blob-storage-purger] Run summary write failed (%s)", type(exc).__name__)
 
 
 # -----------------------------------------------------------------------------

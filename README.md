@@ -1,4 +1,4 @@
-<!-- 
+<!--
 page_type: sample
 languages:
 - azdeveloper
@@ -20,6 +20,47 @@ Part of the [GPT-RAG](https://github.com/Azure/gpt-rag) solution.
 The **GPT-RAG Data Ingestion** service automates the processing of diverse document types—such as PDFs, images, spreadsheets, transcripts, and SharePoint files—preparing them for indexing in Azure AI Search. It uses intelligent chunking strategies tailored to each format, generates text and image embeddings, and enables rich, multimodal retrieval experies for agent-based RAG applications.
 
 For full documentation, visit the **[GPT-RAG documentation site](https://azure.github.io/GPT-RAG/)**.
+
+## Contributor quality bootstrap
+
+Python 3.12 contributor commands, scheduler ownership, incremental typing,
+import/error policy and recovery guidance are in
+[Python quality gates](docs/python-quality.md). Every retained broad handler
+has an exact, individually justified record with failure evidence; **67 records
+are active under [explicit administrative initial-adoption approval](https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634)**,
+not independent GitHub review. Bootstrap adoption, real reference validation
+and required-check activation remain separate acceptance steps.
+The operator frontend's dependency/build compatibility is repaired without
+peer-validation bypasses; CI runs its maintained test, lint and build commands
+on compatible Node 22 as a required aggregate dependency.
+
+Search uploads/deletes, including direct `/ingest-documents`, require matching
+SDK confirmations. Blob/SharePoint permission failures cannot become empty ACLs;
+worker, provider and genuine configuration-application failures remain visible.
+Confirmed configuration writes retain **200/applied** if only the established
+best-effort local refresh fails. Selector order, configured source order,
+schema/audit bytes, authentication and successful per-record responses remain
+unchanged. Expected SDK/parser recovery is bounded; diagnostic payloads are safe.
+
+For App Configuration source order, environment opt-in, fallback diagnostics
+and recovery, see the canonical [ingestion observability guidance](https://azure.github.io/GPT-RAG/services_ingestion/#observability).
+
+Image purging completes its reference scan before deleting anything, including
+references beyond 1,000 results, and uses asynchronous Blob operations.
+Source-page, count and unconfirmed-delete failures cannot become successful
+SharePoint purge summaries. Worker-owned resource cleanup is attempted on initialization,
+failure and cancellation paths; collection children are cancelled and observed.
+Optional audit/diagnostic failures do not authorize primary-operation success.
+Retrieval query failures retain their sanitized `502` response, and query
+cancellation propagates, even when Search cleanup fails. A cleanup failure
+without a prior query failure still propagates. Blob terminal-summary writes
+cannot replace an established run failure or cancellation; failed summary
+attempts emit class-only diagnostics. Neither summary persistence nor cleanup
+is guaranteed. NL2SQL child cancellation propagates through the run/audit
+wrapper rather than producing a finished run with an ordinary failed-document
+count; ordinary document errors retain their existing per-record behavior.
+Code or artifact rollback does not undo persisted configuration or restore
+deleted documents.
 
 ## Governance and audit events
 
@@ -265,7 +306,7 @@ missing tenant configuration is a hard `500`, never a silent allow.
 | --- | --- |
 | `GET /api/panel/status` | Reports whether the panel is currently enabled and ready (re-checks live config on every call as defense-in-depth against drift, independent of the mount-time decision). |
 | `GET/POST /api/panel/feedback` | Cosmos-backed curation/feedback metadata for hosted conversations (create/list), reusing the same Cosmos account/database contract as the orchestrator's dashboard. |
-| `GET /api/panel/overview` | Aggregates existing jobs, files, and feedback data into a single dashboard-overview payload; degrades gracefully (partial payload) if Cosmos is temporarily unavailable rather than failing the whole request. |
+| `GET /api/panel/overview` | Aggregates jobs, files, and feedback. `feedback.available` is true for a complete read (including genuine zero feedback), false on feedback failure. When false, integer counts are zero placeholders, not observations; jobs/files remain available. This is separate from `/panel/overview/metrics` and its privacy-suppressed null counts. |
 | `GET /api/panel/conversations/{id}/history` | **Not yet implemented (`501`).** Managed Foundry Conversation history retrieval depends on a still-undefined cross-repo API surface between `gpt-rag-ingestion`, `gpt-rag-orchestrator`, and Azure AI Foundry, tracked under [Azure/GPT-RAG#592](https://github.com/Azure/GPT-RAG/issues/592). This service intentionally does not proxy chat execution or fabricate history — only the pieces implementable entirely within this repository are enabled today. |
 
 ## Contributing

@@ -1,0 +1,10 @@
+# Verified repository administrator: placerda (GitHub permission API, 2026-09-06).
+# This file is not enforcement by itself; see docs/python-quality.md.
+/.quality/ @placerda
+/pyproject.toml @placerda
+/requirements-quality.txt @placerda
+/.github/scripts/quality* @placerda
+/.github/scripts/check-quality.py @placerda
+/.github/workflows/tests.yml @placerda
+/.github/CODEOWNERS @placerda
+/tests/test_quality_policy.py @placerda

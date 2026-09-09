@@ -109,14 +109,15 @@ def split_pdf_to_temp_files(
         tmp = tempfile.NamedTemporaryFile(
             suffix=".pdf", prefix=f"pdfsplit_p{part_idx}_", delete=False
         )
+        written = False
         try:
-            writer.write(tmp)
-            tmp.close()
-            yield tmp.name
-        except Exception:
-            tmp.close()
-            _safe_delete(tmp.name)
-            raise
+            with tmp:
+                writer.write(tmp)
+            written = True
+        finally:
+            if not written:
+                _safe_delete(tmp.name)
+        yield tmp.name
 
 
 def renumber_page_markers(markdown: str, page_offset: int) -> str:
@@ -144,20 +145,21 @@ def save_bytes_to_temp_file(data: bytes, suffix: str = ".pdf") -> str:
     The caller is responsible for deleting the file when done.
     """
     tmp = tempfile.NamedTemporaryFile(suffix=suffix, prefix="ingest_", delete=False)
+    written = False
     try:
-        tmp.write(data)
-        tmp.close()
+        with tmp:
+            tmp.write(data)
+        written = True
         return tmp.name
-    except Exception:
-        tmp.close()
-        _safe_delete(tmp.name)
-        raise
+    finally:
+        if not written:
+            _safe_delete(tmp.name)
 
 
 def _safe_delete(path: str) -> None:
-    """Delete a file if it exists, ignoring errors."""
+    """Delete a file if it exists without masking the primary operation."""
     try:
         if path and os.path.exists(path):
             os.unlink(path)
     except OSError:
-        pass
+        logging.warning("[file_utils] Temporary file cleanup failed.")

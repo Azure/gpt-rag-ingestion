@@ -320,6 +320,10 @@ class FilesOverview(BaseModel):
 
 
 class FeedbackOverview(BaseModel):
+    available: bool = Field(
+        default=True,
+        description="False when feedback could not be completely loaded; counts are placeholders, not observations.",
+    )
     totalRecords: int
     upCount: int
     downCount: int
@@ -356,6 +360,7 @@ async def get_panel_overview() -> PanelOverview:
     all_files, _ = await _cached_load("files", _load_all_files)
 
     up_count = down_count = 0
+    feedback_available = True
     try:
         client = CosmosDBClient()
         feedback_docs = await client.list_documents(_feedback_container_name(cfg))
@@ -370,6 +375,8 @@ async def get_panel_overview() -> PanelOverview:
         # Non-critical enrichment: an overview page should still render the
         # jobs/files summary even if Cosmos is briefly unavailable.
         logging.warning("[panel] Failed to load feedback summary for overview.")
+        feedback_available = False
+        up_count = down_count = 0
 
     return PanelOverview(
         mode=mode.value,
@@ -380,6 +387,7 @@ async def get_panel_overview() -> PanelOverview:
         ),
         files=FilesOverview(totalFiles=len(all_files)),
         feedback=FeedbackOverview(
+            available=feedback_available,
             totalRecords=up_count + down_count,
             upCount=up_count,
             downCount=down_count,

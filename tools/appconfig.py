@@ -12,7 +12,7 @@ from azure.appconfiguration.provider import (
     SettingSelector
 )
 
-from tenacity import retry, wait_random_exponential, stop_after_attempt, RetryError
+from tenacity import retry, wait_random_exponential, stop_after_attempt, retry_if_exception_type
 
 class AppConfigClient:
 
@@ -33,9 +33,12 @@ class AppConfigClient:
         
         Configuration Loading Priority:
         1. Connects to Azure App Configuration using the credential chain
-        2. Loads keys with labels in order: 'gpt-rag-ingestion', 'gpt-rag', no-label
+        2. Loads labels in order: 'gpt-rag-ingestion', 'gpt-rag', no-label;
+           later matching selections replace earlier values for duplicate keys
         3. Falls back to connection string if credential auth fails
-        4. Falls back to direct os.environ reads if all Azure connections fail
+        4. Uses the existing environment-only adapter when endpoint loading
+           fails, no connection string is configured and environment reads
+           are explicitly enabled; otherwise loading failures propagate
         
         Environment Variables Required for Bootstrap:
         - APP_CONFIG_ENDPOINT: Azure App Configuration endpoint (required)
@@ -67,7 +70,7 @@ class AppConfigClient:
             AsyncAzureCliCredential()
         )
 
-        # Define label selectors for configuration priority (most specific to least specific)
+        # Preserve selector order; the provider's last matching selection wins.
         app_label_selector = SettingSelector(label_filter='gpt-rag-ingestion', key_filter='*')
         base_label_selector = SettingSelector(label_filter='gpt-rag', key_filter='*')
         no_label_selector = SettingSelector(label_filter=None, key_filter='*')
@@ -82,29 +85,25 @@ class AppConfigClient:
             )
         except Exception as e:
             logging.error(
-                "Unable to connect to Azure App Configuration via endpoint. %s",
-                e,
-                exc_info=True,
+                "Unable to load Azure App Configuration via endpoint (%s); trying configured fallback.",
+                type(e).__name__,
             )
             # Attempt 2: Fallback to connection string-based auth (less secure, for legacy scenarios)
             connection_string = os.environ.get("AZURE_APPCONFIG_CONNECTION_STRING")
             if connection_string:
-                try:
-                    self.client = load(
-                        connection_string=connection_string,
-                        key_vault_options=AzureAppConfigurationKeyVaultOptions(credential=self.credential),
-                    )
-                except Exception as e2:
-                    logging.error(
-                        "Unable to connect to Azure App Configuration via connection string. %s",
-                        e2,
-                        exc_info=True,
-                    )
-                    raise
+                self.client = load(
+                    selects=[app_label_selector, base_label_selector, no_label_selector],
+                    connection_string=connection_string,
+                    key_vault_options=AzureAppConfigurationKeyVaultOptions(credential=self.credential),
+                )
+                logging.warning("App Configuration fallback used: configured connection string.")
             else:
+                if not self.allow_env_vars:
+                    logging.error("App Configuration fallback unavailable: environment reads are not enabled.")
+                    raise
                 # Attempt 3: Last resort fallback - direct environment variable reads (no Azure dependency)
                 logging.warning(
-                    "AZURE_APPCONFIG_CONNECTION_STRING not set; AppConfig lookups will rely on environment variables only."
+                    "App Configuration fallback used: opted-in environment reads; no connection string configured."
                 )
                 # Create a minimal shim that mimics the App Config client interface but reads from os.environ
                 class _EnvOnly:
@@ -138,12 +137,8 @@ class AppConfigClient:
 
         if value is None:
             try:
-                # If self.client behaves like a mapping, try it; otherwise skip
-                if isinstance(self.client, dict):
-                    value = None  # no value from config provider stub
-                else:
-                    value = self.get_config_with_retry(name=key)
-            except Exception:
+                value = self.get_config_with_retry(name=key)
+            except KeyError:
                 value = None
 
         if value is not None:
@@ -163,29 +158,24 @@ class AppConfigClient:
             
             raise Exception(f'The configuration variable {key} not found.')
         
-    def retry_before_sleep(self, retry_state):
-        # Log the outcome of each retry attempt.
-        message = f"""Retrying {retry_state.fn}:
-                        attempt {retry_state.attempt_number}
-                        ended with: {retry_state.outcome}"""
-        if retry_state.outcome.failed:
-            ex = retry_state.outcome.exception()
-            message += f"; Exception: {ex.__class__.__name__}: {ex}"
-        if retry_state.attempt_number < 1:
-            logging.info(message)
-        else:
-            logging.warning(message)
+    @staticmethod
+    def retry_before_sleep(retry_state):
+        error = retry_state.outcome.exception()
+        logging.warning(
+            "App Configuration read failed; retrying (attempt=%s, failure_type=%s)",
+            retry_state.attempt_number,
+            type(error).__name__,
+        )
 
     @retry(
         wait=wait_random_exponential(multiplier=1, max=5),
         stop=stop_after_attempt(5),
-        before_sleep=retry_before_sleep
+        retry=retry_if_exception_type(AzureError),
+        reraise=True,
+        before_sleep=retry_before_sleep,
     )
     def get_config_with_retry(self, name):
-        try:
-            return self.client[name]
-        except RetryError:
-            raise
+        return self.client[name]
 
     # Helper functions for reading environment variables
     def read_env_variable(self, var_name, default=None):

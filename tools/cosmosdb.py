@@ -1,5 +1,6 @@
 import logging
 from azure.cosmos.aio import CosmosClient
+from azure.core.exceptions import AzureError, ResourceNotFoundError
 from dependencies import get_config
 
 class CosmosDBClient:
@@ -52,19 +53,20 @@ class CosmosDBClient:
                 return int(result)
             return 0
 
-    async def get_document(self, container, key) -> dict: 
+    async def get_document(self, container, key) -> dict | None:
+        """Return None only for a missing item; propagate other read failures."""
         async with CosmosClient(self.db_uri, credential=self.cfg.aiocredential) as db_client:
             db = db_client.get_database_client(database=self.database_name)
             container = db.get_container_client(container)
             try:
                 document = await container.read_item(item=key, partition_key=key)
                 logging.info(f"[cosmosdb] document {key} retrieved.")
-            except Exception as e:
+            except ResourceNotFoundError:
                 document = None
                 logging.info(f"[cosmosdb] document {key} does not exist.")
             return document
 
-    async def create_document(self, container, key, body=None) -> dict: 
+    async def create_document(self, container, key, body=None) -> dict | None:
         async with CosmosClient(self.db_uri, credential=self.cfg.aiocredential) as db_client:
             db = db_client.get_database_client(database=self.database_name)
             container = db.get_container_client(container)
@@ -75,19 +77,19 @@ class CosmosDBClient:
                     body["id"] = key  # ensure the document id is set
                 document = await container.create_item(body=body)                    
                 logging.info(f"[cosmosdb] document {key} created.")
-            except Exception as e:
+            except AzureError:
                 document = None
-                logging.info(f"[cosmosdb] error creating document {key}. Error: {e}")
+                logging.error("[cosmosdb] Document creation failed. Check Cosmos availability and access.")
             return document
         
-    async def update_document(self, container, document) -> dict: 
+    async def update_document(self, container, document) -> dict | None:
         async with CosmosClient(self.db_uri, credential=self.cfg.aiocredential) as db_client:
             db = db_client.get_database_client(database=self.database_name)
             container = db.get_container_client(container)
             try:
                 document = await container.replace_item(item=document["id"], body=document)
                 logging.info(f"[cosmosdb] document updated.")
-            except Exception as e:
+            except AzureError:
                 document = None
-                logging.warning(f"[cosmosdb] could not update document: {e}", exc_info=True)
+                logging.error("[cosmosdb] Document update failed. Check Cosmos availability and access.")
             return document

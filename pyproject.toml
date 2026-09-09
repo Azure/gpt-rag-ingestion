@@ -1,0 +1,30 @@
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E722", "BLE001", "PGH003", "PGH004", "RUF100", "F821", "F822", "F823"]
+
+[tool.mypy]
+python_version = "3.12"
+check_untyped_defs = true
+disallow_incomplete_defs = true
+warn_unused_ignores = true
+warn_unused_configs = true
+follow_imports = "normal"
+incremental = false
+show_error_codes = true
+
+[[tool.mypy.overrides]]
+module = ["telemetry.audit_contract", "telemetry.audit_sanitizer", "jobs.runtime"]
+disallow_untyped_defs = true
+
+[tool.importlinter]
+root_packages = ["api", "chunking", "jobs", "telemetry", "tools", "utils"]
+include_external_packages = false
+exclude_type_checking_imports = false
+
+[[tool.importlinter.contracts]]
+name = "Runtime implementation must not depend on operator APIs"
+type = "forbidden"
+source_modules = ["jobs", "chunking", "tools", "telemetry", "utils"]
+forbidden_modules = ["api"]

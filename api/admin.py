@@ -13,6 +13,8 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Callable, Coroutine, Dict, List, Optional, Tuple
 
+from apscheduler.jobstores.base import JobLookupError
+from azure.core.exceptions import AzureError, ResourceNotFoundError
 from azure.identity.aio import (
     AzureCliCredential,
     ChainedTokenCredential,
@@ -129,8 +131,8 @@ async def _download_blob(container, blob_name: str, sem: asyncio.Semaphore) -> O
             dl = await bc.download_blob()
             raw = await dl.readall()
             return blob_name, json.loads(raw)
-        except Exception as exc:
-            logging.warning(f"[admin-api] Failed to read {blob_name}: {exc}")
+        except (AzureError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+            logging.warning("[admin-api] Failed to read run/file log (%s)", type(exc).__name__)
             return None
 
 
@@ -267,15 +269,20 @@ async def _cleanup_old_runs() -> None:
     to_delete = run_blobs[: len(run_blobs) - max_run_files]
     sem = asyncio.Semaphore(_DL_CONCURRENCY)
 
-    async def _del(name: str) -> None:
+    async def _del(name: str) -> bool:
         async with sem:
             try:
                 await container.delete_blob(name)
-            except Exception as exc:
-                logging.warning(f"[admin-api] Failed to delete {name}: {exc}")
+                return True
+            except AzureError as exc:
+                logging.warning("[admin-api] Failed to delete run log (%s)", type(exc).__name__)
+                return False
 
-    await asyncio.gather(*[_del(name) for name, _ in to_delete])
-    logging.info(f"[admin-api] Log cleanup: deleted {len(to_delete)} old run blobs (max={max_run_files})")
+    deleted = sum(await asyncio.gather(*[_del(name) for name, _ in to_delete]))
+    logging.info(
+        "[admin-api] Log cleanup: deleted %d old run blobs, failed %d (max=%d)",
+        deleted, len(to_delete) - deleted, max_run_files,
+    )
     _invalidate_cache("runs")
 
 
@@ -316,8 +323,8 @@ async def list_jobs(
                     r = {**r, "retriedFiles": retries_by_run[rid]}
                 enriched.append(r)
             runs = enriched
-    except Exception:
-        pass  # Non-critical enrichment
+    except AzureError as exc:
+        logging.warning("[admin-api] Retry history unavailable (%s)", type(exc).__name__)
 
     if indexerType:
         runs = [r for r in runs if r.get("indexerType") == indexerType]
@@ -354,13 +361,13 @@ async def list_jobs(
 
 def _available_job_types() -> List[str]:
     """Return the canonical job_type identifiers accepted by ``/api/jobs/{job_type}/run``."""
-    from main import JOB_REGISTRY  # local import to avoid circular import at module load
+    from jobs.runtime import JOB_REGISTRY
 
     return sorted(JOB_REGISTRY.keys())
 
 
 def _running_job_types() -> List[str]:
-    from main import _running_jobs
+    from jobs.runtime import running_jobs as _running_jobs
 
     # `_running_jobs` is now ``dict[str, dict]``; iterating yields job_types.
     return sorted(_running_jobs)
@@ -402,8 +409,14 @@ async def run_job_now(job_type: str) -> Dict[str, Any]:
     if not _JOB_TYPE_RE.match(job_type):
         raise HTTPException(status_code=400, detail="Invalid job_type")
 
-    # Late import keeps api/admin import-time light and avoids circular import.
-    from main import JOB_REGISTRY, _running_jobs, _running_jobs_lock, scheduler
+    from jobs.runtime import (
+        JOB_REGISTRY,
+        get_scheduler,
+        running_jobs as _running_jobs,
+        running_jobs_lock as _running_jobs_lock,
+    )
+
+    scheduler = get_scheduler()
 
     if job_type not in JOB_REGISTRY:
         raise HTTPException(
@@ -419,7 +432,7 @@ async def run_job_now(job_type: str) -> Dict[str, Any]:
             )
         # Pre-fill the slot with the actual APScheduler trigger id so the
         # queue endpoint reports the manual ``manual-<type>-<ts>`` id rather
-        # than the generic registry key. The wrapper in main.py respects an
+        # than the generic registry key. The wrapper in jobs.runtime respects an
         # already-filled slot and pops it on completion.
         trigger_id = f"manual-{job_type}-{int(time.time() * 1000)}"
         _running_jobs[job_type] = {
@@ -446,8 +459,8 @@ async def run_job_now(job_type: str) -> Dict[str, Any]:
             entry = _running_jobs.get(job_type)
             if entry and entry.get("run_id") == trigger_id:
                 _running_jobs.pop(job_type, None)
-        logging.exception("Failed to enqueue manual run for %s", job_type)
-        raise HTTPException(status_code=500, detail=f"Failed to schedule job: {exc}") from exc
+        logging.error("Failed to enqueue manual run for %s (%s)", job_type, type(exc).__name__)
+        raise HTTPException(status_code=500, detail="Failed to schedule job.") from exc
 
     logging.info("[admin] Manual run requested for job_type=%s trigger_id=%s", job_type, trigger_id)
     return {"jobType": job_type, "triggerId": trigger_id, "status": "queued"}
@@ -472,10 +485,7 @@ def _cron_trigger_to_string(trigger: Any) -> Optional[str]:
     ``IntervalTrigger``, ``None``) so callers can keep the dashboard column
     blank instead of inventing a schedule.
     """
-    try:
-        from apscheduler.triggers.cron import CronTrigger
-    except Exception:  # pragma: no cover - apscheduler always installed in prod
-        return None
+    from apscheduler.triggers.cron import CronTrigger
     if not isinstance(trigger, CronTrigger):
         return None
     by_name = {getattr(f, "name", ""): f for f in getattr(trigger, "fields", [])}
@@ -564,16 +574,16 @@ def _last_run_payload(run: Optional[dict]) -> Optional[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 @router.get("/jobs/queue")
 async def get_jobs_queue() -> Dict[str, Any]:
-    # Late import: keeps api.admin importable on its own (and matches the
-    # rest of this module, which avoids pulling in the full ingestion stack
-    # at module load).
-    from main import JOB_REGISTRY, _running_jobs, scheduler
+    from jobs.runtime import JOB_REGISTRY, get_scheduler, running_jobs as _running_jobs
+
+    scheduler = get_scheduler()
 
     # Reuse the cached runs list so a poll every 10s does not hammer blob
     # storage; the underlying cache TTL is 60s.
     try:
         all_runs, _ = await _cached_load("runs", _load_all_runs)
-    except Exception:  # pragma: no cover - blob outages should not 500 the queue
+    except AzureError as exc:
+        logging.warning("[admin-api] Queue history unavailable (%s)", type(exc).__name__)
         all_runs = []
 
     items: List[Dict[str, Any]] = []
@@ -592,10 +602,7 @@ async def get_jobs_queue() -> Dict[str, Any]:
         # supported configuration, so we surface ``null`` rather than 500.
         next_scheduled_at: Optional[str] = None
         cron_value: Optional[str] = None
-        try:
-            job = scheduler.get_job(job_type)
-        except Exception:  # pragma: no cover - defensive; depends on scheduler state
-            job = None
+        job = scheduler.get_job(job_type)
         if job is not None:
             if getattr(job, "next_run_time", None) is not None:
                 next_scheduled_at = _iso_utc(job.next_run_time)
@@ -628,6 +635,9 @@ def _iso_utc(value) -> Optional[str]:
     """
     if value is None:
         return None
+    if not isinstance(value, datetime):
+        logging.warning("[admin-api] Invalid queue timestamp type")
+        return None
     try:
         if value.tzinfo is None:
             value = value.replace(tzinfo=timezone.utc)
@@ -635,7 +645,8 @@ def _iso_utc(value) -> Optional[str]:
         # Use millisecond precision and a literal ``Z`` so the frontend can
         # `new Date(iso)` without surprises.
         return as_utc.strftime("%Y-%m-%dT%H:%M:%S.") + f"{as_utc.microsecond // 1000:03d}Z"
-    except Exception:  # pragma: no cover - serialization should not break the response
+    except (ValueError, OverflowError):
+        logging.warning("[admin-api] Queue timestamp is outside the supported range")
         return None
 
 
@@ -709,9 +720,19 @@ async def unblock_file(blobName: str = Query(..., min_length=1)):
     try:
         dl = await bc.download_blob()
         raw = await dl.readall()
+    except ResourceNotFoundError as exc:
+        raise HTTPException(404, "File log not found") from exc
+    except Exception as exc:
+        logging.error("Unblock file log read failed")
+        raise HTTPException(500, "File log could not be read") from exc
+
+    try:
         data = json.loads(raw)
-    except Exception:
-        raise HTTPException(404, "File log not found")
+        if not isinstance(data, dict):
+            raise ValueError("File log must be an object")
+    except (ValueError, UnicodeDecodeError) as exc:
+        logging.error("Unblock file log is invalid")
+        raise HTTPException(500, "File log is invalid") from exc
 
     data["blocked"] = False
     data["blockedAt"] = None
@@ -920,7 +941,7 @@ def _coerce_and_validate(
 
         try:
             CronTrigger.from_crontab(str(raw_value).strip())
-        except (ValueError, Exception) as exc:  # pragma: no cover - exotic input
+        except ValueError as exc:
             return None, f"{spec.key}: invalid cron expression ({exc})"
         return str(raw_value).strip(), None
 
@@ -970,7 +991,9 @@ def _reschedule_cron_job(env_key: str, cron_expr: str) -> Optional[str]:
     Returns the job_id when something happened, or ``None`` if the key isn't
     a cron-driven job or the scheduler has no matching registry entry yet.
     """
-    from main import JOB_CRON_MAP, JOB_REGISTRY, scheduler
+    from jobs.runtime import JOB_CRON_MAP, JOB_REGISTRY, get_scheduler
+
+    scheduler = get_scheduler()
 
     job_id = JOB_CRON_MAP.get(env_key)
     if not job_id:
@@ -984,15 +1007,11 @@ def _reschedule_cron_job(env_key: str, cron_expr: str) -> Optional[str]:
             scheduler.remove_job(job_id)
             logging.info("[admin] Removed cron job %s (empty cron)", job_id)
             return job_id
-        except Exception:
+        except JobLookupError:
             return None
 
     trigger = CronTrigger.from_crontab(cron_expr, timezone=scheduler.timezone)
-    existing = None
-    try:
-        existing = scheduler.get_job(job_id)
-    except Exception:
-        existing = None
+    existing = scheduler.get_job(job_id)
 
     if existing is not None:
         scheduler.reschedule_job(job_id, trigger=trigger)
@@ -1124,8 +1143,8 @@ async def update_config_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
             )
             applied.append(spec.key)
         except AzureError as exc:
-            logging.exception("Failed to write %s to App Configuration", spec.key)
-            failed.append({"key": spec.key, "error": f"write failed: {exc}"})
+            logging.error("Failed to write %s to App Configuration (%s)", spec.key, type(exc).__name__)
+            failed.append({"key": spec.key, "error": "write failed"})
 
     if not applied:
         # Every write failed — surface as a hard error.
@@ -1139,8 +1158,8 @@ async def update_config_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
     # own refresh cadence; the operator can force this via /api/config/reload.
     try:
         get_config("refresh")
-    except Exception:  # pragma: no cover - cache refresh is best-effort
-        logging.exception("Failed to refresh AppConfig cache after PUT /api/config")
+    except Exception as exc:
+        logging.warning("Failed to refresh AppConfig cache after PUT /api/config (%s)", type(exc).__name__)
 
     # If any cron expression was applied, reschedule the matching job so the
     # change takes effect without a container restart.
@@ -1154,8 +1173,8 @@ async def update_config_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
             if jid:
                 rescheduled.append(jid)
         except Exception as exc:
-            logging.exception("Failed to reschedule cron for %s", spec.key)
-            failed.append({"key": spec.key, "error": f"reschedule failed: {exc}"})
+            logging.error("Failed to reschedule cron for %s (%s)", spec.key, type(exc).__name__)
+            failed.append({"key": spec.key, "error": "reschedule failed"})
 
     status_code = 200 if not failed else 207
     if status_code == 207:
@@ -1190,7 +1209,8 @@ async def apply_config_changes() -> Dict[str, Any]:
     _invalidate_cache("runs", "files")
 
     rescheduled: List[str] = []
-    from main import JOB_CRON_MAP
+    failed: List[str] = []
+    from jobs.runtime import JOB_CRON_MAP
 
     cfg = get_config()
     for env_key in JOB_CRON_MAP:
@@ -1202,8 +1222,15 @@ async def apply_config_changes() -> Dict[str, Any]:
             jid = _reschedule_cron_job(env_key, (cron_expr or "").strip())
             if jid:
                 rescheduled.append(jid)
-        except Exception:
-            logging.exception("Failed to reschedule %s during /config/apply", env_key)
+        except Exception as exc:
+            logging.error("Failed to reschedule %s during /config/apply (%s)", env_key, type(exc).__name__)
+            failed.append(env_key)
+    if failed:
+        raise HTTPException(
+            status_code=500,
+            detail={"message": "Failed to apply one or more schedules.",
+                    "failed": failed, "rescheduled": rescheduled},
+        )
     return {
         "status": "ok",
         "rescheduled": rescheduled,

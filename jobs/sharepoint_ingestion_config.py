@@ -18,10 +18,7 @@ _VALID_LIST_TYPES = {
 
 
 def _get_config_str(name: str) -> str:
-    try:
-        value = get_config().get(name, "", allow_none=True)
-    except Exception:
-        return ""
+    value = get_config().get(name, "", allow_none=True)
     if value is None:
         return ""
     return str(value).strip()
@@ -81,7 +78,7 @@ def _as_dt(val: str) -> datetime:
         s = s[:-1] + "+00:00"
     try:
         return datetime.fromisoformat(s)
-    except Exception:
+    except ValueError:
         logging.warning(f"{LOG_SCOPE} could not parse datetime '{val}', using epoch (no reindex)")
         return datetime(1970, 1, 1, tzinfo=timezone.utc)
 

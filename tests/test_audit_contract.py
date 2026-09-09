@@ -145,6 +145,15 @@ def test_defaults_are_fully_disabled():
     assert settings.default_right_to_use == "not_asserted"
 
 
+def test_governance_configuration_failure_is_not_a_disabled_default():
+    class BrokenConfig:
+        def get(self, *args, **kwargs):
+            raise RuntimeError("configuration unavailable")
+
+    with pytest.raises(RuntimeError, match="configuration unavailable"):
+        GovernanceSettings.from_config(BrokenConfig())
+
+
 def test_provenance_off_and_governance_on_is_an_invalid_configuration():
     with pytest.raises(AuditConfigurationError):
         GovernanceSettings.from_config(

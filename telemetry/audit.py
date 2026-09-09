@@ -68,7 +68,8 @@ def _read_service_version() -> str:
         return _service_version
     try:
         _service_version = _VERSION_FILE.read_text(encoding="utf-8").strip() or "0.0.0"
-    except Exception:
+    except (OSError, UnicodeError) as exc:
+        _warning_logger.warning("Audit service version unavailable (%s)", type(exc).__name__)
         _service_version = "0.0.0"
     return _service_version
 
@@ -89,7 +90,8 @@ def configure(config: Any) -> GovernanceSettings:
             default=config.get("AZURE_ENV_NAME", default="unknown", allow_none=True),
             allow_none=True,
         )
-    except Exception:
+    except Exception as exc:
+        _warning_logger.warning("Optional audit environment context unavailable (%s)", type(exc).__name__)
         env_value = "unknown"
     _environment = str(env_value or "unknown")[:MAX_ENVIRONMENT_LENGTH]
     _logger.setLevel(logging.INFO)
@@ -123,9 +125,9 @@ class RunContext:
     def mark_failed(self) -> None:
         """Record that the wrapped run body caught and logged an error.
 
-        Callers that swallow exceptions internally (matching this service's
-        existing "log and continue" scheduler behavior) call this so the
-        terminal audit event reports ``failed`` instead of ``completed``.
+        Boundaries whose contract permits continuing after a handled failure
+        use this so the terminal event reports ``failed`` rather than
+        ``completed``. Unhandled worker failures propagate through audit_run.
         """
         self._failed = True
 
@@ -186,18 +188,18 @@ def _emit(event: dict[str, Any]) -> None:
     """Sanitize and log an audit event. Never raises."""
     try:
         result = sanitize_event(event, additional_redacted_keys=frozenset())
-    except AuditSanitizationError:
+    except AuditSanitizationError as exc:
         _warning_logger.warning(
-            "Audit event failed sanitization and was dropped (event_type=%s).",
+            "Audit event failed sanitization and was dropped (event_type=%s, failure_type=%s).",
             event.get("event_type"),
-            exc_info=True,
+            type(exc).__name__,
         )
         return
-    except Exception:
+    except Exception as exc:
         _warning_logger.warning(
-            "Audit event sanitization raised unexpectedly; event dropped (event_type=%s).",
+            "Audit event sanitization raised unexpectedly; event dropped (event_type=%s, failure_type=%s).",
             event.get("event_type"),
-            exc_info=True,
+            type(exc).__name__,
         )
         return
     try:
@@ -215,11 +217,11 @@ def _emit(event: dict[str, Any]) -> None:
                 **wire_attributes,
             },
         )
-    except Exception:
+    except Exception as exc:
         _warning_logger.warning(
-            "Audit event export failed and was dropped (event_type=%s).",
+            "Audit event export failed and was dropped (event_type=%s, failure_type=%s).",
             event.get("event_type"),
-            exc_info=True,
+            type(exc).__name__,
         )
 
 
@@ -229,12 +231,8 @@ async def audit_run(operation: str) -> AsyncIterator[RunContext]:
 
     Usage::
 
-        async with audit.audit_run("blob_index") as run:
-            try:
-                await BlobStorageDocumentIndexer().run()
-            except Exception:
-                logging.exception(...)
-                run.mark_failed()
+        async with audit.audit_run("blob_index"):
+            await BlobStorageDocumentIndexer().run()
 
     ``asyncio.CancelledError`` is always re-raised after emitting
     ``ingestion.run.cancelled`` best-effort, preserving task cancellation
@@ -324,10 +322,10 @@ def _result_key(item: Any) -> str | None:
 
 def _result_succeeded(item: Any) -> bool:
     if item is None:
-        return True
+        return False
     if isinstance(item, dict):
-        return bool(item.get("succeeded", True))
-    return bool(getattr(item, "succeeded", True))
+        return item.get("succeeded") is True
+    return getattr(item, "succeeded", False) is True
 
 
 def _result_error(item: Any) -> str | None:
@@ -408,10 +406,10 @@ def record_search_batch_result(
             source_type=source_type,
             key_field=key_field,
         )
-    except Exception:
+    except Exception as exc:
         _warning_logger.warning(
-            "Document audit emission failed; the indexing/deletion result is unaffected.",
-            exc_info=True,
+            "Document audit emission failed; the indexing/deletion result is unaffected (failure_type=%s).",
+            type(exc).__name__,
         )
 
 
@@ -435,7 +433,8 @@ def _record_search_batch_result(
     for item in result:
         key = _result_key(item)
         if key is not None:
-            by_key[key] = item
+            # Conflicting/duplicate responses cannot establish a unique outcome.
+            by_key[key] = None if key in by_key else item
 
     run = _current_run.get()
     correlation_id = run.correlation_id if run else new_correlation_id()

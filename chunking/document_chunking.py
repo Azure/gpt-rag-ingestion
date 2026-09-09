@@ -39,9 +39,6 @@ class DocumentChunker:
     def _error_message(self, exception=None, filename=""):
         """Generate an error message based on the error type."""
         error_message = "An error occurred while processing the document."
-        if exception is not None:
-            error_message += f" Exception: {str(exception)}"
-
         logging.error(f"[document_chunking]{f'[{filename}]' if filename else ''} Error: {error_message}, Ingested Document: {f'[{filename}]' if filename else ''}")
 
         return error_message
@@ -96,32 +93,28 @@ class DocumentChunker:
         errors = []
         warnings = []
         
+        start_time = time.time()
+        filename = get_filename_from_data(data)
+
         try:
-            start_time = time.time()
-
-            filename = get_filename_from_data(data)
-
             logging.info(f"[document_chunking][{filename}] chunking document.")
 
             chunks, errors, warnings = DocumentChunker().chunk_document(data)
 
-        except jsonschema.exceptions.ValidationError as e:
-            error_message = f"Invalid request: {e}"
+        except jsonschema.exceptions.ValidationError:
+            error_message = "Invalid request."
             logging.error(f"[document_chunking] {error_message}")
             errors.append(error_message)
 
-        finally:
+        if warnings:
+            warnings = self._format_messages(warnings)
 
-            if warnings:
-                warnings = self._format_messages(warnings)
+        if errors:
+            errors = self._format_messages(errors)
 
-            if errors:
-                errors = self._format_messages(errors)            
-            
-            elapsed_time = time.time() - start_time
-            
-            logging.info(
-                f"[document_chunking][{filename}] Finished chunking in {elapsed_time:.2f} seconds. "
-                f"{len(chunks)} chunks. {len(errors)} errors. {len(warnings)} warnings."
-            )            
-            return chunks, errors, warnings
+        elapsed_time = time.time() - start_time
+        logging.info(
+            f"[document_chunking][{filename}] Finished chunking in {elapsed_time:.2f} seconds. "
+            f"{len(chunks)} chunks. {len(errors)} errors. {len(warnings)} warnings."
+        )
+        return chunks, errors, warnings

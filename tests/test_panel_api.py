@@ -15,8 +15,9 @@ Covers:
   tenant, 403 without the ``Admin`` role, success with it.
 * `GET/POST /api/panel/feedback` — Cosmos-backed contract, bounded/strict
   request validation, 502 on Cosmos failure.
-* `GET /api/panel/overview` — aggregates jobs/files/feedback; degrades
-  gracefully (feedback zeroed) when Cosmos is unavailable.
+* `GET /api/panel/overview` — retains jobs/files on failed or partial feedback
+  reads, resetting counts to zero placeholders with ``available=false``.
+  Genuine empty feedback has zero counts with ``available=true``.
 * `GET /api/panel/conversations/{id}/history` — explicit 501 blocker,
   still gated by admin auth.
 """
@@ -27,6 +28,7 @@ import importlib
 import sys
 import types
 from pathlib import Path
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from fastapi import FastAPI, HTTPException
@@ -105,12 +107,12 @@ def _install_stubs(
     monkeypatch.setitem(sys.modules, "tools.cosmosdb", cosmosdb_stub)
 
     # `api.admin._available_job_types` / `_running_job_types` (used by the
-    # overview endpoint) do a local `from main import ...` — stub `main`
+    # overview endpoint) read jobs.runtime state; stub the canonical owner
     # minimally, matching tests/test_admin_run_now.py's convention.
-    main_stub = types.ModuleType("main")
+    main_stub = types.ModuleType("jobs.runtime")
     main_stub.JOB_REGISTRY = {jt: None for jt in (available_jobs or [])}
-    main_stub._running_jobs = {jt: {} for jt in (running_jobs or [])}
-    monkeypatch.setitem(sys.modules, "main", main_stub)
+    main_stub.running_jobs = {jt: {} for jt in (running_jobs or [])}
+    monkeypatch.setitem(sys.modules, "jobs.runtime", main_stub)
 
     # Reset the fake Cosmos client's class-level state for test isolation.
     _FakeCosmosDBClient.list_error = None
@@ -487,7 +489,7 @@ def test_overview_aggregates_jobs_files_and_feedback(monkeypatch):
     assert body["jobs"]["runningJobTypes"] == ["blob_index"]
     assert body["jobs"]["totalRuns"] == 2
     assert body["files"]["totalFiles"] == 1
-    assert body["feedback"] == {"totalRecords": 3, "upCount": 2, "downCount": 1}
+    assert body["feedback"] == {"available": True, "totalRecords": 3, "upCount": 2, "downCount": 1}
 
     admin_module._cache.pop("runs", None)
     admin_module._cache.pop("files", None)
@@ -504,7 +506,7 @@ def test_overview_degrades_gracefully_when_cosmos_unavailable(monkeypatch):
     r = client.get("/api/panel/overview")
     assert r.status_code == 200
     body = r.json()
-    assert body["feedback"] == {"totalRecords": 0, "upCount": 0, "downCount": 0}
+    assert body["feedback"] == {"available": False, "totalRecords": 0, "upCount": 0, "downCount": 0}
 
     admin_module._cache.pop("runs", None)
     admin_module._cache.pop("files", None)
@@ -514,6 +516,105 @@ def test_overview_requires_admin_role(monkeypatch):
     client = _build_client(monkeypatch, tenant_id="tenant-1", claims=_NON_ADMIN_CLAIMS)
     r = client.get("/api/panel/overview")
     assert r.status_code == 403
+
+
+def test_overview_genuine_empty_feedback_is_available(monkeypatch):
+    client = _build_client(monkeypatch, tenant_id="tenant-1", claims=_ADMIN_CLAIMS)
+    _FakeCosmosDBClient.documents = []
+    admin = importlib.import_module("api.admin")
+    for key in ("runs", "files"):
+        monkeypatch.setitem(admin._cache, key, (__import__("time").monotonic(), ([], [])))
+    response = client.get("/api/panel/overview")
+    assert response.status_code == 200
+    assert response.json()["feedback"] == {
+        "available": True, "totalRecords": 0, "upCount": 0, "downCount": 0,
+    }
+
+
+@pytest.mark.parametrize("stage", ["constructor", "read", "partial-read", "partial-aggregation"])
+def test_overview_failure_marks_feedback_unavailable(monkeypatch, caplog, stage):
+    client = _build_client(
+        monkeypatch, tenant_id="tenant-1", claims=_ADMIN_CLAIMS,
+        config_values={
+            "DEPLOY_HOSTED_AGENT_ORCHESTRATION": "true",
+            "DEPLOY_ADMINISTRATIVE_PANEL": "true",
+        },
+        available_jobs=["blob_index"], running_jobs=["blob_index"],
+    )
+    # Exercise the real router AND materializing Cosmos adapter, replacing
+    # only configuration and the SDK boundary. A failed SDK iteration never
+    # returns its partially collected list to the overview aggregator.
+    spec = importlib.util.spec_from_file_location("tools.cosmosdb", REPO_ROOT / "tools/cosmosdb.py")
+    assert spec and spec.loader
+    cosmos = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, cosmos)
+    spec.loader.exec_module(cosmos)
+    cfg = types.SimpleNamespace(
+        get=lambda key: "configured",
+        aiocredential=object(),
+    )
+    failure = RuntimeError("private-feedback-failure-canary")
+    monkeypatch.setattr(cosmos, "get_config", Mock(
+        return_value=cfg, side_effect=failure if stage == "constructor" else None,
+    ))
+    visited = []
+
+    class BrokenRating(dict):
+        def get(self, key, default=None):
+            # Inject an aggregation defect after valid rows, not an SDK
+            # pagination failure or a claim about ordinary JSON dictionaries.
+            visited.append("aggregation-failure")
+            raise failure
+
+    async def documents():
+        if stage == "read":
+            visited.append("read-failure")
+            raise failure
+        for rating in ("up", "down"):
+            visited.append(rating)
+            yield {"rating": rating}
+        if stage == "partial-read":
+            visited.append("read-failure")
+            raise failure
+        yield BrokenRating()
+
+    container = types.SimpleNamespace(query_items=Mock(side_effect=lambda **kwargs: documents()))
+    database = types.SimpleNamespace(get_container_client=Mock(return_value=container))
+    sdk = AsyncMock()
+    sdk.__aenter__.return_value = types.SimpleNamespace(
+        get_database_client=Mock(return_value=database),
+    )
+    monkeypatch.setattr(cosmos, "CosmosClient", Mock(return_value=sdk))
+    admin = importlib.import_module("api.admin")
+    monkeypatch.setitem(admin._cache, "runs", (
+        __import__("time").monotonic(), ([{"runId": "r1"}, {"runId": "r2"}], ["blob"]),
+    ))
+    monkeypatch.setitem(admin._cache, "files", (
+        __import__("time").monotonic(), ([{"name": "f1"}], ["blob"]),
+    ))
+
+    response = client.get("/api/panel/overview")
+    assert response.status_code == 200
+    assert response.json() == {
+        "mode": "hosted_panel",
+        "jobs": {"availableJobTypes": ["blob_index"], "runningJobTypes": ["blob_index"], "totalRuns": 2},
+        "files": {"totalFiles": 1},
+        "feedback": {"available": False, "totalRecords": 0, "upCount": 0, "downCount": 0},
+        "historyAvailable": False,
+    }
+    assert visited == {
+        "constructor": [],
+        "read": ["read-failure"],
+        "partial-read": ["up", "down", "read-failure"],
+        "partial-aggregation": ["up", "down", "aggregation-failure"],
+    }[stage]
+    if stage == "constructor":
+        cosmos.CosmosClient.assert_not_called()
+    else:
+        container.query_items.assert_called_once_with(query="SELECT * FROM c", partition_key=None)
+        sdk.__aexit__.assert_awaited_once()
+    assert "[panel] Failed to load feedback summary for overview." in caplog.text
+    assert "private-feedback-failure-canary" not in response.text + caplog.text
 
 
 # ---------------------------------------------------------------------------

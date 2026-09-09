@@ -4,25 +4,181 @@ on:
   pull_request:
   push:
     branches: [develop, main]
+  merge_group:
 
 permissions:
   contents: read
 
+env:
+  BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+  HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
 jobs:
+  frontend-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ env.HEAD_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run lint
+      - run: npm run build
+
   unit-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ env.HEAD_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: |
+            requirements.txt
+            requirements-quality.txt
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
+          python -m pip install -r requirements-quality.txt
           python -m pip install pytest pytest-asyncio
       - name: Run unit tests
-        run: python -m pytest tests -q
+        run: python -m pytest tests -q --junitxml=.artifacts/pytest.xml -o junit_family=legacy
+      - name: Bind test evidence
+        run: python -I .github/scripts/quality-evidence.py --junit .artifacts/pytest.xml --base-ref "$BASE_SHA" --report .artifacts/test-evidence.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: quality-test-evidence
+          path: .artifacts/test-evidence.json
+          if-no-files-found: error
+
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps: &quality-steps
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ env.HEAD_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Select the protected-base evaluator
+        shell: bash
+        run: |
+          set -euo pipefail
+          git cat-file -e "$BASE_SHA^{commit}"
+          git worktree add --detach "$RUNNER_TEMP/quality-base" "$BASE_SHA"
+          if test -f "$RUNNER_TEMP/quality-base/.github/scripts/check-quality.py"; then
+            echo "QUALITY_HOME=$RUNNER_TEMP/quality-base" >> "$GITHUB_ENV"
+          else
+            # First adoption is explicitly blocked by policy-bootstrap.
+            echo "QUALITY_HOME=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+          fi
+      - name: Install runtime and protected quality dependencies
+        run: |
+          cd "$RUNNER_TEMP"
+          python -I -m pip --isolated install -r "$QUALITY_HOME/requirements.txt"
+          python -I -m pip --isolated install -r "$QUALITY_HOME/requirements-quality.txt"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        if: github.job == 'exceptions'
+        with:
+          name: quality-test-evidence
+          path: .artifacts
+      - name: Run quality check
+        env:
+          CHECK_NAME: ${{ github.job }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence=()
+          if test "$CHECK_NAME" = exceptions; then
+            evidence=(--test-evidence .artifacts/test-evidence.json)
+          fi
+          python -I "$QUALITY_HOME/.github/scripts/check-quality.py" \
+            --repository "$GITHUB_WORKSPACE" --check "$CHECK_NAME" \
+            --base-ref "$BASE_SHA" --report ".artifacts/$CHECK_NAME.json" "${evidence[@]}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: quality-${{ github.job }}
+          path: .artifacts/${{ github.job }}.json
+          if-no-files-found: error
+
+  typing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps: *quality-steps
+
+  architecture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps: *quality-steps
+
+  exceptions:
+    needs: unit-tests
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps: *quality-steps
+
+  policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps: *quality-steps
+
+  quality-gate:
+    name: quality-gate
+    needs: [lint, typing, architecture, exceptions, policy, unit-tests, frontend-checks]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ env.HEAD_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Select protected aggregator
+        shell: bash
+        run: |
+          set -euo pipefail
+          git cat-file -e "$BASE_SHA^{commit}"
+          git worktree add --detach "$RUNNER_TEMP/quality-base" "$BASE_SHA"
+          if test -f "$RUNNER_TEMP/quality-base/.github/scripts/quality-gate.py"; then
+            echo "QUALITY_HOME=$RUNNER_TEMP/quality-base" >> "$GITHUB_ENV"
+          else
+            echo "QUALITY_HOME=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+          fi
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: quality-*
+          merge-multiple: true
+          path: .artifacts
+      - name: Require actual jobs and matching fresh reports
+        if: always()
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          python -I "$QUALITY_HOME/.github/scripts/quality-gate.py" \
+            --reports .artifacts --base-sha "$BASE_SHA" --head-sha "$HEAD_SHA"

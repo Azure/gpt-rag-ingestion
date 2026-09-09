@@ -9,7 +9,10 @@ media extraction for Office documents.
 
 import io
 import logging
+import lzma
+import math
 import zipfile
+import zlib
 
 
 def extract_figure_from_pdf(file_bytes: bytes, figure: dict, dpi: int = 200) -> bytes | None:
@@ -25,25 +28,33 @@ def extract_figure_from_pdf(file_bytes: bytes, figure: dict, dpi: int = 200) -> 
     page_number = region.get("pageNumber", 1)
     polygon = region.get("polygon", [])
 
-    if len(polygon) < 4:
+    if (
+        not isinstance(page_number, int)
+        or page_number < 1
+        or len(polygon) < 4
+        or len(polygon) % 2
+        or not all(isinstance(value, (int, float)) and math.isfinite(value) for value in polygon)
+    ):
+        logging.warning("[figure_extraction] Invalid PDF figure bounds.")
         return None
 
     try:
-        doc = fitz.open(stream=file_bytes, filetype="pdf")
-        page = doc[page_number - 1]
+        with fitz.open(stream=file_bytes, filetype="pdf") as doc:
+            if page_number > len(doc):
+                logging.warning("[figure_extraction] Figure refers to an absent PDF page.")
+                return None
+            page = doc[page_number - 1]
 
-        page_w = page.rect.width
-        page_h = page.rect.height
-        max_render_px = 2500
-        max_dim_pt = max(page_w, page_h)
-        effective_dpi = min(dpi, int(max_render_px * 72 / max_dim_pt))
-        effective_dpi = max(effective_dpi, 72)
+            page_w = page.rect.width
+            page_h = page.rect.height
+            max_render_px = 2500
+            max_dim_pt = max(page_w, page_h)
+            effective_dpi = min(dpi, int(max_render_px * 72 / max_dim_pt))
+            effective_dpi = max(effective_dpi, 72)
 
-        zoom = effective_dpi / 72
-        mat = fitz.Matrix(zoom, zoom)
-        pix = page.get_pixmap(matrix=mat, alpha=False)
-        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-        doc.close()
+            zoom = effective_dpi / 72
+            mat = fitz.Matrix(zoom, zoom)
+            pix = page.get_pixmap(matrix=mat, alpha=False)
 
         logging.info(
             f"[figure_extraction] Page {page_number}: rendered "
@@ -51,31 +62,31 @@ def extract_figure_from_pdf(file_bytes: bytes, figure: dict, dpi: int = 200) -> 
             f"(page={page_w:.0f}x{page_h:.0f} pt)"
         )
 
-        xs = [polygon[i] * effective_dpi for i in range(0, len(polygon), 2)]
-        ys = [polygon[i] * effective_dpi for i in range(1, len(polygon), 2)]
-        left = max(0, int(min(xs)))
-        top = max(0, int(min(ys)))
-        right = min(img.width, int(max(xs)))
-        bottom = min(img.height, int(max(ys)))
+        with Image.frombytes("RGB", [pix.width, pix.height], pix.samples) as img:
+            xs = [polygon[i] * effective_dpi for i in range(0, len(polygon), 2)]
+            ys = [polygon[i] * effective_dpi for i in range(1, len(polygon), 2)]
+            left = max(0, int(min(xs)))
+            top = max(0, int(min(ys)))
+            right = min(img.width, int(max(xs)))
+            bottom = min(img.height, int(max(ys)))
 
-        if right <= left or bottom <= top:
-            logging.warning(
-                f"[figure_extraction] Invalid crop box on page {page_number}: "
-                f"({left},{top})-({right},{bottom})"
-            )
-            return None
+            if right <= left or bottom <= top:
+                logging.warning(
+                    f"[figure_extraction] Invalid crop box on page {page_number}: "
+                    f"({left},{top})-({right},{bottom})"
+                )
+                return None
 
-        cropped = img.crop((left, top, right, bottom))
-        logging.info(
-            f"[figure_extraction] Cropped figure to "
-            f"{cropped.width}x{cropped.height}"
-        )
-
-        buf = io.BytesIO()
-        cropped.save(buf, format="PNG")
-        return buf.getvalue()
-    except Exception as e:
-        logging.error(f"[figure_extraction] PDF figure crop failed: {e}")
+            with img.crop((left, top, right, bottom)) as cropped:
+                logging.info(
+                    f"[figure_extraction] Cropped figure to "
+                    f"{cropped.width}x{cropped.height}"
+                )
+                buf = io.BytesIO()
+                cropped.save(buf, format="PNG")
+                return buf.getvalue()
+    except (fitz.FileDataError, fitz.mupdf.FzErrorBase, OSError):
+        logging.error("[figure_extraction] PDF figure crop failed.")
         return None
 
 
@@ -89,9 +100,12 @@ def _extract_images_from_ooxml(file_bytes: bytes, media_prefix: str) -> list[byt
                 if name.startswith(media_prefix) and not name.endswith("/")
             )
             for name in media_files:
+                if z.getinfo(name).flag_bits & 1:
+                    logging.warning("[figure_extraction] Encrypted OOXML media cannot be extracted.")
+                    break
                 images.append(z.read(name))
-    except Exception as e:
-        logging.error(f"[figure_extraction] OOXML image extraction failed: {e}")
+    except (zipfile.BadZipFile, OSError, NotImplementedError, zlib.error, lzma.LZMAError):
+        logging.error("[figure_extraction] OOXML image extraction failed.")
     return images
 
 
@@ -103,30 +117,29 @@ def _extract_all_pdf_images(file_bytes: bytes, dpi: int = 200) -> list[bytes]:
     images: list[bytes] = []
     max_render_px = 2500
     try:
-        doc = fitz.open(stream=file_bytes, filetype="pdf")
-        for page_idx, page in enumerate(doc):
-            page_w = page.rect.width
-            page_h = page.rect.height
-            max_dim_pt = max(page_w, page_h)
-            effective_dpi = min(dpi, int(max_render_px * 72 / max_dim_pt))
-            effective_dpi = max(effective_dpi, 72)
+        with fitz.open(stream=file_bytes, filetype="pdf") as doc:
+            for page_idx, page in enumerate(doc):
+                page_w = page.rect.width
+                page_h = page.rect.height
+                max_dim_pt = max(page_w, page_h)
+                effective_dpi = min(dpi, int(max_render_px * 72 / max_dim_pt))
+                effective_dpi = max(effective_dpi, 72)
 
-            zoom = effective_dpi / 72
-            mat = fitz.Matrix(zoom, zoom)
-            pix = page.get_pixmap(matrix=mat, alpha=False)
+                zoom = effective_dpi / 72
+                mat = fitz.Matrix(zoom, zoom)
+                pix = page.get_pixmap(matrix=mat, alpha=False)
 
-            buf = io.BytesIO()
-            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-            img.save(buf, format="PNG")
-            images.append(buf.getvalue())
+                buf = io.BytesIO()
+                with Image.frombytes("RGB", [pix.width, pix.height], pix.samples) as img:
+                    img.save(buf, format="PNG")
+                images.append(buf.getvalue())
 
-            logging.info(
-                f"[figure_extraction] Fallback: rendered page {page_idx + 1} "
-                f"as {pix.width}x{pix.height} at {effective_dpi} dpi"
-            )
-        doc.close()
-    except Exception as e:
-        logging.error(f"[figure_extraction] PDF page rendering failed: {e}")
+                logging.info(
+                    f"[figure_extraction] Fallback: rendered page {page_idx + 1} "
+                    f"as {pix.width}x{pix.height} at {effective_dpi} dpi"
+                )
+    except (fitz.FileDataError, fitz.mupdf.FzErrorBase, OSError):
+        logging.error("[figure_extraction] PDF page rendering failed.")
     return images
 
 

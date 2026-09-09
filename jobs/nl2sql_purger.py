@@ -8,6 +8,7 @@ from typing import Optional, Set, List, Dict
 from azure.identity.aio import AzureCliCredential, ManagedIdentityCredential, ChainedTokenCredential
 from azure.storage.blob.aio import BlobServiceClient
 from azure.storage.blob import ContentSettings
+from azure.core.exceptions import AzureError, ResourceExistsError
 
 from dependencies import get_config
 from tools.credentials import get_azure_client_id
@@ -89,7 +90,6 @@ class NL2SQLPurger:
             )
 
     async def run(self) -> None:
-        await self._ensure_clients()
         run_started_at = datetime.now(timezone.utc)
         run_id = run_started_at.strftime("%Y%m%dT%H%M%SZ")
         start_iso = run_started_at.isoformat()
@@ -102,6 +102,7 @@ class NL2SQLPurger:
         )
 
         try:
+            await self._ensure_clients()
             await self._ensure_container(self.cfg.jobs_log_container)
 
             # Gather all existing blob names under nl2sql container
@@ -160,40 +161,36 @@ class NL2SQLPurger:
         For an index, retrieve all doc IDs (paged) and delete those not present (by sanitized id).
         """
         deleted = 0
-        try:
-            client = await self._ai_search.get_search_client(index_name)
-            # iterate pages selecting only 'id'
-            results = await client.search(search_text="*", select=["id"], include_total_count=True, top=1000, headers=_ELEVATED_HEADERS)
-            async for page in results.by_page():
-                page_ids: List[str] = []
-                async for doc in page:
-                    doc_id = doc.get("id")
-                    if not doc_id:
-                        continue
-                    # Delete if document is not present in sanitized existing set
-                    if doc_id not in sanitized_existing:
-                        page_ids.append(doc_id)
-                if page_ids:
-                    await self._ai_search.delete_documents(index_name=index_name, key_field="id", key_values=page_ids)
-                    deleted += len(page_ids)
-        except Exception:
-            logging.exception(f"[nl2sql-purger] Error purging index {index_name}")
+        client = await self._ai_search.get_search_client(index_name)
+        results = await client.search(search_text="*", select=["id"], include_total_count=True, top=1000, headers=_ELEVATED_HEADERS)
+        async for page in results.by_page():
+            page_ids: List[str] = []
+            async for doc in page:
+                doc_id = doc.get("id")
+                if not doc_id:
+                    continue
+                if doc_id not in sanitized_existing:
+                    page_ids.append(doc_id)
+            if page_ids:
+                outcome = await self._ai_search.delete_documents(
+                    index_name=index_name, key_field="id", key_values=page_ids
+                )
+                if outcome["failed"] or outcome["deleted"] != len(page_ids):
+                    logging.error("[nl2sql-purger] Search did not confirm every requested deletion.")
+                    raise RuntimeError("Search did not confirm all requested NL2SQL deletions.")
+                deleted += outcome["deleted"]
         return deleted
 
     async def _count_index_docs(self, index_name: str) -> int:
         """Count documents in an index (all docs)."""
-        try:
-            client = await self._ai_search.get_search_client(index_name)
-            results = await client.search(search_text="*", select=["id"], include_total_count=True, top=1000, headers=_ELEVATED_HEADERS)
-            count = 0
-            async for page in results.by_page():
-                async for doc in page:
-                    if doc.get("id"):
-                        count += 1
-            return count
-        except Exception:
-            logging.exception(f"[nl2sql-purger] Error counting docs in index {index_name}")
-            return 0
+        client = await self._ai_search.get_search_client(index_name)
+        results = await client.search(search_text="*", select=["id"], include_total_count=True, top=1000, headers=_ELEVATED_HEADERS)
+        count = 0
+        async for page in results.by_page():
+            async for doc in page:
+                if doc.get("id"):
+                    count += 1
+        return count
 
     @staticmethod
     def _sanitize_id(doc_id: str) -> str:
@@ -205,8 +202,10 @@ class NL2SQLPurger:
         try:
             cc = self._blob_service.get_container_client(name)
             await cc.create_container()
-        except Exception:
+        except ResourceExistsError:
             pass
+        except AzureError as exc:
+            logging.warning("[nl2sql-purger] Optional log container unavailable (%s)", type(exc).__name__)
 
     async def _write_run_summary(self, container: str, summary: dict):
         cc = self._blob_service.get_container_client(container)
@@ -219,19 +218,23 @@ class NL2SQLPurger:
                 overwrite=True,
                 content_settings=ContentSettings(content_type="application/json"),
             )
-        except Exception:
-            logging.exception(f"[nl2sql-purger] failed to write run summary {name}")
+        except AzureError as exc:
+            logging.warning("[nl2sql-purger] Run summary write failed (%s)", type(exc).__name__)
 
     async def _close_clients_safely(self):
         try:
+            await self._ai_search.close()
+        except Exception as exc:
+            logging.warning("[nl2sql-purger] Search client cleanup failed (%s)", type(exc).__name__)
+        try:
             if self._blob_service:
                 await self._blob_service.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.warning("[nl2sql-purger] Blob client cleanup failed (%s)", type(exc).__name__)
         try:
             if self._credential and hasattr(self._credential, "close"):
                 res = self._credential.close()
                 if asyncio.iscoroutine(res):
                     await res
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.warning("[nl2sql-purger] Credential cleanup failed (%s)", type(exc).__name__)

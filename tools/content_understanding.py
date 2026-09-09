@@ -4,6 +4,7 @@ import logging
 import time
 
 import requests
+from azure.core.exceptions import AzureError
 from azure.identity import (
     AzureCliCredential,
     ChainedTokenCredential,
@@ -103,8 +104,8 @@ class ContentUnderstandingClient:
         # Acquire token
         try:
             token = self.credential.get_token(self.COGNITIVE_SCOPE).token
-        except Exception as e:
-            msg = f"Auth failed: {e}"
+        except AzureError:
+            msg = "Auth failed: check the analysis service identity and access."
             logging.error(f"[content_understanding][{filename}] {msg}")
             return result, [msg]
 
@@ -124,13 +125,13 @@ class ContentUnderstandingClient:
             logging.info(
                 f"[content_understanding][{filename}] POST -> {resp.status_code}"
             )
-        except Exception as e:
-            msg = f"Request error: {e}"
+        except requests.RequestException:
+            msg = "Request error: analysis service submission failed."
             logging.error(f"[content_understanding][{filename}] {msg}")
             return result, [msg]
 
         if resp.status_code != 202:
-            msg = f"Bad response {resp.status_code}: {resp.text}"
+            msg = f"Bad response {resp.status_code}: analysis submission was not accepted."
             logging.error(f"[content_understanding][{filename}] {msg}")
             return result, [msg]
 
@@ -162,16 +163,21 @@ class ContentUnderstandingClient:
             time.sleep(2)
             try:
                 r = requests.get(op_loc, headers=poll_headers, timeout=60)
+                if r.status_code != 200:
+                    msg = f"Polling failed with status {r.status_code}: result was not confirmed."
+                    logging.error(f"[content_understanding][{filename}] {msg}")
+                    errors.append(msg)
+                    break
                 data = r.json()
-            except Exception as e:
-                msg = f"Polling error: {e}"
+            except requests.RequestException:
+                msg = "Polling error: analysis service response could not be read."
                 logging.error(f"[content_understanding][{filename}] {msg}")
                 errors.append(msg)
                 break
 
             status = data.get("status", "").lower()
             if status in ("failed", "canceled"):
-                msg = f"Analysis {status}: {r.text}"
+                msg = f"Analysis {status}: service did not produce a successful result."
                 logging.error(f"[content_understanding][{filename}] {msg}")
                 errors.append(msg)
                 break

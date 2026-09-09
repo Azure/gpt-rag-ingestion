@@ -7,7 +7,7 @@ import requests
 from urllib.parse import urlparse, unquote
 from azure.identity import ManagedIdentityCredential, AzureCliCredential, ChainedTokenCredential
 from azure.storage.blob import BlobServiceClient
-from azure.core.exceptions import ClientAuthenticationError, ResourceNotFoundError
+from azure.core.exceptions import AzureError
 
 from dependencies import get_config
 from tools.credentials import get_azure_client_id
@@ -54,18 +54,13 @@ class DocumentIntelligenceClient:
                      f"api_version={self.api_version!r}, network_isolation={self.network_isolation}")
 
         # Credential
-        try:
-            client_id = get_azure_client_id(app_config_client)
-
-            # Prefer Azure CLI locally to avoid IMDS probes; fall back to MI when available
-            self.credential = ChainedTokenCredential(
-                AzureCliCredential(),
-                ManagedIdentityCredential(client_id=client_id)
-            )
-            logging.debug("[docintelligence] ChainedTokenCredential initialized (CLI first, then MI).")
-        except Exception as e:
-            logging.error(f"[docintelligence] Credential init failed: {e}")
-            raise
+        client_id = get_azure_client_id(app_config_client)
+        # Prefer Azure CLI locally to avoid IMDS probes; fall back to MI when available.
+        self.credential = ChainedTokenCredential(
+            AzureCliCredential(),
+            ManagedIdentityCredential(client_id=client_id)
+        )
+        logging.debug("[docintelligence] ChainedTokenCredential initialized (CLI first, then MI).")
 
     def _get_file_extension(self, filepath):
         clean = filepath.split('?')[0]
@@ -128,9 +123,8 @@ class DocumentIntelligenceClient:
                 "x-ms-useragent": "gpt-rag/1.0.0",
                 "Content-Type": "application/json"
             }
-            logging.debug(f"[docintelligence][{filename}] Request headers: {headers}")
-        except Exception as e:
-            msg = f"Auth failed: {e}"
+        except AzureError:
+            msg = "Auth failed: check the analysis service identity and access."
             logging.error(f"[docintelligence][{filename}] {msg}")
             return result, [msg]
 
@@ -143,15 +137,13 @@ class DocumentIntelligenceClient:
         try:
             resp = requests.post(endpoint, headers=headers, json=payload)
             logging.info(f"[docintelligence][{filename}] POST -> {resp.status_code}")
-            logging.debug(f"[docintelligence][{filename}] Response headers: {resp.headers}")
-            logging.debug(f"[docintelligence][{filename}] Response body (first 500 chars): {resp.text[:500]!r}…")
-        except Exception as e:
-            msg = f"Request error: {e}"
+        except requests.RequestException:
+            msg = "Request error: analysis service submission failed."
             logging.error(f"[docintelligence][{filename}] {msg}")
             return result, [msg]
 
         if resp.status_code != 202:
-            msg = f"Bad response {resp.status_code}: {resp.text}"
+            msg = f"Bad response {resp.status_code}: analysis submission was not accepted."
             logging.error(f"[docintelligence][{filename}] {msg}")
             return result, [msg]
 
@@ -176,17 +168,16 @@ class DocumentIntelligenceClient:
             time.sleep(2)
             try:
                 r = requests.get(op_loc, headers=poll_headers)
-                logging.debug(f"[docintelligence][{filename}] Poll status={r.status_code}, "
-                              f"body (first 200 chars)={r.text[:200]!r}")
+                logging.debug(f"[docintelligence][{filename}] Poll status={r.status_code}")
                 data = r.json()
-            except Exception as e:
-                msg = f"Polling error: {e}"
+            except requests.RequestException:
+                msg = "Polling error: analysis service response could not be read."
                 logging.error(f"[docintelligence][{filename}] {msg}")
                 errors.append(msg)
                 break
 
             if r.status_code != 200 or data.get("status") == "failed":
-                msg = f"Polling failed {r.status_code}: {r.text}"
+                msg = f"Polling failed {r.status_code}: analysis did not succeed."
                 logging.error(f"[docintelligence][{filename}] {msg}")
                 errors.append(msg)
                 break
@@ -202,7 +193,7 @@ class DocumentIntelligenceClient:
         result, errors = {}, []
 
         filename = os.path.basename(urlparse(file_url).path)
-        logging.debug(f"[docintelligence][{filename}] Blob URL = {file_url!r}")
+        self.docint_features = "ocrHighResolution" if self._get_file_extension(filename) == "pdf" else ""
 
         # Download blob
         parsed = urlparse(file_url)
@@ -223,9 +214,8 @@ class DocumentIntelligenceClient:
                 "x-ms-useragent": "gpt-rag/1.0.0",
                 "Content-Type": "application/json"
             }
-            logging.debug(f"[docintelligence][{filename}] Request headers: {headers}")
-        except Exception as e:
-            msg = f"Auth failed: {e}"
+        except AzureError:
+            msg = "Auth failed: check the analysis service identity and access."
             logging.error(f"[docintelligence][{filename}] {msg}")
             return result, [msg]
 
@@ -235,8 +225,8 @@ class DocumentIntelligenceClient:
             blob = client.get_blob_client(container=container, blob=blob_name)
             data = blob.download_blob().readall()
             logging.debug(f"[docintelligence][{filename}] Blob downloaded, size={len(data)} bytes")
-        except Exception as e:
-            msg = f"Blob error: {e}"
+        except AzureError:
+            msg = "Blob error: analysis source download failed."
             logging.error(f"[docintelligence][{filename}] {msg}")
             return result, [msg]
 
@@ -265,15 +255,13 @@ class DocumentIntelligenceClient:
         try:
             resp = requests.post(endpoint, headers=headers, json=payload)
             logging.info(f"[docintelligence][{filename}] POST -> {resp.status_code}")
-            logging.debug(f"[docintelligence][{filename}] Response headers: {resp.headers}")
-            logging.debug(f"[docintelligence][{filename}] Response body (first 500 chars): {resp.text[:500]!r}…")
-        except Exception as e:
-            msg = f"Request error: {e}"
+        except requests.RequestException:
+            msg = "Request error: analysis service submission failed."
             logging.error(f"[docintelligence][{filename}] {msg}")
             return result, [msg]
 
         if resp.status_code != 202:
-            msg = f"Bad response {resp.status_code}: {resp.text}"
+            msg = f"Bad response {resp.status_code}: analysis submission was not accepted."
             logging.error(f"[docintelligence][{filename}] {msg}")
             return result, [msg]
 
@@ -298,17 +286,16 @@ class DocumentIntelligenceClient:
             time.sleep(2)
             try:
                 r = requests.get(op_loc, headers=poll_headers)
-                logging.debug(f"[docintelligence][{filename}] Poll status={r.status_code}, "
-                              f"body (first 200 chars)={r.text[:200]!r}")
+                logging.debug(f"[docintelligence][{filename}] Poll status={r.status_code}")
                 data = r.json()
-            except Exception as e:
-                msg = f"Polling error: {e}"
+            except requests.RequestException:
+                msg = "Polling error: analysis service response could not be read."
                 logging.error(f"[docintelligence][{filename}] {msg}")
                 errors.append(msg)
                 break
 
             if r.status_code != 200 or data.get("status") == "failed":
-                msg = f"Polling failed {r.status_code}: {r.text}"
+                msg = f"Polling failed {r.status_code}: analysis did not succeed."
                 logging.error(f"[docintelligence][{filename}] {msg}")
                 errors.append(msg)
                 break
@@ -330,20 +317,15 @@ class DocumentIntelligenceClient:
         )
         logging.debug(f"[docintelligence] Fetching figure URL: {url}")
 
-        try:
-            token = self.credential.get_token(
-                "https://cognitiveservices.azure.com/.default"
-            ).token
-            headers = {
-                "Authorization": f"Bearer {token}",
-                "x-ms-useragent": "gpt-rag/1.0.0"
-            }
-            logging.debug(f"[docintelligence] Figure request headers: {headers}")
-            resp = requests.get(url, headers=headers)
-            logging.info(f"[docintelligence] Figure GET -> {resp.status_code}")
-            if resp.status_code == 200:
-                return resp.content
-            raise Exception(f"Status {resp.status_code}: {resp.text}")
-        except Exception as e:
-            logging.error(f"[docintelligence] Figure fetch error: {e}")
-            raise
+        token = self.credential.get_token(
+            "https://cognitiveservices.azure.com/.default"
+        ).token
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "x-ms-useragent": "gpt-rag/1.0.0"
+        }
+        resp = requests.get(url, headers=headers)
+        logging.info(f"[docintelligence] Figure GET -> {resp.status_code}")
+        if resp.status_code == 200:
+            return resp.content
+        raise requests.HTTPError(f"Figure request failed with status {resp.status_code}.", response=resp)

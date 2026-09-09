@@ -85,19 +85,11 @@ class AzureOpenAIClient:
 
     def _extract_retry_after_seconds(self, exc: Exception) -> float | None:
         """Best-effort parsing of Retry-After from SDK exception headers or message."""
-        headers = None
         # openai exceptions sometimes expose .headers, sometimes .response.headers
-        try:
-            headers = getattr(exc, "headers", None)
-        except Exception:
-            headers = None
-
+        headers = getattr(exc, "headers", None)
         if not headers:
-            try:
-                resp = getattr(exc, "response", None)
-                headers = getattr(resp, "headers", None) if resp is not None else None
-            except Exception:
-                headers = None
+            resp = getattr(exc, "response", None)
+            headers = getattr(resp, "headers", None) if resp is not None else None
 
         if headers:
             # Case-insensitive lookup
@@ -105,17 +97,14 @@ class AzureOpenAIClient:
                 if key in headers:
                     try:
                         return float(headers[key])
-                    except Exception:
+                    except (TypeError, ValueError):
                         pass
 
         # Sometimes the service embeds a human-readable hint in the error message
         msg = str(exc)
         match = re.search(r"retry after\s+(\d+(?:\.\d+)?)\s+seconds", msg, flags=re.IGNORECASE)
         if match:
-            try:
-                return float(match.group(1))
-            except Exception:
-                return None
+            return float(match.group(1))
         return None
 
     def _sleep_for_retry(self, *, attempt: int, retry_after: float | None, op_name: str) -> None:
@@ -182,7 +171,7 @@ class AzureOpenAIClient:
 
             except openai.RateLimitError as e:
                 if not retry_after or attempt >= self.retry_max_attempts:
-                    logging.error(f"[aoai]{self.document_filename} RateLimitError in get_completion: {e}")
+                    logging.error(f"[aoai]{self.document_filename} Completion rate-limit retries exhausted or disabled.")
                     raise
                 ra = self._extract_retry_after_seconds(e)
                 self._sleep_for_retry(attempt=attempt, retry_after=ra, op_name="chat.completions")
@@ -197,15 +186,11 @@ class AzureOpenAIClient:
                     self._sleep_for_retry(attempt=attempt, retry_after=ra, op_name="chat.completions")
                     attempt += 1
                     continue
-                logging.error(f"[aoai]{self.document_filename} APIStatusError in get_completion: {e}")
+                logging.error(f"[aoai]{self.document_filename} Completion failed with HTTP status {status}.")
                 raise
 
             except openai.OpenAIError as e:
-                logging.error(f"[aoai]{self.document_filename} OpenAIError in get_completion: {e}")
-                raise
-
-            except Exception as e:
-                logging.error(f"[aoai]{self.document_filename} Unexpected error in get_completion: {e}")
+                logging.error(f"[aoai]{self.document_filename} Completion SDK failure ({type(e).__name__}).")
                 raise
 
     def get_embeddings(self, text: str, retry_after: bool = True) -> list:
@@ -226,7 +211,7 @@ class AzureOpenAIClient:
 
             except openai.RateLimitError as e:
                 if not retry_after or attempt >= self.retry_max_attempts:
-                    logging.error(f"[aoai]{self.document_filename} RateLimitError in get_embeddings: {e}")
+                    logging.error(f"[aoai]{self.document_filename} Embedding rate-limit retries exhausted or disabled.")
                     raise
                 ra = self._extract_retry_after_seconds(e)
                 self._sleep_for_retry(attempt=attempt, retry_after=ra, op_name="embeddings")
@@ -240,15 +225,11 @@ class AzureOpenAIClient:
                     self._sleep_for_retry(attempt=attempt, retry_after=ra, op_name="embeddings")
                     attempt += 1
                     continue
-                logging.error(f"[aoai]{self.document_filename} APIStatusError in get_embeddings: {e}")
+                logging.error(f"[aoai]{self.document_filename} Embedding failed with HTTP status {status}.")
                 raise
 
             except openai.OpenAIError as e:
-                logging.error(f"[aoai]{self.document_filename} OpenAIError in get_embeddings: {e}")
-                raise
-
-            except Exception as e:
-                logging.error(f"[aoai]{self.document_filename} Unexpected error in get_embeddings: {e}")
+                logging.error(f"[aoai]{self.document_filename} Embedding SDK failure ({type(e).__name__}).")
                 raise
 
     def _truncate_input(self, text: str, max_tokens: int) -> str:

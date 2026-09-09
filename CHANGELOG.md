@@ -1,5 +1,161 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Reviewable Python quality bootstrap.** Add development-only pinned Ruff,
+  mypy, Import Linter and Grimp, explicit module/typing inventories,
+  individual-debt and handler records, mutation fixtures, and protected-base
+  quality jobs in the existing pytest workflow. The aggregate rejects missing,
+  skipped or stale evidence. Inherited violations remain visible and blocking;
+  no blanket exemptions or claim of administrative activation is introduced.
+
+### Changed
+
+- **Administratively approved initial quality adoption.** Activate exactly 67
+  existing, individually justified ingestion exception records under
+  [Paulo's explicit authorization](https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634).
+  Preserve all fingerprints, outcomes, evidence selectors and pins. This
+  supersedes the proposal status below, not same-run evidence requirements;
+  it is neither independent GitHub review nor required-check activation.
+
+- **Jobs-owned scheduler coordination without API-to-entrypoint cycles.**
+  Move the shared scheduler reference, registry, cron map, running-job
+  dictionary/lock and tracking wrapper to `jobs.runtime`, retaining the same
+  main re-exports, manual reservation behavior and scheduler lifecycle. Lazy
+  worker exports keep state-only imports from initializing Azure configuration
+  before startup authentication. Remove two overwritten, unused SharePoint
+  wrappers while retaining the shared registry/lock and startup ordering.
+
+### Fixed
+
+- **Explicit configuration fallback and feedback availability.** Preserve
+  endpoint then configured connection-string loading, with safe diagnostics
+  when fallback is used. Environment-only recovery now requires the existing
+  `allow_environment_variables` opt-in; otherwise startup failures propagate.
+  Legacy panel overview adds `feedback.available` and discards incomplete
+  counts so unavailable feedback is distinguishable from genuine zero records.
+
+- **Preserve primary failures and cancellation during finalization.** Keep
+  retrieval's sanitized query failure across Search cleanup errors, prevent
+  Blob terminal-summary errors from replacing established run failures or
+  cancellation, and propagate NL2SQL child cancellation through run/audit
+  handling instead of reporting a finished run with a failed-document count.
+  Cleanup and summary writes remain attempts with safe diagnostics, not
+  guarantees.
+
+- **Operator frontend restores without invalid peer combinations.** Align
+  React DOM/types with the existing React 19 dependency and wire Tailwind 4's
+  PostCSS plugin to the existing theme. Correct the React JSX and Vitest
+  configuration type imports without redesigning the dashboard. Run plain
+  `npm ci`, tests, lint and build on compatible Node 22 in the existing test
+  workflow; the aggregate rejects missing/skipped/failed frontend execution.
+
+- **Worker failures cannot fabricate ACLs or Search success.** Require matching
+  upload/delete confirmations in Blob and SharePoint workers, propagate retry
+  exhaustion and datasource/permission failures, and preserve explicit failed
+  document outcomes rather than indexing with missing ACLs. Observe collection
+  task errors, cancel owned children, and close resources after partial
+  initialization or diagnostic failure. Preserve the existing credential,
+  configuration and per-record contracts with payload-safe diagnostics.
+
+- **Image and SharePoint purge outcomes require complete evidence.** Scan all
+  image references before any deletion instead of using a 1,000-result cap or
+  failed/partial reference set. Use asynchronous Blob listing/deletion and
+  close owned resources on failure/cancellation. SharePoint counts only
+  matching positive SDK deletion results and propagates count, late-page and
+  unconfirmed-delete failures instead of publishing a finished purge summary.
+
+- **Every retained broad handler has an exact inactive disposition.** Narrow
+  parser, SDK, Graph and optional-log recovery without concealing programming
+  defects. Individually propose the remaining existing public translations,
+  cleanup and audit protocol boundaries with executed failure evidence.
+  Preserve constructor source fallback, post-write refresh-only 200/applied,
+  hostile audit-value omission and audit wire bytes; no approval is activated.
+
+- **Operator and startup failures retain truthful, safe outcomes.** Count only
+  confirmed log deletions, narrow optional history recovery to SDK failures,
+  and stop hiding scheduler/programming errors as missing queue data. Resolve
+  startup flags before scheduling and surface logging-configuration failures.
+  Preserve identity probes, panel HTTP errors, per-record skill results and
+  independent startup cleanup through exact inactive proposals with failure
+  evidence, while removing dependency payloads from diagnostics.
+
+- **Chunking preserves cancellation and confirmed partial results.** Remove
+  return-from-finally suppression, narrow SDK/parser retries and optional
+  image failures, and close PDF/image resources and owned split files.
+  Preserve chunk IDs, content, metadata and explicit document errors while
+  preventing empty-URL upload success and sensitive caption/error diagnostics.
+  The existing terminal document-error boundary is individually proposed,
+  not approved.
+
+- **NL2SQL optional state cannot hide document failures.** Narrow SDK/JSON
+  operations used for job logs and unchanged-document checks; unexpected
+  failures become explicit failed-document outcomes, not missing-state
+  defaults. Preserve confirmed upload counts, stable reindex keys and
+  independent resource cleanup, with safe diagnostics and individually
+  proposed, not activated, failure/cleanup boundaries.
+
+- **Model-service failures preserve outcomes without exposing payloads.**
+  Keep OpenAI retry/usage semantics and original terminal exceptions while
+  narrowing retry parsing. Document analysis retains explicit error results
+  without authorization headers or response bodies in diagnostics; Blob-URL
+  analysis initializes its own PDF features, and figure failures use a
+  status-only HTTP error. Real JWT verification fixtures preserve existing
+  401/403 outcomes while narrowing token/claim parsing and retaining optional,
+  non-authoritative auth diagnostics as individually proposed boundaries.
+
+- **Malformed quality evidence cannot become a passing receipt.** Validate
+  Ruff/mypy diagnostic types, positions, duplicate keys and exit consistency;
+  reject aggregate reports whose passed status contradicts their findings.
+  Real aggregate CLI fixtures cover missing/skipped jobs and stale or mismatched
+  artifacts without treating incomplete execution as successful validation.
+
+- **Direct uploads require authoritative Search confirmation.** Exercise the
+  actual `/ingest-documents` route with the pinned SDK response model, reject
+  missing, duplicate and unrelated results, and retain the per-record response
+  and ACL fields. Audit exporter failure cannot reverse a confirmed upload.
+
+- **SDK and parser recovery is limited to expected failures.** Keep explicit
+  error/None outcomes for failed SDK writes, secret reads and analysis calls
+  without logging downstream payloads. Only Cosmos not-found means absence;
+  unexpected adapter and SharePoint provider failures propagate. Blob download
+  retries only SDK failures and retains the original terminal exception.
+  Cursor, cron, timestamp and JWKS parsing retain their existing invalid-input
+  outcomes without broad handlers or redundant constructor wrappers.
+
+- **Static checks cannot import candidate tool shadows.** Launch the protected
+  evaluator and tools with isolated Python, neutral working directories and
+  non-executable source package specs. Reject executable tool configuration,
+  isolate Git metadata reads, and inventory decorator-based typing suppressions
+  so candidate startup hooks, loaders and aliases cannot silently bypass checks.
+
+- **Quality-policy mutations cannot hide reviewed boundaries.** Reject malformed
+  records and mismatched tool pins; retain conflicting lexical aliases, resolve
+  first-party and class-member exception bindings, invalidate changed catch
+  breadth, and require review for ownership-changing moves. Dynamic-import
+  allowances are exact-symbol, active, single-use records rather than reusable
+  call-expression exemptions.
+
+- **Primary failures no longer masquerade as confirmed work.** Search deletion
+  uses the SDK delete operation and counts matching confirmed outcomes rather
+  than submissions; NL2SQL purge propagates failed scans and partial deletion.
+  Missing, malformed or duplicate Search responses cannot emit positive audit
+  outcomes. Cron/manual failures propagate through the existing audit context,
+  while startup jobs retain independent failure isolation.
+
+- **Configuration and diagnostic failures remain explicit and safe.** Governance
+  reads no longer silently disable governance after selected-provider failure.
+  Bounded Azure retries preserve real missing-key defaults, selector order and
+  environment precedence without logging exception payloads. Configuration
+  apply returns an error on failed scheduling; confirmed writes retain their
+  existing success response when the best-effort local refresh fails. Audit
+  sanitization/export/projection remains non-blocking, with payload-free warning
+  diagnostics. Exact audit, refresh and resource-cleanup proposals remain
+  unapproved; NL2SQL purge now also closes its owned Search adapter without
+  masking a primary failure.
+
 ## [v2.7.3] - 2026-09-03
 
 ### Fixed

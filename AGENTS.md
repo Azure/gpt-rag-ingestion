@@ -44,6 +44,9 @@ them as Copilot agents.
 - `chunking/`: document orchestration and format-specific chunkers selected
   through `chunking/chunker_factory.py`.
 - `jobs/`: long-running index, purge, and source synchronization workers.
+  `jobs/runtime.py` owns the shared scheduler reference, registry, cron-key map,
+  running-job state/lock and tracking wrapper. `main.py` composes and manages
+  the scheduler lifecycle; API routes must not import `main`.
 - `tools/`: Azure and source-system adapters, credentials, and clients.
 - `api/`: thin FastAPI operator endpoints.
 - `frontend/`: React/Vite operator dashboard.
@@ -94,11 +97,41 @@ a dedicated chunker. Do not spread extension checks across callers or turn
 
 ## Validation and evidence
 
+The Python quality bootstrap and its remaining activation requirements are
+documented in [docs/python-quality.md](docs/python-quality.md). Use Python 3.12:
+
+```text
+python -m pip install -r requirements-quality.txt
+python -m pytest -q tests/test_quality_policy.py tests/test_jobs_runtime.py
+python -I .github/scripts/check-quality.py --check all --base-ref <protected-base-sha> --report .artifacts/quality.json
+```
+
+`.quality/typing-scope.json` protects the audit contract/sanitizer seeds and
+new `jobs/runtime.py`; new runtime modules automatically enter blocking scope.
+Keep stable IDs through moves, retire resolved individual debt, and never
+rewrite a baseline or add broad-handler approvals automatically. Full import
+and handler checks include flat roots, late/type-only imports and package
+facades. `main` compatibility re-exports are not another owner of mutable state.
+Use the jobs-owned test seam when patching scheduling.
+
+Exactly 67 existing exception records are active for audit boundaries, post-write local
+refresh, indexer/purger resource cleanup, explicit per-record failure
+translations, and optional auth diagnostics under
+[explicit administrative initial-adoption approval](https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634).
+This is not independent GitHub review. Exact matching and passing same-run
+evidence remain mandatory; candidate metadata cannot authorize future changes.
+This is not an active required-merge claim. Bootstrap adoption,
+a clean reference PR and administrative rule activation are separate
+acceptance requirements; no agent may change GitHub settings to bypass them.
+
 Load the `ingestion-validation` skill. Run the narrowest existing test first,
 then broaden according to the changed boundary. The repository has maintained
 Python tests under `tests/` and frontend lint, build, and test scripts under
 `frontend/package.json`; do not repeat the historical claim that no test suite
 exists.
+The operator frontend uses compatible Node 22 for `npm ci`, tests, lint and
+build. Its actual same-workflow result is required by `quality-gate`; a missing
+or skipped frontend job is not successful validation.
 
 Changes to chunking or live Azure integration may also require a local
 container or `scripts/deploy.*` validation and confirmation that expected

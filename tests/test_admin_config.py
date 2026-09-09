@@ -79,7 +79,7 @@ def _install_stubs(
     monkeypatch.setitem(sys.modules, "tools.credentials", credentials_stub)
 
     # main stub — only what api.admin imports lazily
-    main_stub = types.ModuleType("main")
+    main_stub = types.ModuleType("jobs.runtime")
 
     async def _noop_job():
         return None
@@ -102,8 +102,8 @@ def _install_stubs(
         "CRON_RUN_NL2SQL_INDEX": "nl2sql_index",
         "CRON_RUN_NL2SQL_PURGE": "nl2sql_purge",
     }
-    main_stub._running_jobs = {}
-    main_stub._running_jobs_lock = asyncio.Lock()
+    main_stub.running_jobs = {}
+    main_stub.running_jobs_lock = asyncio.Lock()
 
     class _FakeScheduler:
         def __init__(self) -> None:
@@ -127,7 +127,8 @@ def _install_stubs(
             self.jobs.pop(jid, None)
 
     main_stub.scheduler = _FakeScheduler()
-    monkeypatch.setitem(sys.modules, "main", main_stub)
+    main_stub.get_scheduler = lambda: main_stub.scheduler
+    monkeypatch.setitem(sys.modules, "jobs.runtime", main_stub)
 
     # azure.appconfiguration write client stub — capture set_configuration_setting
     written: list[object] = []
@@ -175,6 +176,73 @@ def _build_client(monkeypatch, *, tenant_id, claims, config_values=None):
 # ---------------------------------------------------------------------------
 # GET /api/config
 # ---------------------------------------------------------------------------
+
+
+def test_apply_does_not_report_ok_when_scheduler_fails(monkeypatch, caplog):
+    client, state, _ = _build_client(monkeypatch, tenant_id=None, claims=None)
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("private scheduler detail")
+
+    monkeypatch.setattr(state["main"].scheduler, "get_job", fail)
+    response = client.post("/api/config/apply")
+    assert response.status_code == 500
+    assert "private scheduler detail" not in response.text
+    assert "private scheduler detail" not in caplog.text
+
+
+def test_written_config_with_failed_refresh_preserves_applied_success(monkeypatch, caplog):
+    client, _, admin = _build_client(monkeypatch, tenant_id=None, claims=None)
+    original = admin.get_config
+
+    def fail_refresh(action=None):
+        if action == "refresh":
+            raise RuntimeError("private refresh detail")
+        return original(action)
+
+    monkeypatch.setattr(admin, "get_config", fail_refresh)
+    response = client.put("/api/config", json={
+        "updates": [{"key": "CRON_RUN_BLOB_INDEX", "value": "0 * * * *"}]
+    })
+    assert response.status_code == 200
+    assert response.json()["applied"] == ["CRON_RUN_BLOB_INDEX"]
+    assert response.json()["failed"] == []
+    assert "Failed to refresh AppConfig cache" in caplog.text
+    assert "private refresh detail" not in response.text
+    assert "private refresh detail" not in caplog.text
+
+
+def test_config_write_failure_does_not_expose_downstream_payload(monkeypatch, caplog):
+    from azure.core.exceptions import AzureError
+
+    client, state, _ = _build_client(monkeypatch, tenant_id=None, claims=None)
+
+    def fail_write(setting):
+        raise AzureError("private configuration detail")
+
+    monkeypatch.setattr(state["write_client"], "set_configuration_setting", fail_write)
+    response = client.put("/api/config", json={
+        "updates": [{"key": "CRON_RUN_BLOB_INDEX", "value": "0 * * * *"}]
+    })
+    assert response.status_code == 500
+    assert response.json()["detail"]["applied"] == []
+    assert "private configuration detail" not in response.text
+    assert "private configuration detail" not in caplog.text
+
+
+def test_disabling_already_missing_schedule_is_not_an_error(monkeypatch):
+    from apscheduler.jobstores.base import JobLookupError
+
+    client, state, _ = _build_client(
+        monkeypatch, tenant_id=None, claims=None,
+        config_values={"CRON_RUN_BLOB_INDEX": ""},
+    )
+
+    def absent(job_id):
+        raise JobLookupError(job_id)
+
+    monkeypatch.setattr(state["main"].scheduler, "remove_job", absent)
+    assert client.post("/api/config/apply").status_code == 200
 
 
 def test_get_config_returns_sections_shape(monkeypatch):

@@ -3,7 +3,10 @@ import os
 import re
 import time
 
+from azure.core.exceptions import AzureError
 from langchain_text_splitters import MarkdownTextSplitter, RecursiveCharacterTextSplitter
+from pypdf.errors import PyPdfError
+from requests import RequestException
 from .base_chunker import BaseChunker
 from ..exceptions import UnsupportedFormatError
 from tools import DocumentIntelligenceClient, ContentUnderstandingClient
@@ -118,8 +121,7 @@ class DocAnalysisChunker(BaseChunker):
         self._analysis_service = "document_intelligence" if isinstance(self._analysis_client, DocumentIntelligenceClient) else "content_understanding"
 
         if analysis_errors:
-            formatted_errors = ', '.join(map(str, analysis_errors))
-            raise Exception(f"Error in doc_analysis_chunker analyzing {self.filename}: {formatted_errors}")
+            raise RuntimeError("Document analysis returned errors.")
 
         chunks = self._process_document_chunks(document)
         
@@ -143,6 +145,7 @@ class DocAnalysisChunker(BaseChunker):
         # --- Decide whether we need to split ---
         temp_source: str | None = None
         need_split = False
+        owns_source = False
 
         if self.extension == "pdf":
             # Prefer temp file path from the indexer (already on disk).
@@ -153,30 +156,39 @@ class DocAnalysisChunker(BaseChunker):
                 from utils.file_utils import get_pdf_page_count
                 try:
                     page_count = get_pdf_page_count(self.document_bytes)
-                except Exception:
+                except (PyPdfError, OSError):
+                    logging.warning("[doc_analysis_chunker] PDF page count unavailable; using remote analysis.")
                     page_count = 0
 
                 if page_count > self.max_pages_per_analysis:
                     # Write to disk so split_pdf_to_temp_files can work from file.
                     temp_source = save_bytes_to_temp_file(self.document_bytes, suffix=".pdf")
+                    owns_source = True
                     need_split = True
             elif temp_source:
                 # Already on disk — check page count from file.
                 from pypdf import PdfReader
                 try:
                     page_count = len(PdfReader(temp_source).pages)
-                except Exception:
+                except (PyPdfError, OSError):
+                    logging.warning("[doc_analysis_chunker] PDF page count unavailable; using remote analysis.")
                     page_count = 0
                 need_split = page_count > self.max_pages_per_analysis
 
         if need_split and temp_source:
-            return self._analyze_split_pdf(temp_source, retries)
+            try:
+                return self._analyze_split_pdf(temp_source, retries)
+            finally:
+                if owns_source:
+                    _safe_delete(temp_source)
 
         # --- Standard single-document analysis ---
         return self._analyze_single_document(retries)
 
     def _analyze_single_document(self, retries=3):
         """Analyze a single (non-split) document with retries."""
+        if retries < 1:
+            raise ValueError("Analysis retries must be at least one.")
         file_bytes = self.document_bytes
         if not file_bytes:
             # Fall back to reading from temp file if bytes not in memory.
@@ -191,10 +203,10 @@ class DocAnalysisChunker(BaseChunker):
                     file_bytes=file_bytes, filename=self.filename
                 )
                 return document, analysis_errors
-            except Exception as e:
+            except (AzureError, RequestException):
                 logging.error(
                     f"[doc_analysis_chunker][{self.filename}] analyze document failed "
-                    f"on attempt {attempt + 1}/{retries}: {str(e)}"
+                    f"on attempt {attempt + 1}/{retries}."
                 )
                 if attempt == retries - 1:
                     raise
@@ -202,6 +214,8 @@ class DocAnalysisChunker(BaseChunker):
 
     def _analyze_split_pdf(self, source_path: str, retries=3):
         """Split a large PDF into parts, analyze each, and concatenate results."""
+        if retries < 1:
+            raise ValueError("Analysis retries must be at least one.")
         combined_content_parts: list[str] = []
         all_errors: list = []
         page_offset = 0
@@ -226,11 +240,11 @@ class DocAnalysisChunker(BaseChunker):
                             file_bytes=part_bytes, filename=self.filename
                         )
                         break
-                    except Exception as e:
+                    except (AzureError, RequestException):
                         logging.error(
                             f"[doc_analysis_chunker][{self.filename}] analyze part "
                             f"(offset {page_offset}) failed on attempt "
-                            f"{attempt + 1}/{retries}: {str(e)}"
+                            f"{attempt + 1}/{retries}."
                         )
                         if attempt == retries - 1:
                             raise
