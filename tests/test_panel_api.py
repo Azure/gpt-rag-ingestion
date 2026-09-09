@@ -15,9 +15,9 @@ Covers:
   tenant, 403 without the ``Admin`` role, success with it.
 * `GET/POST /api/panel/feedback` — Cosmos-backed contract, bounded/strict
   request validation, 502 on Cosmos failure.
-* `GET /api/panel/overview` — retains jobs/files on feedback failure, but
-  returns zero or partial feedback counts without an availability signal.
-  These characterization tests do not approve that unresolved contract.
+* `GET /api/panel/overview` — retains jobs/files on failed or partial feedback
+  reads, resetting counts to zero placeholders with ``available=false``.
+  Genuine empty feedback has zero counts with ``available=true``.
 * `GET /api/panel/conversations/{id}/history` — explicit 501 blocker,
   still gated by admin auth.
 """
