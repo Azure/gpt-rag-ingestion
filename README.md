@@ -41,15 +41,8 @@ best-effort local refresh fails. Selector order, configured source order,
 schema/audit bytes, authentication and successful per-record responses remain
 unchanged. Expected SDK/parser recovery is bounded; diagnostic payloads are safe.
 
-App Configuration loads the endpoint with managed identity then Azure CLI
-credentials, falling back only to an explicitly configured
-`AZURE_APPCONFIG_CONNECTION_STRING`. With no connection string, environment-only
-recovery requires the existing `allow_environment_variables` opt-in (unchanged
-nonempty-string parsing). Both provider paths select `gpt-rag-ingestion`,
-`gpt-rag`, then no label with wildcard keys; later selections win.
-Successful fallback emits a safe source diagnostic. Without an enabled fallback,
-the endpoint error propagates; connection-string failures also propagate.
-Environment recovery does not supply missing required settings.
+For App Configuration source order, environment opt-in, fallback diagnostics
+and recovery, see the canonical [ingestion observability guidance](https://azure.github.io/GPT-RAG/services_ingestion/#observability).
 
 Image purging completes its reference scan before deleting anything, including
 references beyond 1,000 results, and uses asynchronous Blob operations.
