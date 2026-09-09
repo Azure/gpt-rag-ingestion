@@ -23,6 +23,13 @@
 
 ### Fixed
 
+- **Explicit configuration fallback and feedback availability.** Preserve
+  endpoint then configured connection-string loading, with safe diagnostics
+  when fallback is used. Environment-only recovery now requires the existing
+  `allow_environment_variables` opt-in; otherwise startup failures propagate.
+  Legacy panel overview adds `feedback.available` and discards incomplete
+  counts so unavailable feedback is distinguishable from genuine zero records.
+
 - **Preserve primary failures and cancellation during finalization.** Keep
   retrieval's sanitized query failure across Search cleanup errors, prevent
   Blob terminal-summary errors from replacing established run failures or

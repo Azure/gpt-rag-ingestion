@@ -84,6 +84,36 @@ def test_real_missing_keys_defaults_empty_values_and_opt_in_environment_preceden
     assert config.get("NUMBER", type=int) == 7
 
 
+@pytest.mark.parametrize("key", ["DATA_INGEST_APP_APIKEY", "INGESTION_APP_APIKEY"])
+def test_api_key_existing_sources_and_environment_opt_in(monkeypatch, key):
+    import dependencies
+    from fastapi import HTTPException
+
+    config = reader(monkeypatch, {key: "configured-key"})
+    monkeypatch.setattr(dependencies, "get_config", lambda: config)
+    monkeypatch.setenv(key, "environment-key")
+    dependencies.validate_api_key_header("configured-key")
+    with pytest.raises(HTTPException) as denied:
+        dependencies.validate_api_key_header("environment-key")
+    assert denied.value.status_code == 401
+    monkeypatch.setenv("allow_environment_variables", "1")
+    dependencies.validate_api_key_header("environment-key")
+
+
+def test_api_key_provider_failure_does_not_fall_back_to_environment(monkeypatch):
+    import dependencies
+
+    class Values(dict):
+        def __getitem__(self, key):
+            raise RuntimeError("private-config-failure")
+
+    config = reader(monkeypatch, Values())
+    monkeypatch.setattr(dependencies, "get_config", lambda: config)
+    monkeypatch.setenv("DATA_INGEST_APP_APIKEY", "environment-key")
+    with pytest.raises(RuntimeError, match="private-config-failure"):
+        dependencies.validate_api_key_header("environment-key")
+
+
 @pytest.mark.parametrize("source", ["endpoint", "connection"])
 def test_constructor_preserves_selectors_and_sdk_last_selected_value(monkeypatch, source):
     appconfig = importlib.import_module("tools.appconfig")
@@ -189,36 +219,44 @@ async def test_provider_read_failure_reaches_startup_before_scheduler_starts(mon
     assert starts == []
 
 
-@pytest.mark.parametrize("fallback", ["environment", "connection", "connection-failure"])
+@pytest.mark.parametrize("fallback", ["environment", "disabled-environment", "connection", "connection-failure"])
 def test_constructor_fallback_keeps_source_contract_without_payloads(monkeypatch, caplog, fallback):
     appconfig = importlib.import_module("tools.appconfig")
     monkeypatch.setenv("APP_CONFIG_ENDPOINT", "https://configuration.example")
     monkeypatch.setenv("FALLBACK_VALUE", "environment")
     monkeypatch.delenv("allow_environment_variables", raising=False)
-    if fallback == "environment":
+    if fallback in ("environment", "disabled-environment"):
         monkeypatch.delenv("AZURE_APPCONFIG_CONNECTION_STRING", raising=False)
     else:
         monkeypatch.setenv("AZURE_APPCONFIG_CONNECTION_STRING", "private-connection")
+    if fallback == "environment":
+        monkeypatch.setenv("allow_environment_variables", "1")
     for name in ("ChainedTokenCredential", "ManagedIdentityCredential", "AzureCliCredential",
                  "AsyncChainedTokenCredential", "AsyncManagedIdentityCredential", "AsyncAzureCliCredential"):
         monkeypatch.setattr(appconfig, name, lambda *args, **kwargs: object())
     failure = RuntimeError("private-connection-error")
+    endpoint_failure = RuntimeError("private-endpoint-error")
     load = Mock(side_effect=[
-        RuntimeError("private-endpoint-error"),
+        endpoint_failure,
         failure if fallback == "connection-failure" else provider({"FALLBACK_VALUE": "connection"}),
     ])
     monkeypatch.setattr(appconfig, "load", load)
-    if fallback == "connection-failure":
+    if fallback in ("connection-failure", "disabled-environment"):
         with pytest.raises(RuntimeError) as raised:
             AppConfigClient()
-        assert raised.value is failure
+        assert raised.value is (failure if fallback == "connection-failure" else endpoint_failure)
+        assert "fallback used:" not in caplog.text
     else:
         config = AppConfigClient()
+        assert "fallback used:" in caplog.text
         assert config.get("FALLBACK_VALUE") == fallback
+        if fallback == "environment":
+            with pytest.raises(Exception, match="not found"):
+                config.get("MISSING_FALLBACK_VALUE")
         monkeypatch.setenv("allow_environment_variables", "1")
         assert config.get("FALLBACK_VALUE") == "environment"
-    assert load.call_count == (1 if fallback == "environment" else 2)
-    if fallback != "environment":
+    assert load.call_count == (1 if fallback in ("environment", "disabled-environment") else 2)
+    if fallback in ("connection", "connection-failure"):
         assert load.call_args.kwargs["connection_string"] == "private-connection"
         primary, secondary = [call.kwargs for call in load.call_args_list]
         assert set(secondary) == {"connection_string", "selects", "key_vault_options"}

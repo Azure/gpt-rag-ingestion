@@ -489,7 +489,7 @@ def test_overview_aggregates_jobs_files_and_feedback(monkeypatch):
     assert body["jobs"]["runningJobTypes"] == ["blob_index"]
     assert body["jobs"]["totalRuns"] == 2
     assert body["files"]["totalFiles"] == 1
-    assert body["feedback"] == {"totalRecords": 3, "upCount": 2, "downCount": 1}
+    assert body["feedback"] == {"available": True, "totalRecords": 3, "upCount": 2, "downCount": 1}
 
     admin_module._cache.pop("runs", None)
     admin_module._cache.pop("files", None)
@@ -506,7 +506,7 @@ def test_overview_degrades_gracefully_when_cosmos_unavailable(monkeypatch):
     r = client.get("/api/panel/overview")
     assert r.status_code == 200
     body = r.json()
-    assert body["feedback"] == {"totalRecords": 0, "upCount": 0, "downCount": 0}
+    assert body["feedback"] == {"available": False, "totalRecords": 0, "upCount": 0, "downCount": 0}
 
     admin_module._cache.pop("runs", None)
     admin_module._cache.pop("files", None)
@@ -518,8 +518,21 @@ def test_overview_requires_admin_role(monkeypatch):
     assert r.status_code == 403
 
 
+def test_overview_genuine_empty_feedback_is_available(monkeypatch):
+    client = _build_client(monkeypatch, tenant_id="tenant-1", claims=_ADMIN_CLAIMS)
+    _FakeCosmosDBClient.documents = []
+    admin = importlib.import_module("api.admin")
+    for key in ("runs", "files"):
+        monkeypatch.setitem(admin._cache, key, (__import__("time").monotonic(), ([], [])))
+    response = client.get("/api/panel/overview")
+    assert response.status_code == 200
+    assert response.json()["feedback"] == {
+        "available": True, "totalRecords": 0, "upCount": 0, "downCount": 0,
+    }
+
+
 @pytest.mark.parametrize("stage", ["constructor", "read", "partial-read", "partial-aggregation"])
-def test_overview_failure_keeps_legacy_counts_without_availability_signal(monkeypatch, caplog, stage):
+def test_overview_failure_marks_feedback_unavailable(monkeypatch, caplog, stage):
     client = _build_client(
         monkeypatch, tenant_id="tenant-1", claims=_ADMIN_CLAIMS,
         config_values={
@@ -582,12 +595,11 @@ def test_overview_failure_keeps_legacy_counts_without_availability_signal(monkey
 
     response = client.get("/api/panel/overview")
     assert response.status_code == 200
-    partial = stage == "partial-aggregation"
     assert response.json() == {
         "mode": "hosted_panel",
         "jobs": {"availableJobTypes": ["blob_index"], "runningJobTypes": ["blob_index"], "totalRuns": 2},
         "files": {"totalFiles": 1},
-        "feedback": {"totalRecords": 2 if partial else 0, "upCount": int(partial), "downCount": int(partial)},
+        "feedback": {"available": False, "totalRecords": 0, "upCount": 0, "downCount": 0},
         "historyAvailable": False,
     }
     assert visited == {

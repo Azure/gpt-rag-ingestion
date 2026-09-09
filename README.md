@@ -37,9 +37,19 @@ Search uploads/deletes, including direct `/ingest-documents`, require matching
 SDK confirmations. Blob/SharePoint permission failures cannot become empty ACLs;
 worker, provider and genuine configuration-application failures remain visible.
 Confirmed configuration writes retain **200/applied** if only the established
-best-effort local refresh fails. Selector order, constructor source fallback,
+best-effort local refresh fails. Selector order, configured source order,
 schema/audit bytes, authentication and successful per-record responses remain
 unchanged. Expected SDK/parser recovery is bounded; diagnostic payloads are safe.
+
+App Configuration loads the endpoint with managed identity then Azure CLI
+credentials, falling back only to an explicitly configured
+`AZURE_APPCONFIG_CONNECTION_STRING`. With no connection string, environment-only
+recovery requires the existing `allow_environment_variables` opt-in (unchanged
+nonempty-string parsing). Both provider paths select `gpt-rag-ingestion`,
+`gpt-rag`, then no label with wildcard keys; later selections win.
+Successful fallback emits a safe source diagnostic. Without an enabled fallback,
+the endpoint error propagates; connection-string failures also propagate.
+Environment recovery does not supply missing required settings.
 
 Image purging completes its reference scan before deleting anything, including
 references beyond 1,000 results, and uses asynchronous Blob operations.
@@ -302,7 +312,7 @@ missing tenant configuration is a hard `500`, never a silent allow.
 | --- | --- |
 | `GET /api/panel/status` | Reports whether the panel is currently enabled and ready (re-checks live config on every call as defense-in-depth against drift, independent of the mount-time decision). |
 | `GET/POST /api/panel/feedback` | Cosmos-backed curation/feedback metadata for hosted conversations (create/list), reusing the same Cosmos account/database contract as the orchestrator's dashboard. |
-| `GET /api/panel/overview` | Aggregates existing jobs, files, and feedback data into a single dashboard-overview payload; degrades gracefully (partial payload) if Cosmos is temporarily unavailable rather than failing the whole request. |
+| `GET /api/panel/overview` | Aggregates jobs, files, and feedback. `feedback.available` is true for a complete read (including genuine zero feedback), false on feedback failure. When false, integer counts are zero placeholders, not observations; jobs/files remain available. This is separate from `/panel/overview/metrics` and its privacy-suppressed null counts. |
 | `GET /api/panel/conversations/{id}/history` | **Not yet implemented (`501`).** Managed Foundry Conversation history retrieval depends on a still-undefined cross-repo API surface between `gpt-rag-ingestion`, `gpt-rag-orchestrator`, and Azure AI Foundry, tracked under [Azure/GPT-RAG#592](https://github.com/Azure/GPT-RAG/issues/592). This service intentionally does not proxy chat execution or fabricate history — only the pieces implementable entirely within this repository are enabled today. |
 
 ## Contributing

@@ -37,8 +37,8 @@ class AppConfigClient:
            later matching selections replace earlier values for duplicate keys
         3. Falls back to connection string if credential auth fails
         4. Uses the existing environment-only adapter when endpoint loading
-           fails and no connection string is configured; connection-string
-           loading failures still propagate
+           fails, no connection string is configured and environment reads
+           are explicitly enabled; otherwise loading failures propagate
         
         Environment Variables Required for Bootstrap:
         - APP_CONFIG_ENDPOINT: Azure App Configuration endpoint (required)
@@ -96,10 +96,14 @@ class AppConfigClient:
                     connection_string=connection_string,
                     key_vault_options=AzureAppConfigurationKeyVaultOptions(credential=self.credential),
                 )
+                logging.warning("App Configuration fallback used: configured connection string.")
             else:
+                if not self.allow_env_vars:
+                    logging.error("App Configuration fallback unavailable: environment reads are not enabled.")
+                    raise
                 # Attempt 3: Last resort fallback - direct environment variable reads (no Azure dependency)
                 logging.warning(
-                    "AZURE_APPCONFIG_CONNECTION_STRING not set; AppConfig lookups will rely on environment variables only."
+                    "App Configuration fallback used: opted-in environment reads; no connection string configured."
                 )
                 # Create a minimal shim that mimics the App Config client interface but reads from os.environ
                 class _EnvOnly:
