@@ -17,7 +17,7 @@ description: GPT-RAG core is a Retrieval-Augmented Generation pattern running in
 
 Part of the [GPT-RAG](https://github.com/Azure/gpt-rag) solution.
 
-The **GPT-RAG Data Ingestion** service automates the processing of diverse document types—such as PDFs, images, spreadsheets, transcripts, and SharePoint files—preparing them for indexing in Azure AI Search. It uses intelligent chunking strategies tailored to each format, generates text and image embeddings, and enables rich, multimodal retrieval experies for agent-based RAG applications.
+The **GPT-RAG Data Ingestion** service automates the processing of diverse document types—such as PDFs, images, spreadsheets, transcripts, and SharePoint files—preparing them for indexing in Azure AI Search. It uses intelligent chunking strategies tailored to each format, generates text and image embeddings, and enables rich, multimodal retrieval experiences for agent-based RAG applications.
 
 For full documentation, visit the **[GPT-RAG documentation site](https://azure.github.io/GPT-RAG/)**.
 
