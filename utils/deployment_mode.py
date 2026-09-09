@@ -31,7 +31,6 @@ Azure/GPT-RAG#592).
 from __future__ import annotations
 
 import enum
-import math  # noqa: F401
 from typing import Any
 
 
