@@ -1,5 +1,12 @@
 # Changelog
 
+## [v2.7.4] - 2026-09-24
+
+### Fixed
+
+- **Container image build no longer fails at `npm ci` with `ERESOLVE`.** Dependency bumps merged for v2.7.1 left the admin frontend with an inconsistent dependency set (`react` 19 with `react-dom` 18, `@types/react` 19 with `@types/react-dom` 18, plus Tailwind 4 and Vite 8 without the matching config migration). `npm ci` in the Dockerfile's frontend stage failed with a peer dependency conflict, so v2.7.1 through v2.7.3 could not be built or deployed. `frontend/package.json` and `frontend/package-lock.json` are restored to the last known-good set shipped in v2.7.0 (React 18, Tailwind 3, Vite 5). No frontend source changed since v2.7.0, so the admin UI is functionally unchanged. `npm ci`, `npm run build`, and `npm test` pass.
+- `VERSION` now matches the released version.
+
 ## [v2.7.3] - 2026-09-03
 
 ### Fixed
