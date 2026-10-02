@@ -164,7 +164,7 @@ def test_constructor_preserves_selectors_and_sdk_last_selected_value(monkeypatch
         instance._dict = instance._process_configurations(settings, wrapper)
         return instance
 
-    monkeypatch.setattr(appconfig, "load", load)
+    monkeypatch.setattr(appconfig, "_provider_load", load)
     config = appconfig.AppConfigClient()
     assert isinstance(config.client, AzureAppConfigurationProvider)
     assert len(captured) == (1 if source == "endpoint" else 2)
@@ -244,7 +244,7 @@ def test_constructor_fallback_keeps_source_contract_without_payloads(monkeypatch
         endpoint_failure,
         failure if fallback == "connection-failure" else provider({"FALLBACK_VALUE": "connection"}),
     ])
-    monkeypatch.setattr(appconfig, "load", load)
+    monkeypatch.setattr(appconfig, "_provider_load", load)
     if fallback in ("connection-failure", "disabled-environment"):
         with pytest.raises(RuntimeError) as raised:
             AppConfigClient()

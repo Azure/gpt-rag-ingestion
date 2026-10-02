@@ -8,7 +8,7 @@ from azure.appconfiguration import AzureAppConfigurationClient
 from azure.core.exceptions import AzureError
 from azure.appconfiguration.provider import (
     AzureAppConfigurationKeyVaultOptions,
-    load,
+    load as _provider_load,
     SettingSelector
 )
 
@@ -27,12 +27,11 @@ def build_label_selectors():
     R14 transition: `agent-lz` is placed after the legacy `gpt-rag` label so it
     takes precedence; `gpt-rag` remains a fallback for one release.
     """
-    return [
+    return with_agentlz_label([
         SettingSelector(label_filter=APP_LABEL, key_filter='*'),
         SettingSelector(label_filter=LEGACY_LABEL, key_filter='*'),
-        SettingSelector(label_filter=AGENTLZ_LABEL, key_filter='*'),
         SettingSelector(label_filter=None, key_filter='*'),
-    ]
+    ])
 
 
 def key_candidates(key: str) -> list[str]:
@@ -42,6 +41,25 @@ def key_candidates(key: str) -> list[str]:
             suffix = key[len(prefix):]
             return [AGENTLZ_KEY_PREFIX + suffix, LEGACY_KEY_PREFIX + suffix]
     return [key]
+
+
+def with_agentlz_label(selects):
+    """Insert the `agent-lz` selector right after the legacy `gpt-rag` selector."""
+    result = []
+    for selector in selects:
+        result.append(selector)
+        if selector.label_filter == LEGACY_LABEL:
+            result.append(SettingSelector(label_filter=AGENTLZ_LABEL, key_filter='*'))
+    return result
+
+
+def load(*, selects, **kwargs):
+    """Load App Configuration with the R14 `agent-lz` label precedence applied.
+
+    Keeps the constructor's reviewed endpoint/fallback block unchanged while
+    every provider call receives the dual-read selector order.
+    """
+    return _provider_load(selects=with_agentlz_label(selects), **kwargs)
 
 
 class AppConfigClient:
@@ -102,12 +120,16 @@ class AppConfigClient:
             AsyncAzureCliCredential()
         )
 
-        selects = build_label_selectors()
+        # Preserve selector order; the provider's last matching selection wins.
+        # `load` inserts the `agent-lz` selector after the legacy `gpt-rag` one.
+        app_label_selector = SettingSelector(label_filter=APP_LABEL, key_filter='*')
+        base_label_selector = SettingSelector(label_filter=LEGACY_LABEL, key_filter='*')
+        no_label_selector = SettingSelector(label_filter=None, key_filter='*')
 
         # Attempt 1: Connect to App Configuration using credential-based auth (Managed Identity or CLI)
         try:
             self.client = load(
-                selects=selects,
+                selects=[app_label_selector, base_label_selector, no_label_selector],
                 endpoint=endpoint,
                 credential=self.credential,
                 key_vault_options=AzureAppConfigurationKeyVaultOptions(credential=self.credential),
@@ -121,7 +143,7 @@ class AppConfigClient:
             connection_string = os.environ.get("AZURE_APPCONFIG_CONNECTION_STRING")
             if connection_string:
                 self.client = load(
-                    selects=selects,
+                    selects=[app_label_selector, base_label_selector, no_label_selector],
                     connection_string=connection_string,
                     key_vault_options=AzureAppConfigurationKeyVaultOptions(credential=self.credential),
                 )

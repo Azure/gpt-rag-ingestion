@@ -46,7 +46,7 @@ def test_constructor_loads_with_dual_label_selectors(monkeypatch):
         return {}
 
     monkeypatch.setenv("APP_CONFIG_ENDPOINT", "https://example.azconfig.io")
-    monkeypatch.setattr(appconfig, "load", fake_load)
+    monkeypatch.setattr(appconfig, "_provider_load", fake_load)
     AppConfigClient()
     assert [s.label_filter for s in captured["selects"]] == ["gpt-rag-ingestion", "gpt-rag", "agent-lz", None]
 
