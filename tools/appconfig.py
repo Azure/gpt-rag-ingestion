@@ -8,11 +8,59 @@ from azure.appconfiguration import AzureAppConfigurationClient
 from azure.core.exceptions import AzureError
 from azure.appconfiguration.provider import (
     AzureAppConfigurationKeyVaultOptions,
-    load,
+    load as _provider_load,
     SettingSelector
 )
 
 from tenacity import retry, wait_random_exponential, stop_after_attempt, retry_if_exception_type
+
+APP_LABEL = 'gpt-rag-ingestion'
+AGENTLZ_LABEL = 'agent-lz'
+LEGACY_LABEL = 'gpt-rag'
+AGENTLZ_KEY_PREFIX = 'AGENTLZ_'
+LEGACY_KEY_PREFIX = 'GPT_RAG_'
+
+
+def build_label_selectors():
+    """Selectors for the provider, whose last matching selection wins.
+
+    R14 transition: `agent-lz` is placed after the legacy `gpt-rag` label so it
+    takes precedence; `gpt-rag` remains a fallback for one release.
+    """
+    return with_agentlz_label([
+        SettingSelector(label_filter=APP_LABEL, key_filter='*'),
+        SettingSelector(label_filter=LEGACY_LABEL, key_filter='*'),
+        SettingSelector(label_filter=None, key_filter='*'),
+    ])
+
+
+def key_candidates(key: str) -> list[str]:
+    """Return lookup order for a key: `AGENTLZ_*` first, then `GPT_RAG_*`."""
+    for prefix in (AGENTLZ_KEY_PREFIX, LEGACY_KEY_PREFIX):
+        if key.startswith(prefix):
+            suffix = key[len(prefix):]
+            return [AGENTLZ_KEY_PREFIX + suffix, LEGACY_KEY_PREFIX + suffix]
+    return [key]
+
+
+def with_agentlz_label(selects):
+    """Insert the `agent-lz` selector right after the legacy `gpt-rag` selector."""
+    result = []
+    for selector in selects:
+        result.append(selector)
+        if selector.label_filter == LEGACY_LABEL:
+            result.append(SettingSelector(label_filter=AGENTLZ_LABEL, key_filter='*'))
+    return result
+
+
+def load(*, selects, **kwargs):
+    """Load App Configuration with the R14 `agent-lz` label precedence applied.
+
+    Keeps the constructor's reviewed endpoint/fallback block unchanged while
+    every provider call receives the dual-read selector order.
+    """
+    return _provider_load(selects=with_agentlz_label(selects), **kwargs)
+
 
 class AppConfigClient:
 
@@ -33,8 +81,10 @@ class AppConfigClient:
         
         Configuration Loading Priority:
         1. Connects to Azure App Configuration using the credential chain
-        2. Loads labels in order: 'gpt-rag-ingestion', 'gpt-rag', no-label;
-           later matching selections replace earlier values for duplicate keys
+        2. Loads labels in order: 'gpt-rag-ingestion', 'gpt-rag', 'agent-lz',
+           no-label; later matching selections replace earlier values for
+           duplicate keys, so 'agent-lz' wins over the transitional 'gpt-rag'
+           label (Agent Landing Zone R14 dual-read)
         3. Falls back to connection string if credential auth fails
         4. Uses the existing environment-only adapter when endpoint loading
            fails, no connection string is configured and environment reads
@@ -71,8 +121,9 @@ class AppConfigClient:
         )
 
         # Preserve selector order; the provider's last matching selection wins.
-        app_label_selector = SettingSelector(label_filter='gpt-rag-ingestion', key_filter='*')
-        base_label_selector = SettingSelector(label_filter='gpt-rag', key_filter='*')
+        # `load` inserts the `agent-lz` selector after the legacy `gpt-rag` one.
+        app_label_selector = SettingSelector(label_filter=APP_LABEL, key_filter='*')
+        base_label_selector = SettingSelector(label_filter=LEGACY_LABEL, key_filter='*')
         no_label_selector = SettingSelector(label_filter=None, key_filter='*')
 
         # Attempt 1: Connect to App Configuration using credential-based auth (Managed Identity or CLI)
@@ -132,14 +183,18 @@ class AppConfigClient:
                     "allow_environment_variables"
                     ])
 
-        if allow_env_vars is True:
-            value = os.environ.get(key)
+        for candidate in key_candidates(key):
+            if allow_env_vars is True:
+                value = os.environ.get(candidate)
 
-        if value is None:
-            try:
-                value = self.get_config_with_retry(name=key)
-            except KeyError:
-                value = None
+            if value is None:
+                try:
+                    value = self.get_config_with_retry(name=candidate)
+                except KeyError:
+                    value = None
+
+            if value is not None:
+                break
 
         if value is not None:
             if type is not None:

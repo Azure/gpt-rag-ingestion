@@ -144,11 +144,14 @@ def test_constructor_preserves_selectors_and_sdk_last_selected_value(monkeypatch
         def list_configuration_settings(self, *, key_filter, label_filter, **kwargs):
             assert key_filter == "*"
             label = None if label_filter in (None, "\0") else label_filter
-            value = {"gpt-rag-ingestion": "ingestion", "gpt-rag": "base", None: "unlabelled"}[label]
-            return Pages([
+            value = {"gpt-rag-ingestion": "ingestion", "gpt-rag": "base", "agent-lz": "agentlz", None: "unlabelled"}[label]
+            settings = [
                 ConfigurationSetting(key="SHARED", label=label, value=value),
                 ConfigurationSetting(key=f"ONLY_{value.upper()}", label=label, value=value),
-            ])
+            ]
+            if label in ("gpt-rag", "agent-lz"):
+                settings.append(ConfigurationSetting(key="PLATFORM_SHARED", label=label, value=value))
+            return Pages(settings)
 
     def load(**kwargs):
         captured.append(kwargs)
@@ -161,16 +164,17 @@ def test_constructor_preserves_selectors_and_sdk_last_selected_value(monkeypatch
         instance._dict = instance._process_configurations(settings, wrapper)
         return instance
 
-    monkeypatch.setattr(appconfig, "load", load)
+    monkeypatch.setattr(appconfig, "_provider_load", load)
     config = appconfig.AppConfigClient()
     assert isinstance(config.client, AzureAppConfigurationProvider)
     assert len(captured) == (1 if source == "endpoint" else 2)
-    assert [item.label_filter for item in captured[-1]["selects"][:2]] == ["gpt-rag-ingestion", "gpt-rag"]
-    assert len(captured[-1]["selects"]) == 3
-    assert captured[-1]["selects"][2].label_filter in (None, "\0")
+    assert [item.label_filter for item in captured[-1]["selects"][:3]] == ["gpt-rag-ingestion", "gpt-rag", "agent-lz"]
+    assert len(captured[-1]["selects"]) == 4
+    assert captured[-1]["selects"][3].label_filter in (None, "\0")
     assert captured[0]["credential"] is config.credential
     assert config.get("SHARED") == "unlabelled"
-    for value in ("ingestion", "base", "unlabelled"):
+    assert config.get("PLATFORM_SHARED") == "agentlz"
+    for value in ("ingestion", "base", "agentlz", "unlabelled"):
         assert config.get(f"ONLY_{value.upper()}") == value
 
 
@@ -240,7 +244,7 @@ def test_constructor_fallback_keeps_source_contract_without_payloads(monkeypatch
         endpoint_failure,
         failure if fallback == "connection-failure" else provider({"FALLBACK_VALUE": "connection"}),
     ])
-    monkeypatch.setattr(appconfig, "load", load)
+    monkeypatch.setattr(appconfig, "_provider_load", load)
     if fallback in ("connection-failure", "disabled-environment"):
         with pytest.raises(RuntimeError) as raised:
             AppConfigClient()
