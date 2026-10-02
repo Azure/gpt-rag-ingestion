@@ -63,8 +63,9 @@ a dedicated chunker. Do not spread extension checks across callers or turn
 ## Data, security, and configuration
 
 - Load runtime configuration through the existing Azure App Configuration
-  provider. Preserve its `gpt-rag-ingestion`, `gpt-rag`, and no-label
-  selectors and verify effective override behavior before changing their
+  provider. Preserve its `gpt-rag-ingestion`, `gpt-rag`, `agent-lz`, and
+  no-label selectors (`agent-lz` overrides `gpt-rag` during the Agent Landing
+  Zone transition) and verify effective override behavior before changing their
   order.
 - Resolve secrets through Key Vault references and prefer managed identity
   with least-privilege RBAC. Never hardcode endpoints, index names, container

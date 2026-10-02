@@ -4,6 +4,13 @@
 
 ### Added
 
+- **Agent Landing Zone R14 dual-read (Azure/GPT-RAG#695).** App Configuration
+  now also loads the `agent-lz` label, which takes precedence over the legacy
+  `gpt-rag` label; `gpt-rag` remains a fallback for this transition release.
+  Keys prefixed `AGENTLZ_` are read first, falling back to the matching
+  `GPT_RAG_` key. The audit telemetry prefix (`gptrag.audit.`) is unchanged
+  because it is pinned by the shared `audit-event-v1` contract.
+
 - **Reviewable Python quality bootstrap.** Add development-only pinned Ruff,
   mypy, Import Linter and Grimp, explicit module/typing inventories,
   individual-debt and handler records, mutation fixtures, and protected-base
