@@ -1,8 +1,9 @@
 """Versioned contract and governance configuration for ingestion audit events.
 
 This module mirrors the shared, versioned audit event contract owned by
-``Azure/GPT-RAG`` and pinned in ``contracts/audit-event-v1.schema.json`` /
-``contracts/audit-event-v1.application-insights.schema.json``. The
+``Azure/GPT-RAG`` and pinned in ``contracts/audit-event-v2.schema.json`` /
+``contracts/audit-event-v2.application-insights.schema.json``
+(``audit-event-v1`` files are kept in ``contracts/`` as history only). The
 orchestrator (``Azure/gpt-rag-orchestrator``) emits ``request.*``,
 ``route.*``, ``tool.*`` and ``outcome.*`` event types; this service emits
 only the seven ``ingestion.*`` event types the shared schema reserves for it.
@@ -20,11 +21,11 @@ from enum import StrEnum
 from typing import Any
 
 
-SCHEMA_VERSION = 1
-SERVICE_NAME = "gpt-rag-ingestion"
+SCHEMA_VERSION = 2
+SERVICE_NAME = "agent-app-ingestion"
 AUDIT_LOGGER_NAME = "gptrag.audit"
 AUDIT_WARNING_LOGGER_NAME = "gptrag.audit_warning"
-AUDIT_EVENT_PREFIX = "gptrag.audit."
+AUDIT_EVENT_PREFIX = "agentlz.audit."
 AUDIT_LOG_BODY = "GPT-RAG audit event"
 ROOT_PARENT_EVENT_ID = f"evt_{'0' * 32}"
 

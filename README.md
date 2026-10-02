@@ -65,7 +65,7 @@ deleted documents.
 ## Governance and audit events
 
 This service emits a versioned, correlated audit trail for ingestion runs and
-document outcomes, sharing the `audit-event-v1` contract owned by
+document outcomes, sharing the `audit-event-v2` contract owned by
 [`Azure/GPT-RAG`](https://github.com/Azure/GPT-RAG) (pinned by SHA-256 in
 [`contracts/`](contracts/) and consumed the same way by
 `gpt-rag-orchestrator`). Reuses the existing OpenTelemetry / Application
@@ -223,7 +223,7 @@ ingestion audit events:
 
 ```kusto
 customEvents
-| where name startswith "gptrag.audit.ingestion"
+| where name startswith "agentlz.audit.ingestion"
 | project timestamp, name, tostring(customDimensions.event_id),
     tostring(customDimensions.correlation_id),
     tostring(customDimensions.parent_event_id),

@@ -94,11 +94,11 @@ def test_successful_run_emits_exactly_one_started_and_one_completed_event(caplog
     assert events[1].parent_event_id == events[0].event_id
     assert (
         getattr(events[0], "microsoft.custom_event.name")
-        == "gptrag.audit.ingestion.run.started"
+        == "agentlz.audit.ingestion.run.started"
     )
     assert (
         getattr(events[1], "microsoft.custom_event.name")
-        == "gptrag.audit.ingestion.run.completed"
+        == "agentlz.audit.ingestion.run.completed"
     )
 
 
@@ -192,7 +192,7 @@ def test_all_event_types_export_with_valid_application_insights_wire_shape(
         (
             Path(__file__).resolve().parents[1]
             / "contracts"
-            / "audit-event-v1.application-insights.schema.json"
+            / "audit-event-v2.application-insights.schema.json"
         ).read_bytes()
     )
     jsonschema.Draft202012Validator(wire_schema).validate(

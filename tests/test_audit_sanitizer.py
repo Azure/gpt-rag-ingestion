@@ -19,7 +19,7 @@ from telemetry.audit_sanitizer import REDACTED, AuditSanitizationError, sanitize
 
 def _base_event():
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "event_id": new_event_id(),
         "event_type": "ingestion.run.started",
         "event_time_utc": format_utc(utc_now()),
@@ -27,7 +27,7 @@ def _base_event():
         "trace_id": "0" * 32,
         "span_id": "0" * 16,
         "parent_event_id": None,
-        "service_name": "gpt-rag-ingestion",
+        "service_name": "agent-app-ingestion",
         "service_version": "1.0.0",
         "environment": "test",
         "operation": "ingestion.run",

@@ -8,8 +8,19 @@
   now also loads the `agent-lz` label, which takes precedence over the legacy
   `gpt-rag` label; `gpt-rag` remains a fallback for this transition release.
   Keys prefixed `AGENTLZ_` are read first, falling back to the matching
-  `GPT_RAG_` key. The audit telemetry prefix (`gptrag.audit.`) is unchanged
-  because it is pinned by the shared `audit-event-v1` contract.
+  `GPT_RAG_` key.
+
+### Changed
+
+- **Audit events move to the `audit-event-v2` contract (breaking for audit
+  queries).** Ingestion audit records now use `customEvents.name` values under
+  `agentlz.audit.ingestion.*` (was `gptrag.audit.ingestion.*`),
+  `schema_version` 2, and `service_name` `agent-app-ingestion`. Field names and
+  semantics are unchanged. The vendored v2 schemas are pinned at
+  `884dfa2441d3313c8ec46a099f60ce86e7abb6cdf88bb5b5da720463edbf5e97` (logical)
+  and `48416073768c0710b9a1f58640d4e822745f28b3a17b3712a2fe4cd9326c9c07`
+  (Application Insights wire); the v1 files remain in `contracts/` as history.
+  Update dashboards and alerts that filter on `gptrag.audit.`.
 
 - **Reviewable Python quality bootstrap.** Add development-only pinned Ruff,
   mypy, Import Linter and Grimp, explicit module/typing inventories,
