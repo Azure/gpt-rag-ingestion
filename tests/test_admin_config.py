@@ -475,7 +475,7 @@ def test_put_config_writes_and_reschedules_cron(monkeypatch):
     written_by_key = {s.key: s for s in state["written"]}
     assert written_by_key["CHUNKING_NUM_TOKENS"].value == "1024"
     assert written_by_key["MULTIMODAL"].value == "true"
-    assert written_by_key["CRON_RUN_BLOB_INDEX"].label == "gpt-rag"
+    assert written_by_key["CRON_RUN_BLOB_INDEX"].label == "agent-lz"
     # AppConfig cache was refreshed.
     assert "refresh" in state["refresh_calls"]
     # Scheduler was rescheduled rather than re-added.

@@ -8,6 +8,7 @@ write endpoint to unblock a file.
 import asyncio
 import json
 import logging
+import os
 import re
 import time
 from datetime import datetime, timezone
@@ -844,9 +845,9 @@ _DENY_TOKENS: frozenset[str] = frozenset(
     }
 )
 
-# App Configuration label all writes go to. Matches the `gpt-rag` selector
+# App Configuration label all writes go to. Matches the `agent-lz` selector
 # in `tools/appconfig.py` so updates surface to every service in the deploy.
-_APP_CONFIG_LABEL = "gpt-rag"
+_APP_CONFIG_LABEL = os.environ.get("APP_CONFIG_LABEL", "agent-lz")
 
 
 def _is_denied(key: str) -> bool:
