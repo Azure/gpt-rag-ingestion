@@ -9,7 +9,7 @@ Documents the four behaviours of `api.admin.require_admin`:
 
 The tests avoid importing `main` (which pulls in the full ingestion stack)
 by mounting only `api.admin.router` on a throwaway FastAPI app and stubbing
-out the bits of `main` that the run-now endpoint imports at call time.
+out the jobs.runtime state that the run-now endpoint imports at call time.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from fastapi.testclient import TestClient
 
 
 def _install_stubs(monkeypatch, *, tenant_id: str | None, claims: dict | Exception | None):
-    """Wire fake `dependencies` + `main` modules so `api.admin` can import them."""
+    """Wire fake dependencies and the canonical jobs.runtime test seam."""
 
     # --- dependencies stub --------------------------------------------------
     class _FakeConfig:
@@ -56,15 +56,15 @@ def _install_stubs(monkeypatch, *, tenant_id: str | None, claims: dict | Excepti
     monkeypatch.setitem(sys.modules, "tools", tools_pkg)
     monkeypatch.setitem(sys.modules, "tools.credentials", credentials_stub)
 
-    # --- main stub (only the symbols run_job_now imports) -------------------
-    main_stub = types.ModuleType("main")
+    # --- runtime stub (only the symbols run_job_now imports) ----------------
+    main_stub = types.ModuleType("jobs.runtime")
 
     async def _noop_job():
         return None
 
     main_stub.JOB_REGISTRY = {"blob_index": _noop_job}
-    main_stub._running_jobs = {}
-    main_stub._running_jobs_lock = asyncio.Lock()
+    main_stub.running_jobs = {}
+    main_stub.running_jobs_lock = asyncio.Lock()
 
     class _FakeScheduler:
         def __init__(self) -> None:
@@ -74,7 +74,8 @@ def _install_stubs(monkeypatch, *, tenant_id: str | None, claims: dict | Excepti
             self.jobs.append({"func": func, **kwargs})
 
     main_stub.scheduler = _FakeScheduler()
-    monkeypatch.setitem(sys.modules, "main", main_stub)
+    main_stub.get_scheduler = lambda: main_stub.scheduler
+    monkeypatch.setitem(sys.modules, "jobs.runtime", main_stub)
     return main_stub
 
 
@@ -141,7 +142,7 @@ def test_run_now_unknown_job_type_returns_404(monkeypatch):
 
 def test_run_now_already_running_returns_409(monkeypatch):
     client, main_stub = _build_client(monkeypatch, tenant_id=None, claims=None)
-    main_stub._running_jobs["blob_index"] = {
+    main_stub.running_jobs["blob_index"] = {
         "run_id": "blob_index",
         "started_at": __import__("datetime").datetime.now(
             tz=__import__("datetime").timezone.utc
@@ -150,6 +151,28 @@ def test_run_now_already_running_returns_409(monkeypatch):
     r = client.post("/api/jobs/blob_index/run")
     assert r.status_code == 409
     assert main_stub.scheduler.jobs == []
+
+
+def test_run_now_scheduler_failure_is_not_queued_and_releases_reservation(monkeypatch):
+    client, runtime = _build_client(monkeypatch, tenant_id=None, claims=None)
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("scheduler unavailable")
+
+    monkeypatch.setattr(runtime.scheduler, "add_job", fail)
+    response = client.post("/api/jobs/blob_index/run")
+    assert response.status_code == 500
+    assert runtime.running_jobs == {}
+    assert runtime.scheduler.jobs == []
+
+    queued = []
+    monkeypatch.setattr(runtime.scheduler, "add_job", lambda *args, **kwargs: queued.append(kwargs))
+    response = client.post("/api/jobs/blob_index/run")
+    assert response.status_code == 202
+    assert len(queued) == 1
+    assert queued[0]["trigger"] == "date"
+    assert queued[0]["replace_existing"] is False
+    assert queued[0]["misfire_grace_time"] is None
 
 
 def test_identity_auth_disabled(monkeypatch):

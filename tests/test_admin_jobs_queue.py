@@ -97,7 +97,7 @@ def _install_stubs(
     monkeypatch.setitem(sys.modules, "tools", tools_pkg)
     monkeypatch.setitem(sys.modules, "tools.credentials", credentials_stub)
 
-    main_stub = types.ModuleType("main")
+    main_stub = types.ModuleType("jobs.runtime")
 
     async def _noop_job():
         return None
@@ -120,8 +120,8 @@ def _install_stubs(
         "CRON_RUN_NL2SQL_INDEX": "nl2sql_index",
         "CRON_RUN_NL2SQL_PURGE": "nl2sql_purge",
     }
-    main_stub._running_jobs = dict(running_jobs or {})
-    main_stub._running_jobs_lock = asyncio.Lock()
+    main_stub.running_jobs = dict(running_jobs or {})
+    main_stub.running_jobs_lock = asyncio.Lock()
 
     class _FakeJob:
         def __init__(self, next_run_time, trigger) -> None:
@@ -149,7 +149,8 @@ def _install_stubs(
             pass
 
     main_stub.scheduler = _FakeScheduler(scheduled_jobs or {})
-    monkeypatch.setitem(sys.modules, "main", main_stub)
+    main_stub.get_scheduler = lambda: main_stub.scheduler
+    monkeypatch.setitem(sys.modules, "jobs.runtime", main_stub)
 
     return {"main": main_stub, "runs": list(runs or [])}
 
@@ -427,4 +428,3 @@ def test_queue_last_run_handles_failed_run_without_indexed_count(monkeypatch):
     assert last is not None
     assert last["status"] == "failed"
     assert last["indexed_count"] is None
-

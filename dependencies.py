@@ -1,9 +1,9 @@
 """
 Provides dependencies for API calls.
 
-This project uses:
-- API key auth for internal ingestion calls (X-API-KEY), except `/ingest-documents`
-- JWT bearer validation for end-user chat uploads (`POST /ingest-documents` only)
+This project uses API-key auth for ingestion calls, including
+`POST /ingest-documents`, and delegated bearer validation for retrieval and
+operator surfaces.
 """
 
 from __future__ import annotations
@@ -67,7 +67,7 @@ def _parse_cache_control_ttl(cache_control_header: str) -> int:
         if part.startswith("max-age="):
             try:
                 return int(part.split("=")[1])
-            except Exception:
+            except ValueError:
                 return 3600
     return 3600
 
@@ -99,11 +99,8 @@ async def _get_cached_jwks(tenant_id: str, jwks_url: str) -> Dict[str, Any]:
 
 
 def _force_refresh_jwks_cache(tenant_id: str) -> None:
-    try:
-        for url in _jwks_urls_for_tenant(tenant_id).values():
-            _JWKS_CACHE.pop(f"{tenant_id}|{url}", None)
-    except Exception:
-        pass
+    for url in _jwks_urls_for_tenant(tenant_id).values():
+        _JWKS_CACHE.pop(f"{tenant_id}|{url}", None)
 
 
 def _config_oauth() -> Tuple[str, str]:
@@ -205,7 +202,7 @@ async def validate_bearer_jwt(
     # Read unverified claims for routing + clearer diagnostics (never trust for auth decisions)
     try:
         unverified = jwt.decode(token, options={"verify_signature": False})
-    except Exception:
+    except jwt.InvalidTokenError:
         unverified = {}
 
     # Graph token hint (common 401 cause)
@@ -232,7 +229,7 @@ async def validate_bearer_jwt(
     # Header -> select key
     try:
         hdr = jwt.get_unverified_header(token)
-    except Exception:
+    except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token.")
     kid = hdr.get("kid")
     x5t = hdr.get("x5t")
@@ -264,7 +261,7 @@ async def validate_bearer_jwt(
             except jwt.InvalidIssuerError as e:
                 last_err = e
                 continue
-            except Exception as e:
+            except (jwt.InvalidTokenError, TypeError, OverflowError) as e:
                 last_err = e
                 break
         return None, last_err

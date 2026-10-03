@@ -1,4 +1,4 @@
-"""Tests for the pinned audit-event-v1 contract and INGESTION_* governance settings.
+"""Tests for the pinned audit-event-v2 contract (v1 kept as history) and INGESTION_* governance settings.
 
 Mirrors the validation style used by ``Azure/gpt-rag-orchestrator`` for the
 same shared contract: hash-pinned artifacts, an exact ingestion event
@@ -48,38 +48,60 @@ class Config:
         return self.values.get(key, default)
 
 
-def test_published_contract_hashes_match_artifacts():
+PINNED_CONTRACTS = {
+    # Current contract: Agent Landing Zone audit-event-v2 (agentlz.audit.*).
+    "audit-event-v2": {
+        "audit-event-v2.schema.json": "884dfa2441d3313c8ec46a099f60ce86e7abb6cdf88bb5b5da720463edbf5e97",
+        "audit-event-v2.application-insights.schema.json": "48416073768c0710b9a1f58640d4e822745f28b3a17b3712a2fe4cd9326c9c07",
+    },
+    # Historical contract kept byte-identical for readers of older events.
+    "audit-event-v1": {
+        "audit-event-v1.schema.json": "825db8ef40a81e2c19e5d80d37c565b6b47fc9a6540e9881d35cc12b8fde5aab",
+        "audit-event-v1.application-insights.schema.json": "066c8f5408610ab839d5121d06ca5bc59e8797e551d5c47c875c5ba52f7e0588",
+    },
+}
+
+CURRENT_LOGICAL = ROOT / "contracts" / "audit-event-v2.schema.json"
+CURRENT_WIRE = ROOT / "contracts" / "audit-event-v2.application-insights.schema.json"
+
+
+@pytest.mark.parametrize("contract", sorted(PINNED_CONTRACTS))
+def test_published_contract_hashes_match_artifacts(contract):
     """The vendored schema copies must stay byte-identical to the pinned SHA-256s.
 
     Reads raw bytes with no line-ending normalization so the pin is stable
     whether the check runs on Windows or inside the Linux container.
     """
     expected = {}
-    for line in (ROOT / "contracts" / "audit-event-v1.sha256").read_bytes().decode(
+    for line in (ROOT / "contracts" / f"{contract}.sha256").read_bytes().decode(
         "utf-8"
     ).splitlines():
         digest, name = line.split(maxsplit=1)
         expected[name] = digest
 
-    assert expected == {
-        "audit-event-v1.schema.json": "825db8ef40a81e2c19e5d80d37c565b6b47fc9a6540e9881d35cc12b8fde5aab",
-        "audit-event-v1.application-insights.schema.json": "066c8f5408610ab839d5121d06ca5bc59e8797e551d5c47c875c5ba52f7e0588",
-    }
+    assert expected == PINNED_CONTRACTS[contract]
 
     for name, digest in expected.items():
         content = (ROOT / "contracts" / name).read_bytes()
         assert hashlib.sha256(content).hexdigest() == digest
 
 
+def test_producer_constants_match_current_contract():
+    from telemetry.audit_contract import (
+        AUDIT_EVENT_PREFIX,
+        SCHEMA_VERSION,
+        SERVICE_NAME,
+    )
+
+    logical_schema = json.loads(CURRENT_LOGICAL.read_bytes())
+    assert SCHEMA_VERSION == logical_schema["properties"]["schema_version"]["const"] == 2
+    assert AUDIT_EVENT_PREFIX == "agentlz.audit."
+    assert SERVICE_NAME == "agent-app-ingestion"
+
+
 def test_ingestion_taxonomy_is_exact_and_matches_both_schemas():
-    logical_schema = json.loads(
-        (ROOT / "contracts" / "audit-event-v1.schema.json").read_bytes()
-    )
-    wire_schema = json.loads(
-        (
-            ROOT / "contracts" / "audit-event-v1.application-insights.schema.json"
-        ).read_bytes()
-    )
+    logical_schema = json.loads(CURRENT_LOGICAL.read_bytes())
+    wire_schema = json.loads(CURRENT_WIRE.read_bytes())
 
     python_event_types = {event_type.value for event_type in EventType}
     assert python_event_types == EXPECTED_INGESTION_EVENT_TYPES
@@ -90,17 +112,16 @@ def test_ingestion_taxonomy_is_exact_and_matches_both_schemas():
     assert EXPECTED_INGESTION_EVENT_TYPES <= set(
         wire_schema["properties"]["properties"]["properties"]["event_type"]["enum"]
     )
+    wire_names = set(wire_schema["properties"]["name"]["enum"])
+    assert all(name.startswith("agentlz.audit.") for name in wire_names)
     assert EXPECTED_INGESTION_EVENT_TYPES <= {
-        name.removeprefix("gptrag.audit.")
-        for name in wire_schema["properties"]["name"]["enum"]
+        name.removeprefix("agentlz.audit.") for name in wire_names
     }
 
 
 def test_legacy_ingestion_aliases_are_rejected_by_the_schema():
     """No document-level alias (``ingestion.document.selected``, etc.) is canonical."""
-    logical_schema = json.loads(
-        (ROOT / "contracts" / "audit-event-v1.schema.json").read_bytes()
-    )
+    logical_schema = json.loads(CURRENT_LOGICAL.read_bytes())
     legacy_aliases = {
         "ingestion.request.started",
         "ingestion.request.completed",
@@ -112,11 +133,16 @@ def test_legacy_ingestion_aliases_are_rejected_by_the_schema():
 
 
 @pytest.mark.parametrize(
-    "fixture_name",
-    ["audit_event_v1_ingestion_run.json", "audit_event_v1_ingestion_document.json"],
+    ("schema_name", "fixture_name"),
+    [
+        ("audit-event-v2.schema.json", "audit_event_v2_ingestion_run.json"),
+        ("audit-event-v2.schema.json", "audit_event_v2_ingestion_document.json"),
+        ("audit-event-v1.schema.json", "audit_event_v1_ingestion_run.json"),
+        ("audit-event-v1.schema.json", "audit_event_v1_ingestion_document.json"),
+    ],
 )
-def test_ingestion_goldens_validate_against_the_logical_schema(fixture_name):
-    schema = json.loads((ROOT / "contracts" / "audit-event-v1.schema.json").read_bytes())
+def test_ingestion_goldens_validate_against_the_logical_schema(schema_name, fixture_name):
+    schema = json.loads((ROOT / "contracts" / schema_name).read_bytes())
     golden = json.loads((ROOT / "tests" / "golden" / fixture_name).read_bytes())
     jsonschema.Draft202012Validator(schema).validate(golden)
 
@@ -143,6 +169,15 @@ def test_defaults_are_fully_disabled():
     assert settings.require_governance_metadata is False
     assert settings.default_classification == "unclassified"
     assert settings.default_right_to_use == "not_asserted"
+
+
+def test_governance_configuration_failure_is_not_a_disabled_default():
+    class BrokenConfig:
+        def get(self, *args, **kwargs):
+            raise RuntimeError("configuration unavailable")
+
+    with pytest.raises(RuntimeError, match="configuration unavailable"):
+        GovernanceSettings.from_config(BrokenConfig())
 
 
 def test_provenance_off_and_governance_on_is_an_invalid_configuration():

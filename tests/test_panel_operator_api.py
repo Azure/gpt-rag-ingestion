@@ -313,6 +313,34 @@ def test_overview_metrics_cosmos_failure_is_502(monkeypatch):
     assert response.status_code == 502
 
 
+def test_overview_metrics_control_store_failure_is_safe_502(monkeypatch, caplog):
+    client, _, _ = _build_client(monkeypatch)
+
+    async def fail(self):
+        raise RuntimeError("private-store-canary")
+
+    store = sys.modules["tools.corpus_curation_store"].CorpusCurationStore
+    monkeypatch.setattr(store, "count_pending_and_decided", fail)
+    response = client.get("/panel/overview/metrics", headers=_auth_header())
+    assert response.status_code == 502
+    assert response.json() == {"detail": "Corpus control store query failed."}
+    assert "private-store-canary" not in response.text + caplog.text
+
+
+def test_decision_unexpected_write_failure_is_safe_502(monkeypatch, caplog):
+    def fail(*args):
+        raise RuntimeError("private-write-canary")
+
+    client, _, _ = _build_client(monkeypatch, store_decision_behavior=fail)
+    response = client.post(
+        f"/panel/corpus-curation/{_VALID_ITEM_ID}/decision",
+        json={"decision": "approve"}, headers=_auth_header(),
+    )
+    assert response.status_code == 502
+    assert response.json() == {"detail": "Corpus control store write failed."}
+    assert "private-write-canary" not in response.text + caplog.text
+
+
 # ---------------------------------------------------------------------------
 # Corpus curation queue: metadata-only shape, cursor round-trip and tamper
 # ---------------------------------------------------------------------------

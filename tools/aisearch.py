@@ -1,9 +1,12 @@
 import logging
+from collections import Counter
+from contextlib import AsyncExitStack
+from math import isfinite
 from azure.search.documents.aio import SearchClient
-from azure.search.documents.models import SearchMode
-from azure.core.exceptions import AzureError
+from azure.search.documents.models import IndexingResult, SearchMode
+from azure.core.exceptions import AzureError, HttpResponseError
 from azure.identity.aio import ManagedIdentityCredential, AzureCliCredential, ChainedTokenCredential
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 from dependencies import get_config
 from tools.credentials import get_azure_client_id
 from telemetry import audit
@@ -14,6 +17,48 @@ _QUERY_SOURCE_AUTHORIZATION_HEADER = "x-ms-query-source-authorization"
 _ELEVATED_API_VERSION = "2025-11-01-preview"
 
 app_config_client = get_config()
+
+
+def confirmed_result_keys(key_values: List[str], result: List[IndexingResult]) -> List[str]:
+    """Return only requested keys confirmed without excess duplicate responses."""
+    requested = Counter(key_values)
+    remaining = requested.copy()
+    response_counts = Counter(res.key for res in result)
+    confirmed = []
+    for res in result:
+        if remaining[res.key] <= 0 or response_counts[res.key] > requested[res.key]:
+            logging.error("[aisearch] Search returned an unexpected result key.")
+            continue
+        remaining[res.key] -= 1
+        if res.succeeded is True:
+            confirmed.append(res.key)
+    return confirmed
+
+
+def require_confirmed_batch(documents: List[Dict[str, Any]], result: List[IndexingResult]) -> None:
+    """Reject a worker batch unless Search confirms every requested document."""
+    keys = [document["id"] for document in documents]
+    if len(confirmed_result_keys(keys, result)) != len(keys):
+        raise AzureError("Search did not confirm every requested document operation.")
+
+
+def search_retry_delay(error: HttpResponseError, default: float) -> float:
+    """Honor SDK retry headers without treating seconds as milliseconds."""
+    headers = error.response.headers if error.response is not None else {}
+    milliseconds = headers.get("retry-after-ms")
+    raw = milliseconds if milliseconds is not None else headers.get("Retry-After")
+    if not raw:
+        return default
+    try:
+        seconds = float(raw) / 1000.0 if milliseconds is not None else float(raw)
+    except (TypeError, ValueError):
+        logging.warning("[aisearch] Invalid retry delay header; using exponential backoff.")
+        return default
+    if not isfinite(seconds) or seconds < 0:
+        logging.warning("[aisearch] Non-finite or negative retry delay; using exponential backoff.")
+        return default
+    return max(default, seconds)
+
 
 class AISearchClient:
     """
@@ -30,17 +75,12 @@ class AISearchClient:
         self.endpoint = f"https://{self.search_service_name}.search.windows.net"
 
         # Initialize the ChainedTokenCredential
-        try:
-            client_id = get_azure_client_id(app_config_client)
-
-            self.credential = ChainedTokenCredential(
-                ManagedIdentityCredential(client_id=client_id),
-                AzureCliCredential()
-            )
-            logging.debug("[aisearch] Initialized ChainedTokenCredential with ManagedIdentity and AzureCliCredential.")
-        except Exception as e:
-            logging.error(f"[aisearch] Failed to initialize credentials: {e}")
-            raise
+        client_id = get_azure_client_id(app_config_client)
+        self.credential = ChainedTokenCredential(
+            ManagedIdentityCredential(client_id=client_id),
+            AzureCliCredential()
+        )
+        logging.debug("[aisearch] Initialized ChainedTokenCredential with ManagedIdentity and AzureCliCredential.")
 
         self.clients = {}  # Cache SearchClient instances per index
 
@@ -55,17 +95,13 @@ class AISearchClient:
             SearchClient: An instance of SearchClient for the specified index.
         """
         if index_name not in self.clients:
-            try:
-                self.clients[index_name] = SearchClient(
-                    endpoint=self.endpoint,
-                    index_name=index_name,
-                    credential=self.credential,
-                    api_version=_ELEVATED_API_VERSION,
-                )
-                logging.debug(f"[aisearch] Initialized SearchClient for index '{index_name}'.")
-            except Exception as e:
-                logging.error(f"[aisearch] Failed to initialize SearchClient for index '{index_name}': {e}")
-                raise
+            self.clients[index_name] = SearchClient(
+                endpoint=self.endpoint,
+                index_name=index_name,
+                credential=self.credential,
+                api_version=_ELEVATED_API_VERSION,
+            )
+            logging.debug(f"[aisearch] Initialized SearchClient for index '{index_name}'.")
         return self.clients[index_name]
 
     async def index_document(self, index_name: str, document: dict) -> bool:
@@ -86,22 +122,15 @@ class AISearchClient:
                 result=result,
                 source_type=index_name,
             )
-            if result and result[0].succeeded:
+            if (len(result) == 1 and result[0].succeeded is True
+                    and result[0].key == document.get("id")):
                 logging.info(f"[aisearch] Successfully indexed document into '{index_name}'.")
                 return True
             else:
-                # Collect error messages when provided by the SDK
-                try:
-                    error_messages = "; ".join([err.get("error", str(err)) for err in (result[0].error_messages or [])])
-                except Exception:
-                    error_messages = "Unknown error"
-                logging.error(f"[aisearch] Failed to index document into '{index_name}': {error_messages}")
+                logging.error("[aisearch] Search did not confirm the document upload.")
                 return False
-        except AzureError as e:
-            logging.error(f"[aisearch] AzureError while indexing document into '{index_name}': {e}")
-            return False
-        except Exception as e:
-            logging.error(f"[aisearch] Unexpected error while indexing document into '{index_name}': {e}")
+        except AzureError:
+            logging.error("[aisearch] Search upload failed.")
             return False
 
     async def delete_document(self, index_name: str, key_field: str, key_value: str):
@@ -113,22 +142,9 @@ class AISearchClient:
             key_field (str): The name of the key field in the index.
             key_value (str): The value of the key field for the document to delete.
         """
-        client = await self.get_search_client(index_name)
-
-        try:
-            result = await client.delete_documents(key_field, [key_value])
-            audit.record_search_batch_result(
-                operation="delete_documents",
-                documents=[{key_field: key_value}],
-                result=result,
-                source_type=index_name,
-                key_field=key_field,
-            )
-            logging.info(f"[aisearch] Successfully deleted document with {key_field}='{key_value}' from '{index_name}'.")
-        except AzureError as e:
-            logging.error(f"[aisearch] AzureError while deleting document from '{index_name}': {e}")
-        except Exception as e:
-            logging.error(f"[aisearch] Unexpected error while deleting document from '{index_name}': {e}")
+        outcome = await self.delete_documents(index_name, key_field, [key_value])
+        if outcome["deleted"] != 1 or outcome["failed"]:
+            raise AzureError("Search did not confirm the requested document deletion.")
 
     async def delete_documents(self, index_name: str, key_field: str, key_values: List[str]) -> Dict[str, int]:
         """
@@ -146,41 +162,25 @@ class AISearchClient:
         client = await self.get_search_client(index_name)
 
         try:
-            # Prepare the delete actions
-            actions = [{"@search.action": "delete", key_field: key_value} for key_value in key_values]
-
-            # Azure AI Search supports batch operations, but there might be limits on batch size.
-            # Here, we assume that the list is within acceptable limits. For very large lists, consider batching.
-            result = await client.upload_documents(documents=actions)
+            documents = [{key_field: key_value} for key_value in key_values]
+            result = await client.delete_documents(documents=documents)
 
             audit.record_search_batch_result(
                 operation="delete_documents",
-                documents=[{key_field: key_value} for key_value in key_values],
+                documents=documents,
                 result=result,
                 source_type=index_name,
                 key_field=key_field,
             )
 
-            # Check results
-            succeeded = 0
-            failed = 0
-            for res in result:
-                if res.succeeded:
-                    succeeded += 1
-                else:
-                    failed += 1
-                    error_messages = "; ".join([error["error"] for error in res.error_messages])
-                    logging.error(f"[aisearch] Failed to delete a document: {error_messages}")
-
+            succeeded = len(confirmed_result_keys(key_values, result))
+            failed = len(key_values) - succeeded
             logging.info(f"[aisearch] Deleted {succeeded} documents from '{index_name}'.")
             if failed > 0:
                 logging.warning(f"[aisearch] Failed to delete {failed} documents from '{index_name}'. Check logs for details.")
             return {"deleted": succeeded, "failed": failed}
-        except AzureError as e:
-            logging.error(f"[aisearch] AzureError while deleting documents from '{index_name}': {e}")
-            return {"deleted": 0, "failed": len(key_values)}
-        except Exception as e:
-            logging.error(f"[aisearch] Unexpected error while deleting documents from '{index_name}': {e}")
+        except AzureError:
+            logging.error("[aisearch] Search deletion failed.")
             return {"deleted": 0, "failed": len(key_values)}
 
     async def search_documents(
@@ -253,22 +253,33 @@ class AISearchClient:
             }
 
         except AzureError as e:
-            logging.error(f"[aisearch] AzureError while searching documents in '{index_name}': {e}")
-            return {"count": 0, "documents": [], "error": str(e)}
+            logging.error("[aisearch] Search query failed (%s)", type(e).__name__)
+            return {"count": 0, "documents": [], "error": "Azure AI Search query failed."}
         except Exception as e:
-            logging.error(f"[aisearch] Unexpected error while searching documents in '{index_name}': {e}")
-            return {"count": 0, "documents": [], "error": str(e)}
+            logging.error("[aisearch] Unexpected Search query failure (%s)", type(e).__name__)
+            return {"count": 0, "documents": [], "error": "Azure AI Search query failed."}
+
+    async def iter_documents(
+        self, index_name: str, select_fields: List[str],
+    ) -> AsyncIterator[Dict[str, Any]]:
+        """Stream every page for service-side maintenance; never return a partial success."""
+        client = await self.get_search_client(index_name)
+        results = await client.search(
+            search_text="*", select=select_fields, headers=_ELEVATED_HEADERS,
+            search_mode=SearchMode.ALL,
+        )
+        async for document in results:
+            yield document
 
     async def close(self):
         """
         Closes all SearchClient instances and the credential.
         """
-        for index_name, client in self.clients.items():
-            await client.close()
-            logging.debug(f"[aisearch] Closed SearchClient for index '{index_name}'.")
+        clients = list(self.clients.values())
         self.clients.clear()
-
-        # Close the ChainedTokenCredential if it has a close method
-        if hasattr(self.credential, "close"):
-            await self.credential.close()
-            logging.debug("[aisearch] Closed ChainedTokenCredential.")
+        async with AsyncExitStack() as cleanup:
+            if hasattr(self.credential, "close"):
+                cleanup.push_async_callback(self.credential.close)
+            for client in reversed(clients):
+                cleanup.push_async_callback(client.close)
+        logging.debug("[aisearch] Closed Search clients and credential.")

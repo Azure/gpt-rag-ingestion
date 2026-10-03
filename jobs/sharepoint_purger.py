@@ -2,12 +2,13 @@ import asyncio
 import inspect
 import json
 import logging
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 import aiohttp
-from azure.core.exceptions import HttpResponseError, ServiceRequestError
+from azure.core.exceptions import AzureError, HttpResponseError, ResourceExistsError, ServiceRequestError
 from azure.identity.aio import AzureCliCredential, ChainedTokenCredential, ManagedIdentityCredential
 from azure.search.documents.aio import SearchClient as AsyncSearchClient
 from azure.storage.blob import ContentSettings
@@ -100,8 +101,8 @@ class SharePointPurger:
 					f"https://{self.cfg.storage_account_name}.blob.core.windows.net",
 					credential=self._credential,
 				)
-			except Exception:
-				logging.warning(f"{PURGE_SCOPE} storage client init failed; disabling storage logs", exc_info=True)
+			except (AzureError, ValueError) as exc:
+				logging.warning("%s Storage log client unavailable (%s)", PURGE_SCOPE, type(exc).__name__)
 				self._blob_service = None
 				self._storage_writable = False
 
@@ -126,25 +127,25 @@ class SharePointPurger:
 		try:
 			if self._search_client:
 				await self._search_client.close()
-		except Exception:
-			logging.debug(f"{PURGE_SCOPE} ignoring error closing search client", exc_info=True)
+		except Exception as exc:
+			logging.warning("%s Search cleanup failed (%s)", PURGE_SCOPE, type(exc).__name__)
 		try:
 			if self._blob_service:
 				await self._blob_service.close()
-		except Exception:
-			logging.debug(f"{PURGE_SCOPE} ignoring error closing blob service", exc_info=True)
+		except Exception as exc:
+			logging.warning("%s Blob cleanup failed (%s)", PURGE_SCOPE, type(exc).__name__)
 		try:
 			if self._kv:
 				await self._kv.close()
-		except Exception:
-			logging.debug(f"{PURGE_SCOPE} ignoring error closing key vault client", exc_info=True)
+		except Exception as exc:
+			logging.warning("%s Key Vault cleanup failed (%s)", PURGE_SCOPE, type(exc).__name__)
 		try:
 			if self._credential and hasattr(self._credential, "close"):
 				res = self._credential.close()
 				if inspect.isawaitable(res):
 					await res
-		except Exception:
-			logging.debug(f"{PURGE_SCOPE} ignoring error closing credential", exc_info=True)
+		except Exception as exc:
+			logging.warning("%s Credential cleanup failed (%s)", PURGE_SCOPE, type(exc).__name__)
 
 	async def _init_storage_logging_guard(self) -> None:
 		disable_logs = str(self._app.get("DISABLE_STORAGE_LOGS", "", allow_none=True) or "").strip().lower()
@@ -170,35 +171,34 @@ class SharePointPurger:
 			await cc.upload_blob(name=probe_blob, data=b"", overwrite=True)
 			try:
 				await cc.delete_blob(probe_blob)
-			except Exception:
-				logging.debug(f"{PURGE_SCOPE} probe delete failed (ignored)", exc_info=True)
+			except AzureError as exc:
+				logging.warning("%s Storage probe cleanup failed (%s)", PURGE_SCOPE, type(exc).__name__)
 
 			self._storage_writable = True
 			logging.info(f"{PURGE_SCOPE} storage logs enabled")
-		except Exception as exc:  # noqa: BLE001
+		except AzureError as exc:
 			self._storage_writable = False
-			logging.warning(f"{PURGE_SCOPE} storage logs disabled (probe failed): {exc}")
+			logging.warning("%s Storage logs disabled; probe failed (%s)", PURGE_SCOPE, type(exc).__name__)
 
 	# ---------- search helpers ----------
 	async def _with_backoff(self, func, **kwargs):
+		from tools.aisearch import search_retry_delay
+
 		delay = 1.0
-		for _ in range(8):
+		for attempt in range(8):
 			try:
 				result = await func(**kwargs)
 			except HttpResponseError as exc:
-				retry = exc.response.headers.get("retry-after-ms") if exc.response else None
-				if retry is None and exc.response:
-					retry = exc.response.headers.get("Retry-After")
-				if retry:
-					try:
-						delay = max(delay, float(retry) / 1000.0)
-					except Exception:
-						pass
-				logging.warning(f"{PURGE_SCOPE} search backoff {delay}s: {exc}")
+				if attempt == 7:
+					raise
+				delay = search_retry_delay(exc, delay)
+				logging.warning("%s Search retry in %ss (%s)", PURGE_SCOPE, delay, type(exc).__name__)
 				await asyncio.sleep(delay)
 				delay = min(delay * 2, 30)
 			except ServiceRequestError as exc:
-				logging.warning(f"{PURGE_SCOPE} network error; retry in {delay}s: {exc}")
+				if attempt == 7:
+					raise
+				logging.warning("%s Search network retry in %ss (%s)", PURGE_SCOPE, delay, type(exc).__name__)
 				await asyncio.sleep(delay)
 				delay = min(delay * 2, 30)
 			else:
@@ -211,6 +211,8 @@ class SharePointPurger:
 				return result
 
 	async def _delete_docs_by_id(self, run_id: str, docs: List[Dict[str, Any]]) -> Tuple[int, int]:
+		from tools.aisearch import confirmed_result_keys
+
 		deleted = 0
 		failed = 0
 		if not docs or not self._search_client:
@@ -220,49 +222,11 @@ class SharePointPurger:
 			try:
 				payload = [{"id": item["id"]} for item in batch]
 				results = await self._with_backoff(self._search_client.delete_documents, documents=payload)
-				result_map: Dict[str, Any] = {}
-				if isinstance(results, list):
-					for res in results:
-						key = getattr(res, "key", None)
-						if key is None and isinstance(res, dict):
-							key = res.get("key")
-						result_map[key] = res
-				for item in batch:
-					key = item.get("id")
-					res = result_map.get(key)
-					if res is not None and isinstance(res, dict):
-						succeeded = res.get("succeeded", True)
-						status_code = res.get("status_code")
-						error_message = res.get("error_message")
-					else:
-						succeeded = getattr(res, "succeeded", True) if res is not None else True
-						status_code = getattr(res, "status_code", None) if res is not None else None
-						error_message = getattr(res, "error_message", None) if res is not None else None
-					if succeeded:
-						deleted += 1
-						status = "deleted"
-						log_level = logging.INFO
-					else:
-						failed += 1
-						status = "delete-failed"
-						log_level = logging.ERROR
-					self._log_event(
-						log_level,
-						"ITEM-COMPLETE",
-						runId=run_id,
-						collection=item.get("collection"),
-						site=item.get("site"),
-						itemId=item.get("itemId"),
-						parentId=item.get("parentId"),
-						docId=key,
-						status=status,
-						reason="missing-sharepoint-item",
-						deleteStatusCode=status_code,
-						errorMessage=error_message,
-					)
-			except Exception as exc:  # noqa: BLE001
+				confirmed = Counter(confirmed_result_keys([item["id"] for item in batch], results))
+				result_map = {result.key: result for result in results}
+			except Exception as exc:
 				failed += len(batch)
-				logging.exception(f"{PURGE_SCOPE} delete_documents failed for batch")
+				logging.error("%s Delete batch failed (%s)", PURGE_SCOPE, type(exc).__name__)
 				for item in batch:
 					self._log_event(
 						logging.ERROR,
@@ -275,8 +239,32 @@ class SharePointPurger:
 						docId=item.get("id"),
 						status="delete-failed",
 						reason="missing-sharepoint-item",
-						errorMessage=str(exc),
+						errorMessage="Search did not confirm deletion.",
 					)
+				continue
+			for item in batch:
+				key = item["id"]
+				succeeded = confirmed[key] > 0
+				if succeeded:
+					confirmed[key] -= 1
+					deleted += 1
+				else:
+					failed += 1
+				result = result_map.get(key)
+				self._log_event(
+					logging.INFO if succeeded else logging.ERROR,
+					"ITEM-COMPLETE",
+					runId=run_id,
+					collection=item.get("collection"),
+					site=item.get("site"),
+					itemId=item.get("itemId"),
+					parentId=item.get("parentId"),
+					docId=key,
+					status="deleted" if succeeded else "delete-failed",
+					reason="missing-sharepoint-item",
+					deleteStatusCode=result.status_code if result is not None else None,
+					errorMessage=None if succeeded else "Search did not confirm deletion.",
+				)
 		return deleted, failed
 
 	# ---------- graph helpers ----------
@@ -326,8 +314,10 @@ class SharePointPurger:
 		try:
 			cc = self._blob_service.get_container_client(self.cfg.jobs_log_container)
 			await cc.create_container()
-		except Exception:
+		except ResourceExistsError:
 			pass
+		except AzureError as exc:
+			logging.warning("%s Log container unavailable (%s)", PURGE_SCOPE, type(exc).__name__)
 
 	async def _write_run_summary(self, run_id: str, summary: Dict[str, Any]) -> None:
 		if self._storage_writable is False or not self._blob_service:
@@ -362,7 +352,7 @@ class SharePointPurger:
 					txt = (await asyncio.wait_for(dl.readall(), timeout=self._blob_op_timeout_s)).decode("utf-8", "ignore")
 					try:
 						on_blob = json.loads(txt)
-					except Exception:
+					except json.JSONDecodeError:
 						on_blob = {}
 					ok = (
 						on_blob.get("runId") == summary.get("runId")
@@ -376,9 +366,9 @@ class SharePointPurger:
 					logging.warning(
 						f"[{self.cfg.indexer_name}] run summary mismatch on {name} (attempt {attempt + 1}); retry in {backoff:.1f}s"
 					)
-				except Exception as exc:  # noqa: BLE001
+				except (AzureError, asyncio.TimeoutError) as exc:
 					logging.warning(
-						f"[{self.cfg.indexer_name}] run summary write failed for {name} (attempt {attempt + 1}): {exc}; "
+						f"[{self.cfg.indexer_name}] run summary write failed for {name} (attempt {attempt + 1}, {type(exc).__name__}); "
 						f"retry in {backoff:.1f}s"
 					)
 				await asyncio.sleep(backoff)
@@ -410,15 +400,15 @@ class SharePointPurger:
 				),
 				timeout=self._blob_op_timeout_s,
 			)
-		except Exception:
-			logging.debug(f"[{self.cfg.indexer_name}] pointer write skipped", exc_info=True)
+		except (AzureError, asyncio.TimeoutError) as exc:
+			logging.warning("%s Summary pointer write failed (%s)", PURGE_SCOPE, type(exc).__name__)
 
 	async def _write_run_summary_safely(self, run_id: str, summary: Dict[str, Any]) -> None:
 		try:
 			await asyncio.wait_for(self._write_run_summary(run_id, summary), timeout=self._run_summary_total_timeout_s)
-		except Exception as exc:  # noqa: BLE001
+		except Exception as exc:
 			logging.warning(
-				f"[{self.cfg.indexer_name}] run summary write skipped/timeout after {self._run_summary_total_timeout_s}s: {exc}"
+				"%s Run summary write failed or timed out (%s)", PURGE_SCOPE, type(exc).__name__,
 			)
 
 	# ---------- purge core ----------
@@ -464,12 +454,9 @@ class SharePointPurger:
 					headers=_ELEVATED_HEADERS,
 				)
 
-			try:
-				total = await results.get_count()
-				if total is not None:
-					logging.info(f"{PURGE_SCOPE} expected docs with source=sharepoint-list: {total}")
-			except Exception:
-				pass
+			total = await results.get_count()
+			if total is not None:
+				logging.info(f"{PURGE_SCOPE} expected docs with source=sharepoint-list: {total}")
 
 			pending_delete_docs: List[Dict[str, Any]] = []
 			seen_collections: Set[str] = set()
@@ -531,6 +518,12 @@ class SharePointPurger:
 
 	# ---------- public entry ----------
 	async def run(self) -> None:
+		try:
+			await self._run_pipeline()
+		finally:
+			await self._close_clients()
+
+	async def _run_pipeline(self) -> None:
 		await self._ensure_clients()
 		run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 		start_iso = _utc_now()
@@ -564,6 +557,8 @@ class SharePointPurger:
 
 		try:
 			await self._scan_and_purge(stats, run_id)
+			if stats.docs_failed_delete:
+				raise AzureError("Search did not confirm every SharePoint deletion.")
 			summary.update(
 				{
 					"collectionsSeen": stats.collections_seen,
@@ -585,10 +580,11 @@ class SharePointPurger:
 			logging.info("[%s] Run cancelled: runId=%s", self.cfg.indexer_name, run_id)
 			raise
 		except Exception as exc:
-			logging.exception("[%s] purger run() failed", self.cfg.indexer_name)
-			summary["error"] = "see function logs for traceback"
+			logging.error("%s Purge run failed (%s)", PURGE_SCOPE, type(exc).__name__)
+			summary["error"] = f"Purge run failed ({type(exc).__name__})."
 			summary["status"] = "failed"
-			self._log_event(logging.ERROR, "RUN-ERROR", runId=run_id, error=str(exc))
+			self._log_event(logging.ERROR, "RUN-ERROR", runId=run_id, error=summary["error"])
+			raise
 		finally:
 			summary.update(
 				{
@@ -611,7 +607,7 @@ class SharePointPurger:
 				finish_dt = _as_dt(summary.get("runFinishedAt")) if summary.get("runFinishedAt") else None
 				if start_dt and finish_dt:
 					duration_seconds = max((finish_dt - start_dt).total_seconds(), 0.0)
-			except Exception:
+			except (ValueError, OverflowError):
 				duration_seconds = None
 			self._log_event(
 				logging.INFO,
@@ -637,4 +633,3 @@ class SharePointPurger:
 				stats.docs_failed_delete,
 				stats.pages_scanned,
 			)
-			await self._close_clients()

@@ -7,3 +7,9 @@ __pycache__
 static
 frontend/node_modules
 frontend/dist
+.artifacts
+.mypy_cache
+.ruff_cache
+.import_linter_cache
+.quality
+requirements-quality.txt

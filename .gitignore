@@ -66,6 +66,10 @@ coverage.xml
 *.cover
 .hypothesis/
 .pytest_cache/
+.artifacts/
+.mypy_cache/
+.ruff_cache/
+.import_linter_cache/
 
 # Translations
 *.mo

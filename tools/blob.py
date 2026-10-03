@@ -26,26 +26,24 @@ class BlobClient:
 
         # 2. Parse the blob URL => account_url, container_name, blob_name
         try:
+            if not isinstance(self.file_url, str):
+                raise ValueError("Blob URL must be a string.")
             parsed_url = urlparse(self.file_url)
             self.account_url = f"{parsed_url.scheme}://{parsed_url.netloc}"   # e.g. https://mystorage.blob.core.windows.net
             self.container_name = parsed_url.path.split("/")[1]              # e.g. 'mycontainer'
             # Blob name is everything after "/{container_name}/"
             self.blob_name = unquote(parsed_url.path[len(f"/{self.container_name}/"):])
             logging.debug(f"[blob][{self.blob_name}] Parsed blob URL successfully.")
-        except Exception as e:
-            logging.error(f"[blob] Invalid blob URL '{self.file_url}': {e}")
-            raise EnvironmentError(f"Invalid blob URL '{self.file_url}': {e}")
+        except (ValueError, IndexError) as e:
+            logging.error("[blob] Invalid blob URL (%s)", type(e).__name__)
+            raise EnvironmentError("Invalid blob URL; check the account, container and blob path.") from None
 
         # 3. Initialize the BlobServiceClient
-        try:
-            self.blob_service_client = BlobServiceClient(
-                account_url=self.account_url, 
-                credential=self.credential
-            )
-            logging.debug(f"[blob][{self.blob_name}] Initialized BlobServiceClient.")
-        except Exception as e:
-            logging.error(f"[blob][{self.blob_name}] Failed to initialize BlobServiceClient: {e}")
-            raise
+        self.blob_service_client = BlobServiceClient(
+            account_url=self.account_url,
+            credential=self.credential
+        )
+        logging.debug(f"[blob][{self.blob_name}] Initialized BlobServiceClient.")
 
     def _get_credential(self, credential):
         """
@@ -57,15 +55,11 @@ class BlobClient:
         client_id = get_azure_client_id(app_config_client)
         
         if credential is None:
-            try:
-                credential = ChainedTokenCredential(
-                    ManagedIdentityCredential(client_id=client_id),
-                    AzureCliCredential()
-                )
-                logging.debug("[blob] Initialized ChainedTokenCredential with ManagedIdentityCredential and AzureCliCredential.")
-            except Exception as e:
-                logging.error(f"[blob] Failed to initialize ChainedTokenCredential: {e}")
-                raise
+            credential = ChainedTokenCredential(
+                ManagedIdentityCredential(client_id=client_id),
+                AzureCliCredential()
+            )
+            logging.debug("[blob] Initialized ChainedTokenCredential with ManagedIdentityCredential and AzureCliCredential.")
         else:
             logging.debug("[blob] Initialized BlobClient with provided credential.")
         return credential
@@ -78,30 +72,22 @@ class BlobClient:
             bytes: The content of the blob.
 
         Raises:
-            Exception: If downloading the blob fails after retries.
+            AzureError: If downloading the blob fails after one SDK retry.
         """
         blob_client = self.blob_service_client.get_blob_client(container=self.container_name, blob=self.blob_name)
-        blob_error = None
-        data = b""
-
         try:
             logging.debug(f"[blob][{self.blob_name}] Attempting to download blob.")
             data = blob_client.download_blob().readall()
             logging.info(f"[blob][{self.blob_name}] Blob downloaded successfully.")
-        except Exception as e:
-            logging.warning(f"[blob][{self.blob_name}] Connection error, retrying in 10 seconds... Error: {e}")
+        except AzureError:
+            logging.warning("[blob] Download failed; retrying once in 10 seconds.")
             time.sleep(10)
             try:
                 data = blob_client.download_blob().readall()
                 logging.info(f"[blob][{self.blob_name}] Blob downloaded successfully on retry.")
-            except Exception as e_retry:
-                blob_error = e_retry
-                logging.error(f"[blob][{self.blob_name}] Failed to download blob after retry: {blob_error}")
-
-        if blob_error:
-            error_message = f"Blob client error when reading from blob storage: {blob_error}"
-            logging.error(f"[blob][{self.blob_name}] {error_message}")
-            raise Exception(error_message)
+            except AzureError:
+                logging.error("[blob] Download failed after retry. Check storage availability and access.")
+                raise
 
         return data
 
@@ -140,15 +126,11 @@ class BlobContainerClient:
         :return: Credential object
         """
         if credential is None:
-            try:
-                credential = ChainedTokenCredential(
-                    ManagedIdentityCredential(),
-                    AzureCliCredential()
-                )
-                logging.debug("[blob] Initialized ChainedTokenCredential with ManagedIdentityCredential and AzureCliCredential.")
-            except Exception as e:
-                logging.error(f"[blob] Failed to initialize ChainedTokenCredential: {e}")
-                raise
+            credential = ChainedTokenCredential(
+                ManagedIdentityCredential(),
+                AzureCliCredential()
+            )
+            logging.debug("[blob] Initialized ChainedTokenCredential with ManagedIdentityCredential and AzureCliCredential.")
         else:
             logging.debug("[blob] Initialized BlobClient with provided credential.")
         return credential

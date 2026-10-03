@@ -1,3 +1,4 @@
+import type { JSX } from "react";
 import { type ConfigSetting } from "../lib/api";
 import { getMeta } from "../config/settingMetadata";
 import { InfoTooltip } from "./InfoTooltip";

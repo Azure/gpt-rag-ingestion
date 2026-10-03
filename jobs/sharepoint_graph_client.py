@@ -12,6 +12,10 @@ from jobs.sharepoint_ingestion_config import LOG_SCOPE, SharePointConfig
 from tools import KeyVaultClient
 
 
+class GraphRequestError(RuntimeError):
+    """A Graph transport operation exhausted its bounded retry budget."""
+
+
 class SharePointGraphClient:
     def __init__(self, cfg: SharePointConfig, key_vault: KeyVaultClient) -> None:
         self.cfg = cfg
@@ -160,11 +164,11 @@ class SharePointGraphClient:
                             continue
                         response.raise_for_status()
                         return await response.read()
-                except Exception as exc:  # noqa: BLE001
+                except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
                     backoff = min(2 ** attempt, 30)
-                    logging.warning(f"{LOG_SCOPE} driveItem download retry in {backoff}s: {exc}")
+                    logging.warning("%s driveItem download retry in %ss (%s)", LOG_SCOPE, backoff, type(exc).__name__)
                     await asyncio.sleep(backoff)
-            raise RuntimeError("driveItem download failed after retries")
+            raise GraphRequestError("driveItem download failed after retries")
 
         item_id = drive_item.get("id")
         drive_id = drive_item.get("parentReference", {}).get("driveId")
@@ -386,7 +390,7 @@ class SharePointGraphClient:
         try:
             UUID(str(value))
             return True
-        except Exception:  # noqa: BLE001
+        except ValueError:
             return False
 
     @classmethod
@@ -442,7 +446,7 @@ class SharePointGraphClient:
                 async with session.get(url, headers=headers, **kwargs) as response:
                     if response.status == 429:
                         retry = int(response.headers.get("Retry-After", "1"))
-                        logging.warning(f"{LOG_SCOPE} 429 {url}; sleeping {retry}s")
+                        logging.warning("%s Graph throttled; sleeping %ss", LOG_SCOPE, retry)
                         await asyncio.sleep(retry)
                         continue
 
@@ -450,32 +454,30 @@ class SharePointGraphClient:
                         return await response.json()
 
                     if 400 <= response.status < 500:
-                        text = await response.text()
                         raise ClientResponseError(
                             request_info=response.request_info,
                             history=response.history,
                             status=response.status,
-                            message=text,
+                            message=f"Graph request failed ({response.status})",
                             headers=response.headers,
                         )
 
-                    text = await response.text()
-                    logging.warning(f"{LOG_SCOPE} {response.status} on {url}; retry in {delay}s: {text[:200]}")
+                    logging.warning("%s Graph status %s; retry in %ss", LOG_SCOPE, response.status, delay)
                     await asyncio.sleep(delay)
                     delay = min(delay * 2, 30)
 
             except ClientResponseError as exc:
                 if 400 <= exc.status < 500 and exc.status != 429:
                     raise
-                logging.warning(f"{LOG_SCOPE} HTTP error; retry in {delay}s: {exc}")
+                logging.warning("%s Graph HTTP error; retry in %ss (status=%s)", LOG_SCOPE, delay, exc.status)
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 30)
-            except Exception as exc:  # noqa: BLE001
-                logging.warning(f"{LOG_SCOPE} GET backoff {delay}s on {url}: {exc}")
+            except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+                logging.warning("%s Graph GET retry in %ss (%s)", LOG_SCOPE, delay, type(exc).__name__)
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 30)
 
-        raise RuntimeError(f"GET failed after retries: {url}")
+        raise GraphRequestError("Graph GET failed after retries.")
 
     async def _gbytes(self, session: aiohttp.ClientSession, url: str) -> bytes:
         headers = {"Authorization": f"Bearer {self._graph_token}"}
@@ -488,11 +490,11 @@ class SharePointGraphClient:
                         continue
                     response.raise_for_status()
                     return await response.read()
-            except Exception as exc:  # noqa: BLE001
+            except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
                 backoff = min(2**attempt, 30)
-                logging.warning(f"{LOG_SCOPE} GET-bytes backoff {backoff}s: {exc}")
+                logging.warning("%s Graph GET-bytes retry in %ss (%s)", LOG_SCOPE, backoff, type(exc).__name__)
                 await asyncio.sleep(backoff)
-        raise RuntimeError(f"GET-bytes failed after retries: {url}")
+        raise GraphRequestError("Graph GET-bytes failed after retries.")
 
     async def download_attachment(self, session: aiohttp.ClientSession, url: str) -> bytes:
         return await self._gbytes(session, url)

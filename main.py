@@ -5,10 +5,11 @@ import logging
 import os
 import time
 import subprocess
+from collections import Counter
 import jsonschema
 import uvicorn
 from tzlocal import get_localzone
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -30,6 +31,14 @@ from telemetry import Telemetry
 from telemetry import audit
 from constants import APPLICATION_INSIGHTS_CONNECTION_STRING, APP_NAME
 from utils.tools import is_azure_environment
+from jobs.runtime import (
+    JOB_CRON_MAP,
+    JOB_REGISTRY,
+    running_jobs as _running_jobs,
+    running_jobs_lock as _running_jobs_lock,
+    set_scheduler,
+    track_running as _track_running,
+)
 from utils.deployment_mode import (
     DeploymentMode,
     PanelResourceError,
@@ -56,78 +65,13 @@ def _resolve_timezone():
     if tz_name:
         try:
             return ZoneInfo(tz_name)
-        except Exception:
+        except (ZoneInfoNotFoundError, ValueError):
             logging.warning(f"Invalid SCHEDULER_TIMEZONE '{tz_name}', defaulting to machine timezone")
     return get_localzone()
 
 local_tz = _resolve_timezone()
 scheduler = AsyncIOScheduler(timezone=local_tz)
-
-# -------------------------------
-# Manual run-now coordination
-# -------------------------------
-# `_running_jobs` is the source of truth for "is this job_type executing right now?".
-# It is consulted both by the manual `POST /api/jobs/{job_type}/run` endpoint to
-# return 409 on concurrent triggers, and by the scheduler wrapper so cron-triggered
-# runs participate in the same mutual exclusion as manual runs.
-#
-# Each entry is keyed by `job_type` and holds:
-#   - ``run_id``: APScheduler job id of the currently executing trigger
-#     (e.g. ``"manual-blob_index-1735592812345"`` or the cron ``job_id``)
-#   - ``started_at``: tz-aware UTC datetime when the wrapper acquired the slot
-#
-# The shape is exposed verbatim by ``GET /api/jobs/queue`` so the operator
-# dashboard can show "what is in flight right now and since when".
-_running_jobs: dict[str, dict] = {}
-_running_jobs_lock = asyncio.Lock()
-
-
-def _track_running(job_id: str, func):
-    """Wrap an async job function so its execution is reflected in `_running_jobs`.
-
-    The wrapper records the APScheduler trigger id and the wall-clock UTC
-    start time so the queue endpoint can report both back to the dashboard.
-    Cron and manual runs share this same path because they both call the
-    wrapped function.
-    """
-
-    async def _wrapped():
-        # The manual endpoint may have pre-filled this slot with the actual
-        # APScheduler trigger id (e.g. ``manual-blob_index-<ts>``) before the
-        # event loop picked up the date trigger. Only fall back to the
-        # registry `job_id` (the cron path) when the slot is empty.
-        async with _running_jobs_lock:
-            if job_id not in _running_jobs:
-                _running_jobs[job_id] = {
-                    "run_id": job_id,
-                    "started_at": datetime.datetime.now(tz=datetime.timezone.utc),
-                }
-        try:
-            return await func()
-        finally:
-            async with _running_jobs_lock:
-                _running_jobs.pop(job_id, None)
-
-    _wrapped.__name__ = getattr(func, "__name__", job_id)
-    return _wrapped
-
-
-# Populated inside lifespan once the job functions are defined.
-JOB_REGISTRY: dict[str, "object"] = {}
-
-# Maps CRON_RUN_* App Configuration keys to the APScheduler `job_id` they drive.
-# Exposed at module scope so `api.admin` (Configuration tab) can reschedule the
-# right job after a PUT /api/config that updates a cron expression — without
-# having to mirror the mapping inside `lifespan` and risk drift.
-JOB_CRON_MAP: dict[str, str] = {
-    "CRON_RUN_SHAREPOINT_INDEX": "sharepoint_index",
-    "CRON_RUN_SHAREPOINT_PURGE": "sharepoint_purge",
-    "CRON_RUN_IMAGES_PURGE": "multimodality_images_purge",
-    "CRON_RUN_BLOB_INDEX": "blob_index",
-    "CRON_RUN_BLOB_PURGE": "blob_purge",
-    "CRON_RUN_NL2SQL_INDEX": "nl2sql_index",
-    "CRON_RUN_NL2SQL_PURGE": "nl2sql_purge",
-}
+set_scheduler(scheduler)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -174,7 +118,8 @@ async def lifespan(app: FastAPI):
         if not is_azure_environment():
             try:
                 has_cli = subprocess.run(["az", "account", "show", "-o", "none"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
-            except Exception:
+            except OSError as exc:
+                logging.warning("[startup] Azure CLI probe unavailable (%s)", type(exc).__name__)
                 has_cli = False
 
         default_require_auth = "false" if is_azure_environment() else "true"
@@ -191,26 +136,20 @@ async def lifespan(app: FastAPI):
 
     # Reduce Azure SDK noise in local/dev logs
     def _quiet_azure_sdks():
-        try:
-            # Reduce noisy Azure SDK and HTTP logging. For the http_logging_policy
-            # (which prints request headers/body) set CRITICAL so info/debug are
-            # suppressed. Also disable propagation and attach a NullHandler to
-            # prevent the messages from reaching the root logger.
-            noisy = [
-                "azure.core.pipeline.policies.http_logging_policy",
-                "azure.core.pipeline.policies",
-                "azure.identity",
-                "azure",
-                "urllib3",
-            ]
-            for name in noisy:
-                lg = logging.getLogger(name)
-                # hide info/debug logs from these loggers
-                lg.setLevel(logging.CRITICAL if name.endswith("http_logging_policy") else logging.WARNING)
-                lg.propagate = False
-                lg.addHandler(logging.NullHandler())
-        except Exception:
-            pass
+        # HTTP logging can include request headers/body; do not silently
+        # continue if configuring its suppression fails.
+        noisy = [
+            "azure.core.pipeline.policies.http_logging_policy",
+            "azure.core.pipeline.policies",
+            "azure.identity",
+            "azure",
+            "urllib3",
+        ]
+        for name in noisy:
+            lg = logging.getLogger(name)
+            lg.setLevel(logging.CRITICAL if name.endswith("http_logging_policy") else logging.WARNING)
+            lg.propagate = False
+            lg.addHandler(logging.NullHandler())
 
     _quiet_azure_sdks()
 
@@ -247,6 +186,11 @@ async def lifespan(app: FastAPI):
     # capture itself is disabled.
     audit.configure(app_config_client)
 
+    # Resolve startup configuration before starting or populating the scheduler.
+    startup_run = (app_config_client.get("RUN_JOBS_ON_STARTUP", "true") or "").lower() in (
+        "true", "1", "yes",
+    )
+
     # Start the scheduler before scheduling any jobs
     scheduler.start()
     logging.info(f"Scheduler timezone: {local_tz}")
@@ -281,59 +225,37 @@ async def lifespan(app: FastAPI):
     from api.admin import _cleanup_old_runs
     _schedule("CRON_RUN_LOG_CLEANUP", _cleanup_old_runs, "log_cleanup", "log-cleanup", default_cron="0 * * * *")
 
-    # Optional: run scheduled jobs once at startup.
-    # WARNING: In Azure, long-running jobs can block app startup/health probes and
-    # cause the container to restart in a loop. Default to OFF in Azure.
-    try:
-        # default_startup_run = "false" if is_azure_environment() else "true"
-        default_startup_run = "true"
-        startup_run = (app_config_client.get("RUN_JOBS_ON_STARTUP", default_startup_run) or "").lower() in (
-            "true",
-            "1",
-            "yes",
-        )
-    except Exception:
-        startup_run = False
-
     startup_task: asyncio.Task | None = None
 
-    async def _run_startup_jobs() -> None:
-        # Always run log cleanup first to reduce blob count
+    async def _run_log_cleanup() -> None:
         try:
             logging.info("[startup] Running log-cleanup immediately")
             await _cleanup_old_runs()
-        except Exception:
-            logging.exception("[startup] Error running log-cleanup")
+        except Exception as exc:
+            logging.error("[startup] Error running log-cleanup (%s)", type(exc).__name__)
 
-        # If a job was scheduled (env var provided or default cron fallback), run it once sequentially.
-        # Only run jobs whose `_schedule` helper returned True.
-        try:
-            if s_blob_index:
-                logging.info("[startup] Running blob-storage-indexer immediately")
-                await _wrapped_jobs["blob_index"]()
-            if s_blob_purge:
-                logging.info("[startup] Running blob-purge immediately")
-                await _wrapped_jobs["blob_purge"]()
-            if s_nl2sql_index:
-                logging.info("[startup] Running nl2sql-indexer immediately")
-                await _wrapped_jobs["nl2sql_index"]()
-            if s_nl2sql_purge:
-                logging.info("[startup] Running nl2sql-purge immediately")
-                await _wrapped_jobs["nl2sql_purge"]()
-            if s_sharepoint_index:
-                logging.info("[startup] Running sharepoint-indexer immediately")
-                await _wrapped_jobs["sharepoint_index"]()
-            if s_sharepoint_purge:
-                logging.info("[startup] Running sharepoint-purger immediately")
-                await _wrapped_jobs["sharepoint_purge"]()
-            if s_images_purge:
-                logging.info("[startup] Running multimodality-images-purger immediately")
-                await _wrapped_jobs["multimodality_images_purge"]()
-        except asyncio.CancelledError:
-            logging.info("[startup] Startup jobs cancelled")
-            raise
-        except Exception:
-            logging.exception("[startup] Error while running immediate scheduled jobs")
+    async def _run_startup_jobs() -> None:
+        await _run_log_cleanup()
+        # Independent startup jobs retain their ordering and failure isolation.
+        for job_id, scheduled, name in (
+            ("blob_index", s_blob_index, "blob-storage-indexer"),
+            ("blob_purge", s_blob_purge, "blob-purge"),
+            ("nl2sql_index", s_nl2sql_index, "nl2sql-indexer"),
+            ("nl2sql_purge", s_nl2sql_purge, "nl2sql-purge"),
+            ("sharepoint_index", s_sharepoint_index, "sharepoint-indexer"),
+            ("sharepoint_purge", s_sharepoint_purge, "sharepoint-purger"),
+            ("multimodality_images_purge", s_images_purge, "multimodality-images-purger"),
+        ):
+            if not scheduled:
+                continue
+            try:
+                logging.info("[startup] Running %s immediately", name)
+                await _wrapped_jobs[job_id]()
+            except asyncio.CancelledError:
+                logging.info("[startup] Startup jobs cancelled")
+                raise
+            except Exception as exc:
+                logging.error("[startup] Job %s failed (%s)", job_id, type(exc).__name__)
 
     if startup_run:
         # Critical: do NOT block lifespan startup. Uvicorn binds its listen socket
@@ -344,13 +266,7 @@ async def lifespan(app: FastAPI):
     else:
         # Even without startup jobs, always run log cleanup
         logging.info("[startup] Skipping immediate job runs (RUN_JOBS_ON_STARTUP!=true)")
-        async def _run_cleanup_only() -> None:
-            try:
-                logging.info("[startup] Running log-cleanup immediately")
-                await _cleanup_old_runs()
-            except Exception:
-                logging.exception("[startup] Error running log-cleanup")
-        startup_task = asyncio.create_task(_run_cleanup_only())
+        startup_task = asyncio.create_task(_run_log_cleanup())
 
     yield
 
@@ -399,95 +315,51 @@ async def readyz():
 # -------------------------------
 # Timer job wrappers
 # -------------------------------
-async def run_sharepoint_index():
-    logging.debug("[sharepoint-indexer] Starting")
-    try:
-        from jobs.sharepoint_indexer import SharePointIndexer
-        await SharePointIndexer().run()
-    except Exception:
-        logging.exception("[sharepoint-indexer] Unexpected error")
-
-async def run_sharepoint_purge():
-    logging.debug("[sharepoint-purger] Starting")
-    try:
-        from jobs.sharepoint_purger import SharepointPurger
-        await SharepointPurger().run()
-    except Exception:
-        logging.exception("[sharepoint-purger] Unexpected error")
-
 async def run_images_purge():
     logging.info("[multimodality_images_purger] Starting")
     multi_var = (app_config_client.get("MULTIMODAL") or "").lower()
     if multi_var not in ("true", "1", "yes"):
         logging.info("[multimodality_images_purger] Skipped (MULTIMODAL!=true)")
         return
-    async with audit.audit_run("multimodality_images_purge") as run:
-        try:
-            from jobs.multimodal_images_purger import ImagesDeletedFilesPurger
-            await ImagesDeletedFilesPurger().run()
-        except Exception:
-            logging.exception("[multimodality_images_purger] Error")
-            run.mark_failed()
+    async with audit.audit_run("multimodality_images_purge"):
+        from jobs.multimodal_images_purger import ImagesDeletedFilesPurger
+        await ImagesDeletedFilesPurger().run()
 
 async def run_blob_index():
     logging.debug("[blob-storage-indexer] Starting")
-    async with audit.audit_run("blob_index") as run:
-        try:
-            from jobs.blob_storage_indexer import BlobStorageDocumentIndexer
-            await BlobStorageDocumentIndexer().run()
-        except Exception:
-            logging.exception("[blob-storage-indexer] Unexpected error")
-            run.mark_failed()
+    async with audit.audit_run("blob_index"):
+        from jobs.blob_storage_indexer import BlobStorageDocumentIndexer
+        await BlobStorageDocumentIndexer().run()
 
 async def run_blob_purge():
     logging.debug("[blob-storage-indexer-purger] Starting")
-    async with audit.audit_run("blob_purge") as run:
-        try:
-            from jobs.blob_storage_indexer import BlobStorageDeletedItemsCleaner
-            await BlobStorageDeletedItemsCleaner().run()
-        except Exception:
-            logging.exception("[blob-storage-indexer-purger] Unexpected error")
-            run.mark_failed()
+    async with audit.audit_run("blob_purge"):
+        from jobs.blob_storage_indexer import BlobStorageDeletedItemsCleaner
+        await BlobStorageDeletedItemsCleaner().run()
 
 async def run_sharepoint_index():
     logging.debug("[sharepoint-indexer] Starting")
-    async with audit.audit_run("sharepoint_index") as run:
-        try:
-            from jobs.sharepoint_indexer import SharePointIndexer
-            await SharePointIndexer().run()
-        except Exception:
-            logging.exception("[sharepoint-indexer] Unexpected error")
-            run.mark_failed()
+    async with audit.audit_run("sharepoint_index"):
+        from jobs.sharepoint_indexer import SharePointIndexer
+        await SharePointIndexer().run()
 
 async def run_sharepoint_purge():
     logging.debug("[sharepoint-purger] Starting")
-    async with audit.audit_run("sharepoint_purge") as run:
-        try:
-            from jobs.sharepoint_purger import SharePointPurger
-            await SharePointPurger().run()
-        except Exception:
-            logging.exception("[sharepoint-purger] Unexpected error")
-            run.mark_failed()
+    async with audit.audit_run("sharepoint_purge"):
+        from jobs.sharepoint_purger import SharePointPurger
+        await SharePointPurger().run()
 
 async def run_nl2sql_index():
     logging.debug("[nl2sql-indexer] Starting")
-    async with audit.audit_run("nl2sql_index") as run:
-        try:
-            from jobs.nl2sql_indexer import NL2SQLIndexer
-            await NL2SQLIndexer().run()
-        except Exception:
-            logging.exception("[nl2sql-indexer] Unexpected error")
-            run.mark_failed()
+    async with audit.audit_run("nl2sql_index"):
+        from jobs.nl2sql_indexer import NL2SQLIndexer
+        await NL2SQLIndexer().run()
 
 async def run_nl2sql_purge():
     logging.debug("[nl2sql-indexer-purger] Starting")
-    async with audit.audit_run("nl2sql_purge") as run:
-        try:
-            from jobs.nl2sql_purger import NL2SQLPurger
-            await NL2SQLPurger().run()
-        except Exception:
-            logging.exception("[nl2sql-indexer-purger] Unexpected error")
-            run.mark_failed()
+    async with audit.audit_run("nl2sql_purge"):
+        from jobs.nl2sql_purger import NL2SQLPurger
+        await NL2SQLPurger().run()
 
 # -------------------------------
 # HTTP-triggered document-chunking
@@ -616,7 +488,7 @@ async def text_embedding(request: Request):
     for item in body["values"]:
         record_id = item.get("recordId")
         input_data = item.get("data", {}).get("text", "")
-        logging.info(f'[text_embedding] Generating embeddings for: {input_data[:10]}…')
+        logging.info("[text_embedding] Generating embeddings for record")
 
         errors = []
         warnings = []
@@ -626,8 +498,8 @@ async def text_embedding(request: Request):
             contentVector = aoai_client.get_embeddings(input_data)
             data_payload = {"embedding": contentVector}
         except Exception as e:
-            error_message = f"Error generating embeddings: {e}"
-            logging.error(f'[text_embedding] {error_message}', exc_info=True)
+            error_message = "Error generating embeddings."
+            logging.error("[text_embedding] Embedding generation failed (%s)", type(e).__name__)
             errors.append({"message": error_message})
 
         values.append({
@@ -689,6 +561,7 @@ async def ingest_documents(request: Request):
     from chunking import DocumentChunker
     from tools import AzureOpenAIClient
     from tools import AISearchClient
+    from tools.aisearch import confirmed_result_keys
     from tools.blob import upload_bytes_to_container
     from jobs.sharepoint_ingestion_config import _make_chunk_key
 
@@ -717,7 +590,7 @@ async def ingest_documents(request: Request):
         # --- Decode base64 ---
         try:
             file_bytes = base64.b64decode(file_b64)
-        except Exception as e:
+        except ValueError as e:
             errors.append({"message": f"Error decoding base64: {e}"})
             results.append({"recordId": record_id, "errors": errors, "warnings": warnings})
             continue
@@ -745,7 +618,8 @@ async def ingest_documents(request: Request):
                     },
                 )
             except Exception as e:
-                warnings.append({"message": f"Blob persistence failed: {e}"})
+                logging.warning("[ingest_documents] Optional Blob persistence failed (%s)", type(e).__name__)
+                warnings.append({"message": "Blob persistence failed: original file not persisted."})
         else:
             warnings.append(
                 {"message": "CONVERSATION_DOCUMENTS_STORAGE_CONTAINER not configured; original file not persisted"}
@@ -763,7 +637,8 @@ async def ingest_documents(request: Request):
             errors.extend(chunk_errors)
             warnings.extend(chunk_warnings)
         except Exception as e:
-            errors.append({"message": f"Chunking error: {e}"})
+            logging.error("[ingest_documents] Chunking failed (%s)", type(e).__name__)
+            errors.append({"message": "Chunking error: document processing failed."})
             results.append({"recordId": record_id, "errors": errors, "warnings": warnings})
             continue
 
@@ -816,23 +691,22 @@ async def ingest_documents(request: Request):
                 documents_to_upload.append(document)
 
             except Exception as e:
-                errors.append({"message": f"Embedding error: {e}"})
+                logging.error("[ingest_documents] Chunk preparation failed (%s)", type(e).__name__)
+                errors.append({"message": "Embedding error: chunk preparation failed."})
 
         # --- Batch upload ---
         indexed_count = 0
 
         if documents_to_upload:
             try:
-                logging.info("About to load")
                 client = await search_client.get_search_client(index_name)
                 result = await client.upload_documents(documents=documents_to_upload)
-                logging.info(result)
-
-                indexed_count = sum(1 for r in result if r.succeeded)
-
-                failed = [r for r in result if not r.succeeded]
-                for f in failed:
-                    errors.append({"message": f"Indexing failed for document id {f.key}"})
+                requested_keys = [document["id"] for document in documents_to_upload]
+                confirmed_keys = confirmed_result_keys(requested_keys, result)
+                indexed_count = len(confirmed_keys)
+                failed_keys = Counter(requested_keys) - Counter(confirmed_keys)
+                for key in failed_keys.elements():
+                    errors.append({"message": f"Indexing failed for document id {key}"})
 
                 audit.record_search_batch_result(
                     operation="upload_documents",
@@ -842,7 +716,8 @@ async def ingest_documents(request: Request):
                 )
 
             except Exception as e:
-                errors.append({"message": f"Batch indexing error: {e}"})
+                logging.error("[ingest_documents] Batch indexing failed (%s).", type(e).__name__)
+                errors.append({"message": "Batch indexing error: Search did not confirm the upload."})
 
         logging.info(
             f"[ingest_documents] File {norm_file_name}: "

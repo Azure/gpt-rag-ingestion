@@ -146,7 +146,7 @@ def _decode_cursor(cursor: str, *, expected_oid: str, config: Any) -> int:
         payload_part, sig_part = cursor.split(".", 1)
         payload_bytes = _b64url_decode(payload_part)
         signature = _b64url_decode(sig_part)
-    except Exception:
+    except ValueError:
         raise HTTPException(status_code=422, detail="Malformed pagination cursor.")
 
     secret = _cursor_secret(config).encode("utf-8")
@@ -156,7 +156,7 @@ def _decode_cursor(cursor: str, *, expected_oid: str, config: Any) -> int:
 
     try:
         payload = json.loads(payload_bytes)
-    except Exception:
+    except (json.JSONDecodeError, UnicodeDecodeError):
         raise HTTPException(status_code=422, detail="Malformed pagination cursor.")
 
     if not isinstance(payload, dict) or payload.get("v") != _CURSOR_VERSION:

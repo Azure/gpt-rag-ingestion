@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "module_ids": ["telemetry.audit_contract", "telemetry.audit_sanitizer", "jobs.runtime"],
+  "coverage_stage": "initial",
+  "planned_expansion": ["typed configuration", "delegated authentication", "retrieval and operator boundaries"],
+  "move_map": [],
+  "review": {
+    "status": "active",
+    "owner": "@placerda",
+    "reference": "https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634",
+    "rationale": "Audit contract seeds plus the new jobs-owned runtime; all new modules become blocking. Explicit administrative initial-adoption approval by Paulo (@placerda), not independent GitHub review; scope and expansion remain unchanged."
+  }
+}

@@ -4,6 +4,9 @@ import os
 import base64
 import re
 import time
+from azure.core.exceptions import AzureError
+from openai import APIError
+from requests import RequestException
 from ..exceptions import UnsupportedFormatError
 from .doc_analysis_chunker import DocAnalysisChunker
 from tools import  BlobClient, DocumentIntelligenceClient, ContentUnderstandingClient
@@ -79,8 +82,7 @@ class MultimodalChunker(DocAnalysisChunker):
         self._analysis_service = "document_intelligence" if isinstance(self._analysis_client, DocumentIntelligenceClient) else "content_understanding"
 
         if analysis_errors:
-            formatted_errors = ', '.join(map(str, analysis_errors))
-            raise Exception(f"Error in doc_analysis_chunker analyzing {self.filename}: {formatted_errors}")
+            raise RuntimeError("Document analysis returned errors.")
 
         chunks = self._process_document_chunks(document)
         return chunks
@@ -397,9 +399,9 @@ class MultimodalChunker(DocAnalysisChunker):
                     # Replace <figureX.Y> with a simpler marker or remove it
                     chunk_content = chunk_content.replace(f"<figure{figure_id}>", f"<figure>{self.image_container}/{blob_name}</figure>")
 
-                except Exception as e:
+                except (AzureError, RequestException):
                     logging.error(
-                        f"[multimodal_chunker][{self.filename}] Error processing figure {figure_id}: {str(e)}"
+                        f"[multimodal_chunker][{self.filename}] Error processing figure {figure_id}."
                     )
 
 
@@ -582,19 +584,18 @@ class MultimodalChunker(DocAnalysisChunker):
             blob_name (str): The name to assign to the uploaded blob.
 
         Returns:
-            str: The URL of the uploaded blob, or an empty string if upload fails.
+            str: The URL of the successfully uploaded blob.
+
+        Raises:
+            AzureError: If the upload fails; the figure boundary decides whether to continue.
         """
-        try:
-            blob_url = f"https://{self.storage_account_name}.blob.core.windows.net/{self.image_container}/{blob_name}"
-            blob_client = BlobClient(blob_url)
-            blob_service_client = blob_client.blob_service_client
-            container_client = blob_service_client.get_container_client(blob_client.container_name)
-            blob_client_instance = container_client.get_blob_client(blob_client.blob_name)
-            blob_client_instance.upload_blob(image_bytes, overwrite=True)
-            return blob_url
-        except Exception as e:
-            logging.error(f"[multimodal_chunker][{self.filename}] Failed to upload figure {blob_name}: {str(e)}")
-            return ""
+        blob_url = f"https://{self.storage_account_name}.blob.core.windows.net/{self.image_container}/{blob_name}"
+        blob_client = BlobClient(blob_url)
+        blob_service_client = blob_client.blob_service_client
+        container_client = blob_service_client.get_container_client(blob_client.container_name)
+        blob_client_instance = container_client.get_blob_client(blob_client.blob_name)
+        blob_client_instance.upload_blob(image_bytes, overwrite=True)
+        return blob_url
 
     def _generate_caption_for_figure(self, figure):
         """
@@ -619,8 +620,8 @@ class MultimodalChunker(DocAnalysisChunker):
             if not caption:
                 logging.warning(f"[multimodal_chunker][{self.filename}] Empty caption returned for figure {figure.get('id', 'unknown')}. Check VISION_DEPLOYMENT_NAME model supports image input.")
                 return "No caption available."
-            logging.debug(f"[multimodal_chunker][{self.filename}] Generated caption for figure {figure.get('id', 'unknown')}: {caption}")
+            logging.debug(f"[multimodal_chunker][{self.filename}] Generated caption for figure {figure.get('id', 'unknown')}.")
             return caption
-        except Exception as e:
-            logging.error(f"[multimodal_chunker][{self.filename}] Failed to generate caption for figure {figure.get('id', 'unknown')}: {str(e)}")
+        except (APIError, AzureError):
+            logging.error(f"[multimodal_chunker][{self.filename}] Failed to generate caption for figure {figure.get('id', 'unknown')}.")
             return "No caption available."

@@ -1,7 +1,7 @@
 import logging
 from azure.identity.aio import ManagedIdentityCredential, AzureCliCredential, ChainedTokenCredential
 from azure.keyvault.secrets.aio import SecretClient as AsyncSecretClient
-from azure.core.exceptions import ResourceNotFoundError, ClientAuthenticationError
+from azure.core.exceptions import AzureError, ResourceNotFoundError, ClientAuthenticationError
 from dependencies import get_config
 from tools.credentials import get_azure_client_id
 
@@ -19,17 +19,12 @@ class KeyVaultClient:
             raise ValueError("KEY_VAULT_URI environment variable not set.")
         
         # Initialize the ChainedTokenCredential with ManagedIdentityCredential and AzureCliCredential
-        try:
-            client_id = get_azure_client_id(app_config_client)
-
-            self.credential = ChainedTokenCredential(
-                ManagedIdentityCredential(client_id=client_id),
-                AzureCliCredential()
-            )
-            logging.debug("[keyvault] Initialized ChainedTokenCredential with ManagedIdentityCredential and AzureCliCredential.")
-        except Exception as e:
-            logging.error(f"[keyvault] Failed to initialize ChainedTokenCredential: {e}")
-            raise
+        client_id = get_azure_client_id(app_config_client)
+        self.credential = ChainedTokenCredential(
+            ManagedIdentityCredential(client_id=client_id),
+            AzureCliCredential()
+        )
+        logging.debug("[keyvault] Initialized ChainedTokenCredential with ManagedIdentityCredential and AzureCliCredential.")
         
         self.clients = {}  # Cache SecretClient instances if needed
 
@@ -41,7 +36,7 @@ class KeyVaultClient:
         secret_name (str): The name of the secret to retrieve.
 
         Returns:
-        str: The value of the secret, or None if not found or an error occurs.
+        str: The value of the secret, or None if not found or the SDK read fails.
         """
         if not self.kv_uri:
             logging.error("[keyvault] Key Vault URI is not configured.")
@@ -58,8 +53,8 @@ class KeyVaultClient:
         except ResourceNotFoundError:
             logging.debug(f"[keyvault] Secret '{secret_name}' not found in the Key Vault.")
             return None
-        except Exception as e:
-            logging.error(f"[keyvault] An unexpected error occurred when reading '{secret_name}': {e}")
+        except AzureError:
+            logging.error("[keyvault] Secret read failed. Check Key Vault availability and access.")
             return None
 
     async def close(self):

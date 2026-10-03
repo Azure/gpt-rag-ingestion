@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import asyncio
+import sys
 from typing import Any, List, Optional
 
 from fastapi import APIRouter, HTTPException, Request, Security
@@ -149,6 +151,7 @@ async def retrieve(
     from tools.aisearch import AISearchClient
 
     client = AISearchClient()
+    query_completed = False
     try:
         try:
             search_result = await client.search_documents(
@@ -169,15 +172,21 @@ async def retrieve(
                 status_code=502,
                 detail="Azure AI Search query failed.",
             ) from None
+        if search_result.get("error"):
+            logging.error("[retrieve] Azure AI Search query failed.")
+            raise HTTPException(
+                status_code=502,
+                detail="Azure AI Search query failed.",
+            )
+        query_completed = True
     finally:
-        await client.close()
-
-    if search_result.get("error"):
-        logging.error("[retrieve] Azure AI Search query failed.")
-        raise HTTPException(
-            status_code=502,
-            detail="Azure AI Search query failed.",
-        )
+        primary = None if query_completed else sys.exception()
+        try:
+            await client.close()
+        except (Exception, asyncio.CancelledError) as exc:
+            logging.warning("[retrieve] Search cleanup attempt failed (%s).", type(exc).__name__)
+            if primary is None:
+                raise
 
     results = [
         ChunkResult(

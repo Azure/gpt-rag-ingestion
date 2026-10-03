@@ -86,8 +86,8 @@ class SharePointMetadataStreamer:
             clean_path = path.replace('"', '')
             try:
                 yield from self._stream_files(self.site_id, self.drive_id, clean_path, folder_regex, file_formats)
-            except Exception as e:
-                logging.error(f"[sharepoint] Error traversing '{clean_path}': {e}")
+            except requests.RequestException as e:
+                logging.error("[sharepoint] Folder traversal failed (%s)", type(e).__name__)
 
     def _stream_files(
         self,
@@ -231,24 +231,19 @@ class SharePointMetadataStreamer:
         """
         url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drives"
 
-        try:
-            json_response = self._make_ms_graph_request(url)
+        json_response = self._make_ms_graph_request(url)
 
-            logging.debug("[sharepoint_files_reader] Successfully retrieved drives from site.")
+        logging.debug("[sharepoint_files_reader] Successfully retrieved drives from site.")
 
-            # Find the drive with the specified name
-            drives = json_response.get("value", [])
-            if not drives:
-                logging.error("[sharepoint_files_reader] No drives found in the site.")
-                raise ValueError("No drives found in the site.")
-            for drive in drives:
-                if drive.get("name") == drive_name:
-                    logging.debug(f"[sharepoint_files_reader] Found drive: {drive_name}")
-                    return drive.get("id")
-        
-        except Exception as err:
-            logging.error(f"[sharepoint_files_reader] Error in get_drive_id: {err}")
-            raise
+        # Find the drive with the specified name
+        drives = json_response.get("value", [])
+        if not drives:
+            logging.error("[sharepoint_files_reader] No drives found in the site.")
+            raise ValueError("No drives found in the site.")
+        for drive in drives:
+            if drive.get("name") == drive_name:
+                logging.debug(f"[sharepoint_files_reader] Found drive: {drive_name}")
+                return drive.get("id")
     
     def _get_sub_site(
         self, site_id: str, site_name: str, access_token: Optional[str] = None
@@ -269,8 +264,8 @@ class SharePointMetadataStreamer:
                 if site.get("name") == site_name:
                     logging.debug(f"[sharepoint_files_reader] Found sub-site: {site_name}")
                     return site.get("id")
-        except Exception as err:
-            logging.error(f"[sharepoint_files_reader] Error retrieving sub Site ID: {err}")
+        except requests.RequestException as err:
+            logging.error("[sharepoint_files_reader] Sub-site lookup failed (%s)", type(err).__name__)
             return None
 
     def _make_ms_graph_request(
@@ -385,8 +380,8 @@ class SharePointMetadataStreamer:
                 # if clean_path.lower().startswith("practica") and "_2025" in clean_path:
                 logging.info(f"CLEAN PATH {clean_path}")
                 traverse(clean_path)
-            except Exception as e:
-                logging.error(f"[sharepoint] Error traversing '{clean_path}': {e}")
+            except requests.RequestException as e:
+                logging.error("[sharepoint] Folder traversal failed (%s)", type(e).__name__)
                 continue
 
         return collected

@@ -9,16 +9,16 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import quote
 
 import aiohttp
-from azure.core.exceptions import HttpResponseError, ResourceNotFoundError, ServiceRequestError
+from azure.core.exceptions import AzureError, HttpResponseError, ResourceExistsError, ResourceNotFoundError, ServiceRequestError
 from azure.identity.aio import AzureCliCredential, ChainedTokenCredential, ManagedIdentityCredential
 from azure.search.documents.aio import SearchClient as AsyncSearchClient
 from azure.storage.blob import ContentSettings
 from azure.storage.blob.aio import BlobServiceClient
-from openai import RateLimitError
+from openai import APIConnectionError, InternalServerError, RateLimitError
 
 from chunking import DocumentChunker
 from dependencies import get_config
-from .sharepoint_graph_client import SharePointGraphClient
+from .sharepoint_graph_client import GraphRequestError, SharePointGraphClient
 from .sharepoint_ingestion_config import (
     LOG_SCOPE,
     LIST_TYPE_DOCUMENT_LIBRARY,
@@ -139,8 +139,8 @@ class SharePointIndexer:
                     f"https://{self.cfg.storage_account_name}.blob.core.windows.net",
                     credential=self._credential
                 )
-            except Exception:
-                logging.warning("[sp-ingest] storage client init failed; disabling storage logs", exc_info=True)
+            except (AzureError, ValueError) as exc:
+                logging.warning("[sp-ingest] Storage log client unavailable (%s)", type(exc).__name__)
                 self._blob_service = None
                 self._storage_writable = False
 
@@ -195,63 +195,51 @@ class SharePointIndexer:
             await cc.upload_blob(name=probe_name, data=b"", overwrite=True)
             try:
                 await cc.delete_blob(probe_name)
-            except Exception:
+            except AzureError as exc:
                 # Not critical — but we tried; avoid failing the run
-                logging.debug("[sp-ingest] probe blob delete failed (ignoring)", exc_info=True)
+                logging.warning("[sp-ingest] Storage probe cleanup failed (%s)", type(exc).__name__)
 
             self._storage_writable = True
             logging.info("[sp-ingest] storage logs enabled")
-        except Exception as e:
+        except AzureError as e:
             # Any auth/perm/network error → disable storage logging
             self._storage_writable = False
-            logging.warning(f"[sp-ingest] storage logs disabled (probe failed): {e}")
+            logging.warning("[sp-ingest] Storage logs disabled; probe failed (%s)", type(e).__name__)
 
     async def _close_clients(self):
         try:
             if self._search_client:
                 await self._search_client.close()
-        except Exception:
-            logging.debug("[sp-ingest] ignoring error closing search client", exc_info=True)
+        except Exception as exc:
+            logging.warning("[sp-ingest] Search cleanup failed (%s)", type(exc).__name__)
         try:
             if self._blob_service:
                 await self._blob_service.close()
-        except Exception:
-            logging.debug("[sp-ingest] ignoring error closing blob service", exc_info=True)
+        except Exception as exc:
+            logging.warning("[sp-ingest] Blob cleanup failed (%s)", type(exc).__name__)
         try:
             if self._kv:
                 await self._kv.close()
-        except Exception:
-            logging.debug("[sp-ingest] ignoring error closing keyvault", exc_info=True)
+        except Exception as exc:
+            logging.warning("[sp-ingest] Key Vault cleanup failed (%s)", type(exc).__name__)
         try:
             if self._credential and hasattr(self._credential, "close"):
                 res = self._credential.close()
                 if inspect.isawaitable(res):
                     await res
-        except Exception:
-            logging.debug("[sp-ingest] ignoring error closing credential", exc_info=True)
+        except Exception as exc:
+            logging.warning("[sp-ingest] Credential cleanup failed (%s)", type(exc).__name__)
 
     async def _hydrate_site_configs_from_cosmos(self) -> None:
         """Load SharePoint site configurations from Cosmos DB once per run."""
         if self._cosmos_sites_loaded:
             return
 
-        self._cosmos_sites_loaded = True
-
         if not self._cosmos_client:
-            logging.warning("%s CosmosDBClient not initialized; skipping Cosmos site configs", LOG_SCOPE)
-            return
+            raise RuntimeError("Cosmos datasource client is not initialized.")
 
-        try:
-            documents = await self._cosmos_client.list_documents(self._cosmos_datasource_container)
-        except Exception as exc:  # noqa: BLE001
-            logging.warning(
-                "%s Failed to load datasources from Cosmos container '%s': %s",
-                LOG_SCOPE,
-                self._cosmos_datasource_container,
-                exc,
-            )
-            return
-
+        documents = await self._cosmos_client.list_documents(self._cosmos_datasource_container)
+        self._cosmos_sites_loaded = True
         site_docs: List[Dict[str, Any]] = []
         for doc in documents:
             if isinstance(doc, dict) and (doc.get("type") or "").lower() == "sharepoint_site":
@@ -385,10 +373,9 @@ class SharePointIndexer:
         lookup_map: Dict[str, LookupFieldMetadata] = {}
         try:
             columns = await self._graph_client.get_lookup_columns(session, site_id, collection_id)
-        except Exception:
+        except (aiohttp.ClientError, GraphRequestError) as exc:
             logging.warning(
-                f"[{self.cfg.indexer_name}] Failed to load lookup columns for list {collection_id}",
-                exc_info=True,
+                "[%s] Lookup metadata unavailable (%s)", self.cfg.indexer_name, type(exc).__name__,
             )
             self._lookup_columns_cache[cache_key] = lookup_map
             return lookup_map
@@ -524,11 +511,8 @@ class SharePointIndexer:
                 metadata = await self._graph_client.get_list_metadata(session, site_id, collection_id)
                 list_name = metadata.get("displayName") or metadata.get("name") or list_name
                 base_url = metadata.get("webUrl") or ""
-            except Exception:
-                logging.debug(
-                    f"[{self.cfg.indexer_name}] Failed to load list metadata for list {collection_id}",
-                    exc_info=True,
-                )
+            except (aiohttp.ClientError, GraphRequestError) as exc:
+                logging.warning("[%s] Navigation metadata unavailable (%s)", self.cfg.indexer_name, type(exc).__name__)
 
         if not base_url and list_name:
             safe_list = quote(list_name, safe="")
@@ -562,8 +546,8 @@ class SharePointIndexer:
         except ResourceNotFoundError:
             logging.debug(f"[{self.cfg.indexer_name}][FRESHNESS] Body doc NOT found in index | parentId={parent_id} key={key} reason=ResourceNotFoundError")
             return None
-        except Exception as e:
-            logging.warning(f"[{self.cfg.indexer_name}][FRESHNESS] Failed to get body doc | parentId={parent_id} key={key} error={str(e)}", exc_info=True)
+        except AzureError as e:
+            logging.warning("[%s] Freshness check unavailable; reindexing (%s)", self.cfg.indexer_name, type(e).__name__)
             return None
 
     # ---------- search helpers for freshness ----------
@@ -603,8 +587,9 @@ class SharePointIndexer:
                         continue
                     if latest is None or dtp > latest:
                         latest = dtp
-        except Exception:
-            logging.warning("[sp-ingest] failed to read latest mod time from index for %s", parent_id, exc_info=True)
+        except AzureError as exc:
+            logging.warning("[sp-ingest] Freshness scan unavailable; reindexing (%s)", type(exc).__name__)
+            return None
 
         return latest
 
@@ -652,26 +637,23 @@ class SharePointIndexer:
 
     # ---------- search ops ----------
     async def _with_backoff(self, func, **kw):
+        from tools.aisearch import require_confirmed_batch, search_retry_delay
+
         delay = 1.0
-        for _ in range(8):
+        for attempt in range(8):
             try:
                 result = await func(**kw)
             except HttpResponseError as e:
-                ra = None
-                try:
-                    ra = e.response.headers.get("retry-after-ms") or e.response.headers.get("Retry-After")
-                except Exception:
-                    pass
-                if ra:
-                    try:
-                        delay = max(delay, float(ra) / 1000.0)
-                    except Exception:
-                        pass
-                logging.warning(f"[sp-ingest] search backoff {delay}s: {e}")
+                if attempt == 7:
+                    raise
+                delay = search_retry_delay(e, delay)
+                logging.warning("[sp-ingest] Search retry in %ss (%s)", delay, type(e).__name__)
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 30)
             except ServiceRequestError as e:
-                logging.warning(f"[sp-ingest] network error; retry in {delay}s: {e}")
+                if attempt == 7:
+                    raise
+                logging.warning("[sp-ingest] Search network retry in %ss (%s)", delay, type(e).__name__)
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 30)
             else:
@@ -681,6 +663,8 @@ class SharePointIndexer:
                     result=result,
                     source_type=self.cfg.indexer_name,
                 )
+                if getattr(func, "__name__", "") in {"upload_documents", "delete_documents"}:
+                    require_confirmed_batch(kw["documents"], result)
                 return result
 
     async def _delete_parent_docs(self, parent_id: str):
@@ -757,34 +741,28 @@ class SharePointIndexer:
         if not self._graph_client:
             return ([], [])
 
-        try:
-            user_ids, group_ids = await self._graph_client.get_item_permission_principal_ids(
-                session=session,
-                site_id=site_id,
-                collection_id=collection_id,
-                item_id=item_id,
-            )
+        user_ids, group_ids = await self._graph_client.get_item_permission_principal_ids(
+            session=session,
+            site_id=site_id,
+            collection_id=collection_id,
+            item_id=item_id,
+        )
 
-            before_users = len(user_ids)
-            before_groups = len(group_ids)
-            user_ids = self._normalize_acl_ids(user_ids, max_values=32)
-            group_ids = self._normalize_acl_ids(group_ids, max_values=32)
-            if len(user_ids) != before_users or len(group_ids) != before_groups:
-                logging.warning(
-                    f"[{self.cfg.indexer_name}][SECURITY] Truncated/deduped ACLs | itemId={item_id} "
-                    f"users={before_users}->{len(user_ids)} groups={before_groups}->{len(group_ids)}"
-                )
-
-            if user_ids or group_ids:
-                logging.debug(
-                    f"[{self.cfg.indexer_name}][SECURITY] Resolved permissions | itemId={item_id} users={len(user_ids)} groups={len(group_ids)}"
-                )
-            return (user_ids, group_ids)
-        except Exception as exc:  # noqa: BLE001
+        before_users = len(user_ids)
+        before_groups = len(group_ids)
+        user_ids = self._normalize_acl_ids(user_ids, max_values=32)
+        group_ids = self._normalize_acl_ids(group_ids, max_values=32)
+        if len(user_ids) != before_users or len(group_ids) != before_groups:
             logging.warning(
-                f"[{self.cfg.indexer_name}][SECURITY] Failed to resolve permissions | itemId={item_id} error={exc}"
+                f"[{self.cfg.indexer_name}][SECURITY] Truncated/deduped ACLs | itemId={item_id} "
+                f"users={before_users}->{len(user_ids)} groups={before_groups}->{len(group_ids)}"
             )
-            return ([], [])
+
+        if user_ids or group_ids:
+            logging.debug(
+                f"[{self.cfg.indexer_name}][SECURITY] Resolved permissions | itemId={item_id} users={len(user_ids)} groups={len(group_ids)}"
+            )
+        return (user_ids, group_ids)
 
     @staticmethod
     def _normalize_acl_ids(values: List[str], *, max_values: int = 32) -> List[str]:
@@ -826,8 +804,7 @@ class SharePointIndexer:
         - bounded retries for RateLimitError (429), honoring Retry-After headers
         - bounded retries for other transient errors (network, 5xx)
         """
-        text_preview = text[:100] if text else ""
-        logging.debug(f"[{self.cfg.indexer_name}][EMBEDDING] Starting embedding generation | textLength={len(text)} textPreview={text_preview}...")
+        logging.debug("[%s][EMBEDDING] Starting embedding generation | textLength=%s", self.cfg.indexer_name, len(text))
         
         async with self._aoai_sem:
             backoff = 1.0
@@ -852,8 +829,8 @@ class SharePointIndexer:
                                 wait_s = max(float(hdrs["retry-after-ms"]) / 1000.0, 0.5)
                             elif "Retry-After" in hdrs:
                                 wait_s = max(float(hdrs["Retry-After"]), 0.5)
-                    except Exception:
-                        pass
+                    except (TypeError, ValueError):
+                        logging.warning("[sp-ingest] Invalid embedding retry header; using exponential backoff")
 
                     if wait_s is None:
                         wait_s = backoff
@@ -874,14 +851,14 @@ class SharePointIndexer:
                     await asyncio.sleep(sleep_s)
                     backoff = min(backoff * 2, self._aoai_backoff_cap)
 
-                except (ServiceRequestError, TimeoutError, OSError) as e:
+                except (APIConnectionError, InternalServerError, ServiceRequestError, TimeoutError, OSError) as e:
                     transient_tries += 1
                     jitter = random.uniform(0, max(0.25 * backoff, 0.1))
                     sleep_s = min(backoff + jitter, self._aoai_backoff_cap)
                     logging.warning(
                         f"[{self.cfg.indexer_name}][EMBEDDING] Transient error | "
                         f"errorType={type(e).__name__} attempt={transient_tries}/{self._aoai_transient_tries} "
-                        f"retryAfterSeconds={sleep_s:.2f} textLength={len(text)} error={str(e)}"
+                        f"retryAfterSeconds={sleep_s:.2f} textLength={len(text)}"
                     )
                     if transient_tries >= self._aoai_transient_tries:
                         logging.error(
@@ -891,11 +868,6 @@ class SharePointIndexer:
                         raise
                     await asyncio.sleep(sleep_s)
                     backoff = min(backoff * 2, self._aoai_backoff_cap)
-
-                except Exception as e:
-                    # Unknown / non-transient → bubble up (keeps your current error reporting for truly fatal cases)
-                    logging.error(f"[{self.cfg.indexer_name}][EMBEDDING] Fatal error | errorType={type(e).__name__} textLength={len(text)} error={str(e)}", exc_info=True)
-                    raise
 
     def _doc_for_item(
         self,
@@ -1093,8 +1065,10 @@ class SharePointIndexer:
         try:
             cc = self._blob_service.get_container_client(self.cfg.jobs_log_container)
             await cc.create_container()
-        except Exception:
+        except ResourceExistsError:
             pass
+        except AzureError as exc:
+            logging.warning("[%s] Log container unavailable (%s)", self.cfg.indexer_name, type(exc).__name__)
 
     async def _read_file_log(self, blob_name: str) -> Optional[Dict[str, Any]]:
         """Read existing file log JSON from the jobs container. Returns None if not found."""
@@ -1107,7 +1081,10 @@ class SharePointIndexer:
             download = await blob_client.download_blob()
             raw = await download.readall()
             return json.loads(raw)
-        except Exception:
+        except ResourceNotFoundError:
+            return None
+        except (AzureError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+            logging.warning("[%s] Previous file log unavailable (%s)", self.cfg.indexer_name, type(exc).__name__)
             return None
 
     async def _write_file_log(self, blob_name: str, payload: Dict[str, Any]):
@@ -1125,9 +1102,8 @@ class SharePointIndexer:
                 ),
                 timeout=self._blob_op_timeout_s,
             )
-        except Exception:
-            # Do not raise; just log locally and continue
-            logging.exception(f"[{self.cfg.indexer_name}] failed to write file log {blob_name}")
+        except (AzureError, asyncio.TimeoutError) as exc:
+            logging.warning("[%s] File log write failed (%s)", self.cfg.indexer_name, type(exc).__name__)
 
     async def _write_run_summary(self, run_id: str, summary: Dict[str, Any]):
         # If we positively know storage is not writable, skip. If it's None, still try.
@@ -1164,7 +1140,7 @@ class SharePointIndexer:
                     txt = (await asyncio.wait_for(dl.readall(), timeout=self._blob_op_timeout_s)).decode("utf-8", "ignore")
                     try:
                         on_blob = json.loads(txt)
-                    except Exception:
+                    except json.JSONDecodeError:
                         on_blob = {}
 
                     ok = (
@@ -1183,10 +1159,10 @@ class SharePointIndexer:
                         f"[{self.cfg.indexer_name}] run summary mismatch on {blob_name} "
                         f"(attempt {attempt+1}); retrying in {backoff:.1f}s"
                     )
-                except Exception as e:
+                except (AzureError, asyncio.TimeoutError) as e:
                     logging.warning(
                         f"[{self.cfg.indexer_name}] run summary write failed for {blob_name} "
-                        f"(attempt {attempt+1}): {e}; retry in {backoff:.1f}s"
+                        f"(attempt {attempt+1}, {type(e).__name__}); retry in {backoff:.1f}s"
                     )
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 30)
@@ -1226,7 +1202,7 @@ class SharePointIndexer:
                 timeout=self._blob_op_timeout_s,
             )
             logging.info(f"[{self.cfg.indexer_name}] pointer updated -> {pointer_name} -> {stage_name}")
-        except Exception as e:
+        except (AzureError, asyncio.TimeoutError):
             # Fall back to a stage-suffixed pointer to avoid overwrites on immutable containers
             try:
                 stage_suffix = (stage or "snapshot")
@@ -1241,8 +1217,8 @@ class SharePointIndexer:
                     timeout=self._blob_op_timeout_s,
                 )
                 logging.info(f"[{self.cfg.indexer_name}] pointer fallback -> {fallback_pointer}")
-            except Exception:
-                logging.debug(f"[{self.cfg.indexer_name}] pointer write skipped: {e}", exc_info=True)
+            except (AzureError, asyncio.TimeoutError) as exc:
+                logging.warning("[%s] Summary pointer write failed (%s)", self.cfg.indexer_name, type(exc).__name__)
 
         if not wrote_stage or not ok_latest:
             logging.error(
@@ -1251,6 +1227,12 @@ class SharePointIndexer:
             )
     # ---------- public entry ----------
     async def run(self) -> None:
+        try:
+            await self._run_pipeline()
+        finally:
+            await self._close_clients()
+
+    async def _run_pipeline(self) -> None:
         await self._ensure_clients()
         await self._hydrate_site_configs_from_cosmos()
 
@@ -1299,8 +1281,10 @@ class SharePointIndexer:
                         summary["success"]             += r.get("success", 0)
                         summary["failed"]              += r.get("failed", 0)
                         summary["totalChunksUploaded"] += r.get("chunks", 0)
+                    elif isinstance(r, BaseException):
+                        raise r
                     else:
-                        logging.error("[%s] Collection task failed: %r", self.cfg.indexer_name, r, exc_info=True)
+                        raise TypeError("Collection worker returned an invalid result.")
 
             # Add richer stats and flush a "finishing" snapshot
             summary.update({
@@ -1327,10 +1311,11 @@ class SharePointIndexer:
             logging.info("[%s] Run cancelled: runId=%s", self.cfg.indexer_name, run_id)
             raise
         except Exception as exc:
-            logging.exception("[%s] run() failed", self.cfg.indexer_name)
-            summary["error"] = str(exc)
+            logging.error("[%s] Run failed (%s)", self.cfg.indexer_name, type(exc).__name__)
+            summary["error"] = f"Run failed ({type(exc).__name__})."
             summary["status"] = "failed"
-            self._log_event(logging.ERROR, "RUN-ERROR", runId=run_id, error=str(exc))
+            self._log_event(logging.ERROR, "RUN-ERROR", runId=run_id, error=summary["error"])
+            raise
         finally:
             # Final, authoritative "finished" (or failed/cancelled) snapshot
             summary.setdefault("documentLibraryStats", {})
@@ -1365,7 +1350,7 @@ class SharePointIndexer:
                 finish_dt = _as_dt(summary.get("runFinishedAt"))
                 if start_dt and finish_dt:
                     duration_seconds = max((finish_dt - start_dt).total_seconds(), 0.0)
-            except Exception:
+            except (ValueError, OverflowError):
                 duration_seconds = None
 
             self._log_event(
@@ -1398,7 +1383,6 @@ class SharePointIndexer:
                 summary.get("totalChunksUploaded", 0),
             )
 
-            await self._close_clients()
 
     async def _process_collection(
         self,
@@ -1500,13 +1484,6 @@ class SharePointIndexer:
                 web_url = self._build_item_web_url(list_nav_base_url, item_id, fallback_web_url)
                 last_mod = _as_dt(item.get("lastModifiedDateTime") or fields.get("Modified"))
                 parent_item_id = _make_parent_key(site_domain, site_name, collection_id, item_id)
-                security_user_ids, security_group_ids = await self._get_security_principals_for_item(
-                    session=session,
-                    site_id=site_id,
-                    collection_id=collection_id,
-                    item_id=item_id,
-                )
-
                 # Structured log at the start of item processing
                 logging.debug(
                     f"[{self.cfg.indexer_name}][ITEM-START] Processing item | "
@@ -1563,6 +1540,12 @@ class SharePointIndexer:
 
                 try:
                     async def _do() -> Dict[str, Any]:
+                        security_user_ids, security_group_ids = await self._get_security_principals_for_item(
+                            session=session,
+                            site_id=site_id,
+                            collection_id=collection_id,
+                            item_id=item_id,
+                        )
                         local_chunks_for_item = 0
                         local_body_uploaded = False
                         local_item_had_candidate = False
@@ -1752,12 +1735,13 @@ class SharePointIndexer:
                     )
 
                 except Exception as e:
-                    logging.exception(f"[{self.cfg.indexer_name}] item {item_id} failed")
+                    error = f"Item processing failed ({type(e).__name__})."
+                    logging.error("[%s] %s", self.cfg.indexer_name, error)
                     processed += 1
                     should_block = processing_attempts >= self.cfg.max_file_processing_attempts
                     file_log.update({
                         "status": "error",
-                        "error": str(e),
+                        "error": error,
                         "finishedAt": _utc_now(),
                         "blocked": should_block,
                         "blockedAt": _utc_now() if should_block else file_log.get("blockedAt"),
@@ -1775,39 +1759,42 @@ class SharePointIndexer:
                         site=f"{site_domain}/{site_name}",
                         itemId=item_id,
                         parentId=parent_item_id,
-                        error=str(e),
+                        error=error,
                     )
 
         async def _run_one_pass(use_spec_filter: bool) -> int:
             local_count_items = 0
             _tasks: List[asyncio.Task] = []
+            try:
+                async for item in self._graph_client.iter_items(
+                    session=session,
+                    site_id=site_id,
+                    collection_id=collection_id,
+                    select_fields=fields_from_spec,
+                    filter_expression=(filter_from_spec if use_spec_filter else None),
+                    site_name=site_name,
+                    collection_name=collection_label,
+                ):
+                    local_count_items += 1
+                    _tasks.append(asyncio.create_task(worker(item)))
 
-            async for item in self._graph_client.iter_items(
-                session=session,
-                site_id=site_id,
-                collection_id=collection_id,
-                select_fields=fields_from_spec,
-                filter_expression=(filter_from_spec if use_spec_filter else None),
-                site_name=site_name,
-                collection_name=collection_label,
-            ):
-                local_count_items += 1
-                _tasks.append(asyncio.create_task(worker(item)))
-
-            if _tasks:
-                done, pending = await asyncio.wait(_tasks, timeout=self._collection_gather_timeout_s)
-                logging.info(
-                    f"[{self.cfg.indexer_name}] collection pass wait done={len(done)} pending={len(pending)} (timeout={self._collection_gather_timeout_s}s)"
-                )
-                if pending:
-                    logging.warning(
-                        f"[{self.cfg.indexer_name}] collection pass timeout waiting for {len(pending)} item task(s); cancelling"
+                if _tasks:
+                    done, pending = await asyncio.wait(_tasks, timeout=self._collection_gather_timeout_s)
+                    logging.info(
+                        f"[{self.cfg.indexer_name}] collection pass wait done={len(done)} pending={len(pending)} (timeout={self._collection_gather_timeout_s}s)"
                     )
-                    for t in pending:
-                        t.cancel()
-                    # Ensure cancellations are observed
-                    await asyncio.gather(*pending, return_exceptions=True)
-            return local_count_items
+                    for task in _tasks:
+                        if task in done:
+                            task.result()
+                    if pending:
+                        raise asyncio.TimeoutError("SharePoint collection processing timed out.")
+                return local_count_items
+            finally:
+                for task in _tasks:
+                    if not task.done():
+                        task.cancel()
+                if _tasks:
+                    await asyncio.gather(*_tasks, return_exceptions=True)
 
         # Pass: use only the per-collection filter supplied in the config
         count_items = await _run_one_pass(use_spec_filter=True)
@@ -1847,5 +1834,6 @@ class SharePointIndexer:
             await asyncio.wait_for(self._write_run_summary(run_id, summary), timeout=self._run_summary_total_timeout_s)
         except Exception as e:
             logging.warning(
-                f"[{self.cfg.indexer_name}] run summary write skipped/timeout after {self._run_summary_total_timeout_s}s: {e}"
+                "[%s] Run summary write failed or timed out (%s)",
+                self.cfg.indexer_name, type(e).__name__,
             )

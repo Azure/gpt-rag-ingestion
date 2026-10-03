@@ -137,4 +137,4 @@ class LangChainChunker(BaseChunker):
     
         for chunked_content in chunked_content_list:
             chunk_size = self.token_estimator.estimate_tokens(chunked_content)
-            yield chunked_content, chunk_size  # type: ignore
+            yield chunked_content, chunk_size
