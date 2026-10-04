@@ -36,7 +36,7 @@ openai==2.41.1
 tiktoken==0.7.0
 
 # Error handling
-tenacity==8.5.0
+tenacity==9.1.4
 
 # Image library
 Pillow==12.3.0
