@@ -10,7 +10,8 @@ $env:PYTHONIOENCODING = 'utf-8'
 $env:PYTHONUTF8 = '1'
 $ProgressPreference = 'SilentlyContinue'
 
-$label = 'gpt-rag'
+$label = if ($env:APP_CONFIG_LABEL) { $env:APP_CONFIG_LABEL } else { 'agent-lz' }
+$labels = @($label, 'agent-lz', 'gpt-rag') | Select-Object -Unique
 $imageRepository = 'data-ingestion'
 $appConfigKey = 'DATA_INGEST_APP_NAME'
 $identitySuffix = 'dataingest'
@@ -143,12 +144,13 @@ function Get-ConfigValue {
     param([Parameter(Mandatory=$true)][string]$Key)
 
     $lastOutput = $null
+    foreach ($cfgLabel in $labels) {
     foreach ($candidate in (Get-ConfigCandidates -Key $Key)) {
-        Write-Blue ("Retrieving '{0}' from App Configuration..." -f $candidate)
+        Write-Blue ("Retrieving '{0}' (label={1}) from App Configuration..." -f $candidate, $cfgLabel)
         $output = & az appconfig kv show `
             --endpoint $APP_CONFIG_ENDPOINT `
             --key $candidate `
-            --label $label `
+            --label $cfgLabel `
             --auth-mode login `
             --only-show-errors `
             --query value -o tsv 2>&1
@@ -158,6 +160,7 @@ function Get-ConfigValue {
             return $value
         }
         $lastOutput = $value
+    }
     }
 
     Write-Yellow ("Failed to retrieve key '{0}'. Last CLI output: {1}" -f $Key, $lastOutput)
@@ -334,7 +337,7 @@ Write-Green 'Azure CLI is logged in.'
 $buildMode = Get-BuildMode
 Write-Green "Build mode: $buildMode"
 
-Write-Blue "Loading App Configuration settings (label=$label)..."
+Write-Blue "Loading App Configuration settings (labels=$($labels -join ', '))..."
 $values = @{
     CONTAINER_REGISTRY_NAME = (Get-RequiredConfigValue -Key 'CONTAINER_REGISTRY_NAME')
     CONTAINER_REGISTRY_LOGIN_SERVER = (Get-RequiredConfigValue -Key 'CONTAINER_REGISTRY_LOGIN_SERVER')

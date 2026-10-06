@@ -1,7 +1,7 @@
 """Hosted/panel deployment-mode resolution (Azure/GPT-RAG ADR-0001).
 
 `gpt-rag-ingestion` supports three deployment modes, resolved once at startup
-from App Configuration (label ``gpt-rag``) and never re-read per request —
+from App Configuration (label ``agent-lz``) and never re-read per request —
 structural surface changes (which routers are mounted) require a container
 restart, matching the frozen ADR-0001 contract:
 
@@ -162,6 +162,6 @@ def validate_panel_resources(config: Any, mode: DeploymentMode) -> None:
             "DEPLOY_ADMINISTRATIVE_PANEL=true requires the panel's Cosmos "
             f"and Entra ID resources, but the following App Configuration "
             f"keys are missing or blank: {', '.join(missing)}. Set them "
-            "(label 'gpt-rag') or disable DEPLOY_ADMINISTRATIVE_PANEL. "
+            "(label 'agent-lz') or disable DEPLOY_ADMINISTRATIVE_PANEL. "
             "Hosted/panel has no development-mode auth bypass."
         )

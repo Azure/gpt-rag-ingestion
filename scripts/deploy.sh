@@ -12,7 +12,9 @@ GREEN='\033[0;32m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-label="gpt-rag"
+label="${APP_CONFIG_LABEL:-agent-lz}"
+config_labels=("$label")
+for _l in agent-lz gpt-rag; do if [[ "$_l" != "$label" ]]; then config_labels+=("$_l"); fi; done
 imageRepository="data-ingestion"
 appConfigKey="DATA_INGEST_APP_NAME"
 identitySuffix="dataingest"
@@ -105,14 +107,16 @@ get_config_value() {
   local key="$1"
   local candidate output status last_output=""
 
+  local cfg_label
+  for cfg_label in "${config_labels[@]}"; do
   while IFS= read -r candidate; do
     [[ -z "$candidate" ]] && continue
-    info "Retrieving '$candidate' from App Configuration..."
+    info "Retrieving '$candidate' (label=$cfg_label) from App Configuration..."
     set +e
     output="$(az appconfig kv show \
       --endpoint "$APP_CONFIG_ENDPOINT" \
       --key "$candidate" \
-      --label "$label" \
+      --label "$cfg_label" \
       --auth-mode login \
       --only-show-errors \
       --query value -o tsv 2>&1)"
@@ -126,6 +130,7 @@ get_config_value() {
     fi
     last_output="$output"
   done < <(unique_candidates "$key")
+  done
 
   warn "Failed to retrieve key '$key'. Last CLI output: $last_output"
   return 1
@@ -297,7 +302,7 @@ success "Azure CLI is logged in."
 buildMode="$(select_build_mode)"
 success "Build mode: ${buildMode}"
 
-info "Loading App Configuration settings (label=${label})..."
+info "Loading App Configuration settings (labels=${config_labels[*]})..."
 containerRegistryName="$(require_config_value "CONTAINER_REGISTRY_NAME")"
 containerRegistryLoginServer="$(require_config_value "CONTAINER_REGISTRY_LOGIN_SERVER")"
 resourceGroupName="$(require_config_value "AZURE_RESOURCE_GROUP")"
