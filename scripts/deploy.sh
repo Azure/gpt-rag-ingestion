@@ -175,6 +175,11 @@ select_build_mode() {
     exit 1
   fi
 
+  if [[ "$mode" == "acr-task" && "$(printf "%s" "${NETWORK_ISOLATION:-}" | tr '[:upper:]' '[:lower:]')" == "true" && -z "${ACR_TASK_AGENT_POOL:-}" ]]; then
+    error "NETWORK_ISOLATION=true requires an ACR Task agent pool for acr-task builds, but ACR_TASK_AGENT_POOL is empty. Set DEPLOY_ACR_TASK_AGENT_POOL=true and run azd provision, set ACR_TASK_AGENT_POOL to an existing pool, or set BUILD_MODE=local from a host inside the VNet. See Azure/agent-landing-zone#741."
+    exit 1
+  fi
+
   printf "%s" "$mode"
 }
 

@@ -210,6 +210,11 @@ function Get-BuildMode {
         Write-ErrorColored 'BUILD_MODE=local requested, but Docker is not available.'
         exit 1
     }
+    $isolated = ($env:NETWORK_ISOLATION -and $env:NETWORK_ISOLATION.Trim().ToLowerInvariant() -eq 'true')
+    if ($mode -eq 'acr-task' -and $isolated -and -not $env:ACR_TASK_AGENT_POOL) {
+        Write-ErrorColored 'NETWORK_ISOLATION=true requires an ACR Task agent pool for acr-task builds, but ACR_TASK_AGENT_POOL is empty. Set DEPLOY_ACR_TASK_AGENT_POOL=true and run azd provision, set ACR_TASK_AGENT_POOL to an existing pool, or set BUILD_MODE=local from a host inside the VNet. See Azure/agent-landing-zone#741.'
+        exit 1
+    }
     return $mode
 }
 
