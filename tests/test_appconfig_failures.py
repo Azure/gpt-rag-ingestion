@@ -168,13 +168,14 @@ def test_constructor_preserves_selectors_and_sdk_last_selected_value(monkeypatch
     config = appconfig.AppConfigClient()
     assert isinstance(config.client, AzureAppConfigurationProvider)
     assert len(captured) == (1 if source == "endpoint" else 2)
-    assert [item.label_filter for item in captured[-1]["selects"][:3]] == ["gpt-rag-ingestion", "gpt-rag", "agent-lz"]
-    assert len(captured[-1]["selects"]) == 4
-    assert captured[-1]["selects"][3].label_filter in (None, "\0")
+    assert [item.label_filter for item in captured[-1]["selects"][:2]] == ["gpt-rag-ingestion", "agent-lz"]
+    assert len(captured[-1]["selects"]) == 3
+    assert captured[-1]["selects"][2].label_filter in (None, "\0")
     assert captured[0]["credential"] is config.credential
     assert config.get("SHARED") == "unlabelled"
     assert config.get("PLATFORM_SHARED") == "agentlz"
-    for value in ("ingestion", "base", "agentlz", "unlabelled"):
+    assert config.get("ONLY_BASE", allow_none=True) is None
+    for value in ("ingestion", "agentlz", "unlabelled"):
         assert config.get(f"ONLY_{value.upper()}") == value
 
 
