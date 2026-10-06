@@ -1,5 +1,14 @@
 # Changelog
 
+## [v3.1.0] - 2026-10-06
+
+### Removed
+
+- Legacy `gpt-rag` App Configuration label fallback and `GPT_RAG_` key
+  fallback (Azure/agent-landing-zone#695). The app now reads only its app label,
+  then `agent-lz`, then no label. Make sure your deployment publishes settings
+  under `agent-lz` (Agent Landing Zone v4.0.0 or later) before upgrading.
+
 ## [v3.0.1] - 2026-10-06
 
 ### Fixed

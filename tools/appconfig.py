@@ -16,50 +16,26 @@ from tenacity import retry, wait_random_exponential, stop_after_attempt, retry_i
 
 APP_LABEL = 'gpt-rag-ingestion'
 AGENTLZ_LABEL = 'agent-lz'
-LEGACY_LABEL = 'gpt-rag'
 AGENTLZ_KEY_PREFIX = 'AGENTLZ_'
-LEGACY_KEY_PREFIX = 'GPT_RAG_'
 
 
 def build_label_selectors():
-    """Selectors for the provider, whose last matching selection wins.
-
-    R14 transition: `agent-lz` is placed after the legacy `gpt-rag` label so it
-    takes precedence; `gpt-rag` remains a fallback for one release.
-    """
-    return with_agentlz_label([
+    """Selectors for the provider, whose last matching selection wins."""
+    return [
         SettingSelector(label_filter=APP_LABEL, key_filter='*'),
-        SettingSelector(label_filter=LEGACY_LABEL, key_filter='*'),
+        SettingSelector(label_filter=AGENTLZ_LABEL, key_filter='*'),
         SettingSelector(label_filter=None, key_filter='*'),
-    ])
+    ]
 
 
 def key_candidates(key: str) -> list[str]:
-    """Return lookup order for a key: `AGENTLZ_*` first, then `GPT_RAG_*`."""
-    for prefix in (AGENTLZ_KEY_PREFIX, LEGACY_KEY_PREFIX):
-        if key.startswith(prefix):
-            suffix = key[len(prefix):]
-            return [AGENTLZ_KEY_PREFIX + suffix, LEGACY_KEY_PREFIX + suffix]
+    """Return the lookup order for a key (single candidate)."""
     return [key]
 
 
-def with_agentlz_label(selects):
-    """Insert the `agent-lz` selector right after the legacy `gpt-rag` selector."""
-    result = []
-    for selector in selects:
-        result.append(selector)
-        if selector.label_filter == LEGACY_LABEL:
-            result.append(SettingSelector(label_filter=AGENTLZ_LABEL, key_filter='*'))
-    return result
-
-
 def load(*, selects, **kwargs):
-    """Load App Configuration with the R14 `agent-lz` label precedence applied.
-
-    Keeps the constructor's reviewed endpoint/fallback block unchanged while
-    every provider call receives the dual-read selector order.
-    """
-    return _provider_load(selects=with_agentlz_label(selects), **kwargs)
+    """Load App Configuration with the given selectors."""
+    return _provider_load(selects=selects, **kwargs)
 
 
 class AppConfigClient:
@@ -81,10 +57,8 @@ class AppConfigClient:
         
         Configuration Loading Priority:
         1. Connects to Azure App Configuration using the credential chain
-        2. Loads labels in order: 'gpt-rag-ingestion', 'gpt-rag', 'agent-lz',
-           no-label; later matching selections replace earlier values for
-           duplicate keys, so 'agent-lz' wins over the transitional 'gpt-rag'
-           label (Agent Landing Zone R14 dual-read)
+        2. Loads labels in order: 'gpt-rag-ingestion', 'agent-lz', no-label;
+           later matching selections replace earlier values for duplicate keys
         3. Falls back to connection string if credential auth fails
         4. Uses the existing environment-only adapter when endpoint loading
            fails, no connection string is configured and environment reads
@@ -121,9 +95,8 @@ class AppConfigClient:
         )
 
         # Preserve selector order; the provider's last matching selection wins.
-        # `load` inserts the `agent-lz` selector after the legacy `gpt-rag` one.
         app_label_selector = SettingSelector(label_filter=APP_LABEL, key_filter='*')
-        base_label_selector = SettingSelector(label_filter=LEGACY_LABEL, key_filter='*')
+        base_label_selector = SettingSelector(label_filter=AGENTLZ_LABEL, key_filter='*')
         no_label_selector = SettingSelector(label_filter=None, key_filter='*')
 
         # Attempt 1: Connect to App Configuration using credential-based auth (Managed Identity or CLI)
