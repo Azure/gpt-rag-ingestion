@@ -1,5 +1,15 @@
 # Changelog
 
+## [v3.0.1] - 2026-10-06
+
+### Fixed
+
+- **Fail early when the ACR Task agent pool is missing under network isolation**
+  (Azure/agent-landing-zone#741). With `NETWORK_ISOLATION=true` and
+  `BUILD_MODE=acr-task`, the deploy script now stops with a clear message if
+  `ACR_TASK_AGENT_POOL_NAME` is not set, instead of failing during the remote
+  build because the registry's public access is blocked.
+
 ## [v3.0.0] - 2026-10-03
 
 ### Added
