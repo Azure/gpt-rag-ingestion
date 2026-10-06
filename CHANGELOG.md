@@ -1,6 +1,9 @@
 # Changelog
 
-## [v3.1.0] - 2026-10-06
+## [v3.1.1] - 2026-10-06
+
+The `v3.1.0` tag was created before this change merged and does not contain it.
+Use `v3.1.1`.
 
 ### Removed
 
