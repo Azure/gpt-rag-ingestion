@@ -111,7 +111,7 @@ Documentation must describe current shipped behavior.
   behavior that must stay synchronized with code and contracts.
 - Cross-component user and operator documentation lives on the `docs` branch
   of `Azure/GPT-RAG` and is published at
-  https://azure.github.io/GPT-RAG/.
+  https://azure.github.io/AI-Landing-Zones/agent-landing-zone/.
 - Update relevant documentation in the same coordinated change when a format,
   configuration key, default, index field, deployment step, operator flow,
   contract, or breaking behavior changes.
