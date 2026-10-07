@@ -16,5 +16,5 @@ description: Keeps ingestion repository and published GPT-RAG documentation alig
    supported deployment modes, and released component behavior.
 
 Keep the service README concise and link to
-https://azure.github.io/GPT-RAG/ for broad product guidance. Report the
+https://azure.github.io/AI-Landing-Zones/agent-landing-zone/ for broad product guidance. Report the
 documentation branch or pull request in the implementation handoff.

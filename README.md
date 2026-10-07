@@ -19,7 +19,7 @@ Part of the [GPT-RAG](https://github.com/Azure/gpt-rag) solution.
 
 The **GPT-RAG Data Ingestion** service automates the processing of diverse document types—such as PDFs, images, spreadsheets, transcripts, and SharePoint files—preparing them for indexing in Azure AI Search. It uses intelligent chunking strategies tailored to each format, generates text and image embeddings, and enables rich, multimodal retrieval experies for agent-based RAG applications.
 
-For full documentation, visit the **[GPT-RAG documentation site](https://azure.github.io/GPT-RAG/)**.
+For full documentation, visit the **[GPT-RAG documentation site](https://azure.github.io/AI-Landing-Zones/agent-landing-zone/)**.
 
 ## Contributor quality bootstrap
 
@@ -43,7 +43,7 @@ schema/audit bytes, authentication and successful per-record responses remain
 unchanged. Expected SDK/parser recovery is bounded; diagnostic payloads are safe.
 
 For App Configuration source order, environment opt-in, fallback diagnostics
-and recovery, see the canonical [ingestion observability guidance](https://azure.github.io/GPT-RAG/services_ingestion/#observability).
+and recovery, see the canonical [ingestion observability guidance](https://azure.github.io/AI-Landing-Zones/agent-landing-zone/operations/#monitoring).
 
 Image purging completes its reference scan before deleting anything, including
 references beyond 1,000 results, and uses asynchronous Blob operations.
@@ -311,7 +311,7 @@ missing tenant configuration is a hard `500`, never a silent allow.
 
 ## Contributing
 
-We welcome contributions! See the [contribution guidelines](https://azure.github.io/GPT-RAG/contributing/) for details on how to contribute.
+We welcome contributions! See the [contribution guidelines](https://github.com/Azure/agent-landing-zone/blob/main/CONTRIBUTING.md) for details on how to contribute.
 
 ## Trademarks
 
