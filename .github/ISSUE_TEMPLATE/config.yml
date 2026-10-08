@@ -1,5 +1,5 @@
 blank_issues_enabled: false
 contact_links:
-  - name: 1- Report an issue in Agent Landing Zone
+  - name: 👉 Report an issue in Agent Landing Zone
     url: https://github.com/Azure/agent-landing-zone/issues/new/choose
     about: Please create all bug reports, feature requests, and support questions in the main Azure/agent-landing-zone repository.
