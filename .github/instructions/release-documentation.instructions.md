@@ -15,7 +15,7 @@ applyTo: "VERSION,CHANGELOG.md,README.md,docs/**"
 - Keep ingestion-specific service and audit guidance in `README.md` aligned
   with code and contracts.
 - Coordinate cross-component user/operator documentation on the `docs` branch
-  of Azure/GPT-RAG.
+  of Azure/agent-landing-zone.
 - Never publish private Azure environment or resource-group names.
 - Load `service-release` for release work and
   `documentation-consistency` for user- or operator-visible changes.

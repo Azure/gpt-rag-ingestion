@@ -1,6 +1,6 @@
 ---
 name: documentation-consistency
-description: Keeps ingestion repository and published GPT-RAG documentation aligned with shipped formats, configuration, indexing, deployment, audit, and operator behavior.
+description: Keeps ingestion repository and published Agent Landing Zone documentation aligned with shipped formats, configuration, indexing, deployment, audit, and operator behavior.
 ---
 
 # Ingestion documentation consistency
@@ -9,7 +9,7 @@ description: Keeps ingestion repository and published GPT-RAG documentation alig
 2. Search this repository for the format, configuration key, index field,
    endpoint, job type, contract, and previous terminology.
 3. Update ingestion-specific service or audit guidance in `README.md`.
-4. Search the `docs` branch of `Azure/GPT-RAG` for cross-component user and
+4. Search the `docs` branch of `Azure/agent-landing-zone` for cross-component user and
    operator guidance and update every affected page in the coordinated change.
 5. Register new published pages in that branch's `mkdocs.yml`.
 6. Ensure examples match current defaults, App Configuration labels,

@@ -1,6 +1,6 @@
 ---
 name: implementation
-description: Implements, tests, and documents scoped gpt-rag-ingestion changes after requirements are clear. Do not use to decide broad architecture, diagnose live incidents, or publish releases.
+description: Implements, tests, and documents scoped agent-app-ingestion changes after requirements are clear. Do not use to decide broad architecture, diagnose live incidents, or publish releases.
 tools: ["read", "search", "edit", "execute"]
 ---
 
