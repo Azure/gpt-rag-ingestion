@@ -1,6 +1,6 @@
-name: azure-gpt-rag
+name: agent-landing-zone
 metadata:
-  template: azure-gpt-rag-ingestion
+  template: agent-app-ingestion
 infra:
   provider: bicep
   path: infra

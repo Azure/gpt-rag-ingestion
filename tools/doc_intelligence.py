@@ -120,7 +120,7 @@ class DocumentIntelligenceClient:
             logging.debug(f"[docintelligence][{filename}] Acquired token length={len(token)}")
             headers = {
                 "Authorization": f"Bearer {token}",
-                "x-ms-useragent": "gpt-rag/1.0.0",
+                "x-ms-useragent": "agent-landing-zone/1.0.0",
                 "Content-Type": "application/json"
             }
         except AzureError:
@@ -160,7 +160,7 @@ class DocumentIntelligenceClient:
         # Polling loop
         poll_headers = {
             "Authorization": f"Bearer {token}",
-            "x-ms-useragent": "gpt-rag/1.0.0",
+            "x-ms-useragent": "agent-landing-zone/1.0.0",
             "Content-Type": "application/json-patch+json"
         }
         while True:
@@ -211,7 +211,7 @@ class DocumentIntelligenceClient:
             logging.debug(f"[docintelligence][{filename}] Acquired token length={len(token)}")
             headers = {
                 "Authorization": f"Bearer {token}",
-                "x-ms-useragent": "gpt-rag/1.0.0",
+                "x-ms-useragent": "agent-landing-zone/1.0.0",
                 "Content-Type": "application/json"
             }
         except AzureError:
@@ -278,7 +278,7 @@ class DocumentIntelligenceClient:
         # Polling loop
         poll_headers = {
             "Authorization": f"Bearer {token}",
-            "x-ms-useragent": "gpt-rag/1.0.0",
+            "x-ms-useragent": "agent-landing-zone/1.0.0",
             "Content-Type": "application/json-patch+json"
         }
         while True:
@@ -322,7 +322,7 @@ class DocumentIntelligenceClient:
         ).token
         headers = {
             "Authorization": f"Bearer {token}",
-            "x-ms-useragent": "gpt-rag/1.0.0"
+            "x-ms-useragent": "agent-landing-zone/1.0.0"
         }
         resp = requests.get(url, headers=headers)
         logging.info(f"[docintelligence] Figure GET -> {resp.status_code}")
