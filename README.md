@@ -10,14 +10,14 @@ products:
 - azure-openai
 - azure-ai-search
 urlFragment: agent-app-ingestion
-name: Multi-repo ChatGPT and Enterprise data with Azure OpenAI and AI Search
-description: Agent Landing Zone core is a Retrieval-Augmented Generation pattern running in Azure, using Azure AI Search for retrieval and Azure OpenAI large language models to power ChatGPT-style and Q&A experiences.
+name: Agent Landing Zone Data Ingestion
+description: Multimodal document and SharePoint ingestion service for Agent Landing Zone, indexing enterprise content into Azure AI Search for agentic RAG.
 -->
 # Agent Landing Zone Data Ingestion
 
 Part of the [Agent Landing Zone](https://github.com/Azure/agent-landing-zone) solution.
 
-The **Agent Landing Zone Data Ingestion** service automates the processing of diverse document types—such as PDFs, images, spreadsheets, transcripts, and SharePoint files—preparing them for indexing in Azure AI Search. It uses intelligent chunking strategies tailored to each format, generates text and image embeddings, and enables rich, multimodal retrieval experies for agent-based RAG applications.
+The **Agent Landing Zone Data Ingestion** service automates the processing of diverse document types—such as PDFs, images, spreadsheets, transcripts, and SharePoint files—preparing them for indexing in Azure AI Search. It uses intelligent chunking strategies tailored to each format, generates text and image embeddings, and enables rich, multimodal retrieval experiences for agent-based RAG applications.
 
 For full documentation, visit the **[Agent Landing Zone documentation](https://azure.github.io/AI-Landing-Zones/agent-landing-zone/)**.
 
@@ -96,7 +96,7 @@ Azure AI Search's `x-ms-query-source-authorization` header. Never configure this
 tool with a static API key, project managed identity, caller-supplied object ID,
 or caller-supplied group list as the authorization boundary.
 
-The feature requires both App Configuration settings below (label `gpt-rag`):
+The feature requires both App Configuration settings below (label `agent-lz`):
 
 | Setting | Default | Contract |
 | --- | --- | --- |
@@ -166,7 +166,7 @@ published by [Azure/agent-landing-zone PR #637](https://github.com/Azure/agent-l
   secret (no new Key Vault secret or RBAC introduced).
 
 All three endpoints are disabled by default and fail closed (`503`) unless
-every gate below is met (label `gpt-rag` App Configuration keys):
+every gate below is met (label `agent-lz` App Configuration keys):
 
 | Setting | Default | Contract |
 | --- | --- | --- |
@@ -280,7 +280,7 @@ Flag matrix:
 ## Deployment modes and the administrative panel
 
 The Container App resolves a single deployment mode at startup from App
-Configuration (label `gpt-rag`) and re-validates it on every restart —
+Configuration (label `agent-lz`) and re-validates it on every restart —
 changing either flag below requires a restart to take effect:
 
 | Setting | Default | Effect |

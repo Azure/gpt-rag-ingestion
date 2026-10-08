@@ -23,7 +23,7 @@ def reader(monkeypatch, values, allow_env=False):
 
 def test_label_selectors_read_only_agent_lz():
     labels = [selector.label_filter for selector in build_label_selectors()]
-    assert labels == ["gpt-rag-ingestion", "agent-lz", None]
+    assert labels == ["gpt-rag-ingestion", "agent-app-ingestion", "agent-lz", None]
 
 
 def test_label_merge_ignores_legacy_gpt_rag_label():
@@ -47,7 +47,7 @@ def test_constructor_loads_single_label_selectors(monkeypatch):
     monkeypatch.setenv("APP_CONFIG_ENDPOINT", "https://example.azconfig.io")
     monkeypatch.setattr(appconfig, "_provider_load", fake_load)
     AppConfigClient()
-    assert [s.label_filter for s in captured["selects"]] == ["gpt-rag-ingestion", "agent-lz", None]
+    assert [s.label_filter for s in captured["selects"]] == ["gpt-rag-ingestion", "agent-app-ingestion", "agent-lz", None]
 
 
 @pytest.mark.parametrize("key", ["AGENTLZ_REPO_ROOT", "GPT_RAG_REPO_ROOT", "SEARCH_INDEX"])

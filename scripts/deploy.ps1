@@ -11,7 +11,7 @@ $env:PYTHONUTF8 = '1'
 $ProgressPreference = 'SilentlyContinue'
 
 $label = if ($env:APP_CONFIG_LABEL) { $env:APP_CONFIG_LABEL } else { 'agent-lz' }
-$labels = @($label, 'agent-lz', 'gpt-rag') | Select-Object -Unique
+$labels = @($label, 'agent-lz') | Select-Object -Unique
 $imageRepository = 'data-ingestion'
 $appConfigKey = 'DATA_INGEST_APP_NAME'
 $identitySuffix = 'dataingest'
