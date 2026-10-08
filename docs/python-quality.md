@@ -1,18 +1,18 @@
 # Python quality gates (bootstrap candidate)
 
 This is the ingestion implementation of
-[Azure/GPT-RAG#681](https://github.com/Azure/GPT-RAG/issues/681) and the accepted
-[ADR-0005](https://github.com/Azure/GPT-RAG/blob/feature/python-module-boundaries/docs/adr/ADR-0005-python-quality-gates-and-ui-package.md).
+[Azure/agent-landing-zone#681](https://github.com/Azure/agent-landing-zone/issues/681) and the accepted
+[ADR-0005](https://github.com/Azure/agent-landing-zone/blob/feature/python-module-boundaries/docs/adr/ADR-0005-python-quality-gates-and-ui-package.md).
 It is **not yet an activated, green merge policy**. Paulo (@placerda) explicitly
 approved administrative initial adoption of the 67 existing ingestion records
 at `0ae3759356935830c532ce3f2c48d3753b01da73` in
-[the authorization audit](https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634).
+[the authorization audit](https://github.com/Azure/agent-landing-zone/issues/681#issuecomment-5601804634).
 The records are active with that reference. This is not independent GitHub
 review, automatic approval, or a claim that bootstrap policy checks pass.
 The parent coordination PR is
-[Azure/GPT-RAG#689](https://github.com/Azure/GPT-RAG/pull/689); published
+[Azure/agent-landing-zone#689](https://github.com/Azure/agent-landing-zone/pull/689); published
 contributor documentation is coordinated in
-[Azure/GPT-RAG#688](https://github.com/Azure/GPT-RAG/pull/688).
+[Azure/agent-landing-zone#688](https://github.com/Azure/agent-landing-zone/pull/688).
 
 ## Contributor commands
 

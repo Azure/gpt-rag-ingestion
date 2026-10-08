@@ -9,15 +9,15 @@ products:
 - azure-ai-foundry
 - azure-openai
 - azure-ai-search
-urlFragment: GPT-RAG
+urlFragment: agent-app-ingestion
 name: Multi-repo ChatGPT and Enterprise data with Azure OpenAI and AI Search
-description: GPT-RAG core is a Retrieval-Augmented Generation pattern running in Azure, using Azure AI Search for retrieval and Azure OpenAI large language models to power ChatGPT-style and Q&A experiences.
+description: Agent Landing Zone core is a Retrieval-Augmented Generation pattern running in Azure, using Azure AI Search for retrieval and Azure OpenAI large language models to power ChatGPT-style and Q&A experiences.
 -->
-# GPT-RAG Data Ingestion
+# Agent Landing Zone Data Ingestion
 
-Part of the [GPT-RAG](https://github.com/Azure/gpt-rag) solution.
+Part of the [Agent Landing Zone](https://github.com/Azure/agent-landing-zone) solution.
 
-The **GPT-RAG Data Ingestion** service automates the processing of diverse document types—such as PDFs, images, spreadsheets, transcripts, and SharePoint files—preparing them for indexing in Azure AI Search. It uses intelligent chunking strategies tailored to each format, generates text and image embeddings, and enables rich, multimodal retrieval experies for agent-based RAG applications.
+The **Agent Landing Zone Data Ingestion** service automates the processing of diverse document types—such as PDFs, images, spreadsheets, transcripts, and SharePoint files—preparing them for indexing in Azure AI Search. It uses intelligent chunking strategies tailored to each format, generates text and image embeddings, and enables rich, multimodal retrieval experies for agent-based RAG applications.
 
 For full documentation, visit the **[Agent Landing Zone documentation](https://azure.github.io/AI-Landing-Zones/agent-landing-zone/)**.
 
@@ -27,7 +27,7 @@ Python 3.12 contributor commands, scheduler ownership, incremental typing,
 import/error policy and recovery guidance are in
 [Python quality gates](docs/python-quality.md). Every retained broad handler
 has an exact, individually justified record with failure evidence; **67 records
-are active under [explicit administrative initial-adoption approval](https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634)**,
+are active under [explicit administrative initial-adoption approval](https://github.com/Azure/agent-landing-zone/issues/681#issuecomment-5601804634)**,
 not independent GitHub review. Bootstrap adoption, real reference validation
 and required-check activation remain separate acceptance steps.
 The operator frontend's dependency/build compatibility is repaired without
@@ -66,9 +66,9 @@ deleted documents.
 
 This service emits a versioned, correlated audit trail for ingestion runs and
 document outcomes, sharing the `audit-event-v2` contract owned by
-[`Azure/GPT-RAG`](https://github.com/Azure/GPT-RAG) (pinned by SHA-256 in
+[`Azure/agent-landing-zone`](https://github.com/Azure/agent-landing-zone) (pinned by SHA-256 in
 [`contracts/`](contracts/) and consumed the same way by
-`gpt-rag-orchestrator`). Reuses the existing OpenTelemetry / Application
+`agent-app-orchestrator`). Reuses the existing OpenTelemetry / Application
 Insights pipeline — no separate audit backend, queue, or export path is
 introduced.
 
@@ -134,7 +134,7 @@ authorization claims are never returned or logged.
 ## Operator panel surfaces (overview metrics and corpus curation)
 
 The optional hosted administrative panel's ingestion-side operator surfaces
-(issue [Azure/GPT-RAG#611](https://github.com/Azure/GPT-RAG/issues/611),
+(issue [Azure/agent-landing-zone#611](https://github.com/Azure/agent-landing-zone/issues/611),
 ADR-0004) expose `GET /panel/overview/metrics`,
 `GET /panel/corpus-curation/queue`, and
 `POST /panel/corpus-curation/{item_id}/decision`. These surfaces **never**
@@ -143,7 +143,7 @@ Conversations data-plane access. The exact wire shapes are vendored from the
 shared platform contract at
 [`contracts/conversations-panel-v1.schema.json`](contracts/conversations-panel-v1.schema.json)
 (pinned by SHA-256 in [`contracts/conversations-panel-v1.sha256`](contracts/conversations-panel-v1.sha256),
-published by [Azure/GPT-RAG PR #637](https://github.com/Azure/GPT-RAG/pull/637)).
+published by [Azure/agent-landing-zone PR #637](https://github.com/Azure/agent-landing-zone/pull/637)).
 
 - **Overview metrics** are aggregate-only `COUNT(1)` reads over the two panel
   Cosmos containers this service holds container-scoped **Data Reader** on
@@ -170,7 +170,7 @@ every gate below is met (label `gpt-rag` App Configuration keys):
 
 | Setting | Default | Contract |
 | --- | --- | --- |
-| `DEPLOY_ADMINISTRATIVE_PANEL` | `false` | Existing platform-owned panel topology flag ([Azure/GPT-RAG PR #637](https://github.com/Azure/GPT-RAG/pull/637)). |
+| `DEPLOY_ADMINISTRATIVE_PANEL` | `false` | Existing platform-owned panel topology flag ([Azure/agent-landing-zone PR #637](https://github.com/Azure/agent-landing-zone/pull/637)). |
 | `PANEL_OPERATOR_SURFACES_ENABLED` | `false` | Ingestion-owned gate for these three endpoints specifically. |
 | `PANEL_OPERATOR_APP_ROLE` | unset | Entra app role name a delegated operator token must carry. At least this or the group below must be set. |
 | `PANEL_OPERATOR_GROUP_ID` | unset | Entra group object id a delegated operator token's `groups` claim must carry. |
@@ -288,7 +288,7 @@ changing either flag below requires a restart to take effect:
 | `DEPLOY_HOSTED_AGENT_ORCHESTRATION` | `false` | `true` selects a hosted deployment (chat is served by Azure AI Foundry, not this Container App). `false` selects **classic** mode: full behavior is unchanged, the admin SPA (`/dashboard`) and jobs/schedules/files/config APIs are always mounted, exactly as in prior releases. |
 | `DEPLOY_ADMINISTRATIVE_PANEL` | `false` | Only consulted when hosted mode is selected. `false` is **hosted/no-panel**: the admin SPA and every admin/panel route are not mounted at all (404), and no panel-only Cosmos container is required. `true` is **hosted/panel**: the admin surface and the new `/api/panel/*` API are mounted, and the service fails closed at startup (exits) if the panel-only Cosmos database/account are not configured. |
 
-This closes [Azure/GPT-RAG#592](https://github.com/Azure/GPT-RAG/issues/592):
+This closes [Azure/agent-landing-zone#592](https://github.com/Azure/agent-landing-zone/issues/592):
 previously the admin SPA and admin API were mounted unconditionally at import
 time regardless of deployment mode, so a hosted/no-panel deployment exposed
 the same administrative surface as classic mode. Mounting now happens once,
@@ -307,7 +307,7 @@ missing tenant configuration is a hard `500`, never a silent allow.
 | `GET /api/panel/status` | Reports whether the panel is currently enabled and ready (re-checks live config on every call as defense-in-depth against drift, independent of the mount-time decision). |
 | `GET/POST /api/panel/feedback` | Cosmos-backed curation/feedback metadata for hosted conversations (create/list), reusing the same Cosmos account/database contract as the orchestrator's dashboard. |
 | `GET /api/panel/overview` | Aggregates jobs, files, and feedback. `feedback.available` is true for a complete read (including genuine zero feedback), false on feedback failure. When false, integer counts are zero placeholders, not observations; jobs/files remain available. This is separate from `/panel/overview/metrics` and its privacy-suppressed null counts. |
-| `GET /api/panel/conversations/{id}/history` | **Not yet implemented (`501`).** Managed Foundry Conversation history retrieval depends on a still-undefined cross-repo API surface between `gpt-rag-ingestion`, `gpt-rag-orchestrator`, and Azure AI Foundry, tracked under [Azure/GPT-RAG#592](https://github.com/Azure/GPT-RAG/issues/592). This service intentionally does not proxy chat execution or fabricate history — only the pieces implementable entirely within this repository are enabled today. |
+| `GET /api/panel/conversations/{id}/history` | **Not yet implemented (`501`).** Managed Foundry Conversation history retrieval depends on a still-undefined cross-repo API surface between `agent-app-ingestion`, `agent-app-orchestrator`, and Azure AI Foundry, tracked under [Azure/agent-landing-zone#592](https://github.com/Azure/agent-landing-zone/issues/592). This service intentionally does not proxy chat execution or fabricate history — only the pieces implementable entirely within this repository are enabled today. |
 
 ## Contributing
 
