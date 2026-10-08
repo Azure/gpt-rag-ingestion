@@ -11,13 +11,13 @@ products:
 - azure-ai-search
 urlFragment: agent-app-ingestion
 name: Agent Landing Zone Data Ingestion
-description: Multimodal document and SharePoint ingestion service for Agent Landing Zone, indexing enterprise content into Azure AI Search for agentic RAG.
+description: Multimodal document and SharePoint ingestion service for Agent Landing Zone, indexing enterprise content into Azure AI Search as grounding knowledge for agents.
 -->
 # Agent Landing Zone Data Ingestion
 
 Part of the [Agent Landing Zone](https://github.com/Azure/agent-landing-zone) solution.
 
-The **Agent Landing Zone Data Ingestion** service automates the processing of diverse document types—such as PDFs, images, spreadsheets, transcripts, and SharePoint files—preparing them for indexing in Azure AI Search. It uses intelligent chunking strategies tailored to each format, generates text and image embeddings, and enables rich, multimodal retrieval experiences for agent-based RAG applications.
+The **Agent Landing Zone Data Ingestion** service automates the processing of diverse document types—such as PDFs, images, spreadsheets, transcripts, and SharePoint files—preparing them for indexing in Azure AI Search. It uses intelligent chunking strategies tailored to each format, generates text and image embeddings, and makes enterprise content available as multimodal grounding knowledge for conversational agents.
 
 For full documentation, visit the **[Agent Landing Zone documentation](https://azure.github.io/AI-Landing-Zones/agent-landing-zone/)**.
 
