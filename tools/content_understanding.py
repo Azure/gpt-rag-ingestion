@@ -112,7 +112,7 @@ class ContentUnderstandingClient:
         headers = {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
-            "x-ms-useragent": "gpt-rag/1.0.0",
+            "x-ms-useragent": "agent-landing-zone/1.0.0",
         }
 
         # Build payload with base64-encoded data
@@ -148,7 +148,7 @@ class ContentUnderstandingClient:
         # Poll for result
         poll_headers = {
             "Authorization": f"Bearer {token}",
-            "x-ms-useragent": "gpt-rag/1.0.0",
+            "x-ms-useragent": "agent-landing-zone/1.0.0",
         }
         max_poll_seconds = 600
         start = time.monotonic()
