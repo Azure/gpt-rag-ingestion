@@ -1,6 +1,6 @@
 """Tests for the pinned audit-event-v2 contract (v1 kept as history) and INGESTION_* governance settings.
 
-Mirrors the validation style used by ``Azure/gpt-rag-orchestrator`` for the
+Mirrors the validation style used by ``Azure/agent-app-orchestrator`` for the
 same shared contract: hash-pinned artifacts, an exact ingestion event
 taxonomy, and settings that fail closed on contradictory configuration.
 """

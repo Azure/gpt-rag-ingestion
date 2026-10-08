@@ -9,14 +9,14 @@ Scope, per ADR-0001's decision matrix ("Administrative panel boundary" /
 
 * Feedback and administrative curation metadata are Cosmos-backed and owned
   by this service (reusing `tools/cosmosdb.py`'s generic client) — this is
-  genuinely local to gpt-rag-ingestion, which already owns Cosmos tooling
+  genuinely local to agent-app-ingestion, which already owns Cosmos tooling
   and the admin dashboard surface.
 * A dashboard overview aggregates existing ingestion admin data
   (jobs/files, via `api.admin`) plus feedback counts.
 * Full Foundry-managed **Conversation history** retrieval is explicitly
   **not implemented here** — ADR-0001's decision matrix names
   ``agent-app-orchestrator`` / ``agent-app-ui`` / ``Azure/agent-landing-zone`` (not
-  ``gpt-rag-ingestion``) as owners of that contract, and today conversation
+  ``agent-app-ingestion``) as owners of that contract, and today conversation
   history persistence is still coupled to the orchestrator's chat flow.
   Retrieving it here would require a cross-repo API decision (which SDK/REST
   call surfaces Foundry Conversation messages, the conversation-id mapping,
@@ -54,11 +54,11 @@ _MAX_TAGS = 16
 
 _HISTORY_BLOCKED_DETAIL = (
     "Foundry-managed Conversation history retrieval is not implemented in "
-    "gpt-rag-ingestion. Per ADR-0001's decision matrix, the hosted/panel "
+    "agent-app-ingestion. Per ADR-0001's decision matrix, the hosted/panel "
     "conversation-history contract (the SDK/REST call to fetch Foundry "
     "Conversation messages, the conversation-id mapping, and the auth model "
     "to use) is owned by agent-app-orchestrator / agent-app-ui / Azure/agent-landing-zone, "
-    "not gpt-rag-ingestion, and requires a cross-repo API decision that has "
+    "not agent-app-ingestion, and requires a cross-repo API decision that has "
     "not yet been made. Tracking: Azure/agent-landing-zone#592."
 )
 
