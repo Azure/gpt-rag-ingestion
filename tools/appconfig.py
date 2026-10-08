@@ -36,8 +36,9 @@ def key_candidates(key: str) -> list[str]:
 
 
 def load(*, selects, **kwargs):
-    """Load App Configuration with the given selectors."""
-    return _provider_load(selects=selects, **kwargs)
+    """Load App Configuration, reading the legacy app label first so newer labels win."""
+    legacy = SettingSelector(label_filter=LEGACY_APP_LABEL, key_filter='*')
+    return _provider_load(selects=[legacy, *selects], **kwargs)
 
 
 class AppConfigClient:
@@ -98,7 +99,6 @@ class AppConfigClient:
         )
 
         # Preserve selector order; the provider's last matching selection wins.
-        legacy_app_label_selector = SettingSelector(label_filter=LEGACY_APP_LABEL, key_filter='*')
         app_label_selector = SettingSelector(label_filter=APP_LABEL, key_filter='*')
         base_label_selector = SettingSelector(label_filter=AGENTLZ_LABEL, key_filter='*')
         no_label_selector = SettingSelector(label_filter=None, key_filter='*')
@@ -106,7 +106,7 @@ class AppConfigClient:
         # Attempt 1: Connect to App Configuration using credential-based auth (Managed Identity or CLI)
         try:
             self.client = load(
-                selects=[legacy_app_label_selector, app_label_selector, base_label_selector, no_label_selector],
+                selects=[app_label_selector, base_label_selector, no_label_selector],
                 endpoint=endpoint,
                 credential=self.credential,
                 key_vault_options=AzureAppConfigurationKeyVaultOptions(credential=self.credential),
@@ -120,7 +120,7 @@ class AppConfigClient:
             connection_string = os.environ.get("AZURE_APPCONFIG_CONNECTION_STRING")
             if connection_string:
                 self.client = load(
-                    selects=[legacy_app_label_selector, app_label_selector, base_label_selector, no_label_selector],
+                    selects=[app_label_selector, base_label_selector, no_label_selector],
                     connection_string=connection_string,
                     key_vault_options=AzureAppConfigurationKeyVaultOptions(credential=self.credential),
                 )
