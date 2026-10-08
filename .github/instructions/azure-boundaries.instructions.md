@@ -5,7 +5,7 @@ applyTo: "dependencies.py,tools/**/*.py,infra/**,scripts/**,azure.yaml,Dockerfil
 # Azure, sources, configuration, and deployment
 
 - Read runtime settings through the existing configuration provider. Preserve
-  the `gpt-rag-ingestion`, `gpt-rag`, and no-label selectors, and verify the
+  the `gpt-rag-ingestion` (legacy), `agent-app-ingestion`, `agent-lz`, and no-label selectors, and verify the
   provider's effective override behavior before changing their order.
 - Resolve secrets through Key Vault references. Never hardcode endpoints,
   resource names, index names, container names, credentials, or flags.

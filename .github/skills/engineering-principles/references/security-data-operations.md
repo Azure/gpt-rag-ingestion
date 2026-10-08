@@ -6,7 +6,7 @@
   secrets in source, App Configuration plaintext, logs, prompts, fixtures, or
   release notes.
 - Preserve the App Configuration selectors for `agent-app-ingestion`,
-  `gpt-rag`, and no-label settings. Verify the provider's effective override
+  `agent-lz`, and no-label settings. Verify the provider's effective override
   behavior before changing selector order.
 - Preserve document ACL fields and elevated-read behavior. Reserved security
   metadata must not enter `custom_metadata` or other user-searchable fields.

@@ -14,7 +14,8 @@ from azure.appconfiguration.provider import (
 
 from tenacity import retry, wait_random_exponential, stop_after_attempt, retry_if_exception_type
 
-APP_LABEL = 'gpt-rag-ingestion'
+LEGACY_APP_LABEL = 'gpt-rag-ingestion'
+APP_LABEL = 'agent-app-ingestion'
 AGENTLZ_LABEL = 'agent-lz'
 AGENTLZ_KEY_PREFIX = 'AGENTLZ_'
 
@@ -22,6 +23,7 @@ AGENTLZ_KEY_PREFIX = 'AGENTLZ_'
 def build_label_selectors():
     """Selectors for the provider, whose last matching selection wins."""
     return [
+        SettingSelector(label_filter=LEGACY_APP_LABEL, key_filter='*'),
         SettingSelector(label_filter=APP_LABEL, key_filter='*'),
         SettingSelector(label_filter=AGENTLZ_LABEL, key_filter='*'),
         SettingSelector(label_filter=None, key_filter='*'),
@@ -34,8 +36,9 @@ def key_candidates(key: str) -> list[str]:
 
 
 def load(*, selects, **kwargs):
-    """Load App Configuration with the given selectors."""
-    return _provider_load(selects=selects, **kwargs)
+    """Load App Configuration, reading the legacy app label first so newer labels win."""
+    legacy = SettingSelector(label_filter=LEGACY_APP_LABEL, key_filter='*')
+    return _provider_load(selects=[legacy, *selects], **kwargs)
 
 
 class AppConfigClient:
@@ -57,7 +60,8 @@ class AppConfigClient:
         
         Configuration Loading Priority:
         1. Connects to Azure App Configuration using the credential chain
-        2. Loads labels in order: 'gpt-rag-ingestion', 'agent-lz', no-label;
+        2. Loads labels in order: 'gpt-rag-ingestion' (legacy), 'agent-app-ingestion',
+           'agent-lz', no-label;
            later matching selections replace earlier values for duplicate keys
         3. Falls back to connection string if credential auth fails
         4. Uses the existing environment-only adapter when endpoint loading
