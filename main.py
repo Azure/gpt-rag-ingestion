@@ -53,7 +53,7 @@ from utils.deployment_mode import (
 # -------------------------------
 app_config_client = None  # set inside lifespan after auth checks
 
-# Resolved once at startup (see `utils/deployment_mode.py` / Azure/GPT-RAG#592
+# Resolved once at startup (see `utils/deployment_mode.py` / Azure/agent-landing-zone#592
 # ADR-0001). Structural surface changes require a container restart — this is
 # never re-resolved per request.
 DEPLOYMENT_MODE: DeploymentMode | None = None
@@ -158,7 +158,7 @@ async def lifespan(app: FastAPI):
     app_config_client = get_config()
 
     # Resolve the ADR-0001 hosted/panel deployment mode once at startup (see
-    # `utils/deployment_mode.py` and Azure/GPT-RAG#592). This never changes
+    # `utils/deployment_mode.py` and Azure/agent-landing-zone#592). This never changes
     # for the lifetime of the process — a restart is required to pick up a
     # flag change, matching the frozen contract's "structural change requires
     # restart" requirement.
@@ -287,8 +287,8 @@ except FileNotFoundError:
     APP_VERSION = "0.0.0"
 
 app = FastAPI(
-    title="GPT-RAG Ingestion",
-    description="GPT-RAG Data Ingestion FastAPI",
+    title="Agent Landing Zone Ingestion",
+    description="Agent Landing Zone Data Ingestion FastAPI",
     version=APP_VERSION,
     lifespan=lifespan
 )
@@ -815,7 +815,7 @@ def _mount_admin_and_panel_surface(mode: DeploymentMode) -> None:
     """Mount the admin dashboard and/or ADR-0001 panel routers for *mode*.
 
     Called exactly once from inside `lifespan()`, once the deployment mode is
-    known (Azure/GPT-RAG#592). Structural surface changes require a restart —
+    known (Azure/agent-landing-zone#592). Structural surface changes require a restart —
     this function only ever runs at startup, never per-request:
 
     * CLASSIC — admin API + `/dashboard` SPA mounted (unchanged legacy

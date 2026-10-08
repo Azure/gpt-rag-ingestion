@@ -39,7 +39,7 @@ Search result interpretation across callers.
 3. Which document authorization and elevated-read boundaries are crossed?
 4. Does it preserve bounded memory, concurrency, retries, and partial-batch
    failure visibility?
-5. Which Azure/GPT-RAG component versions and contracts must be validated
+5. Which Azure/agent-landing-zone component versions and contracts must be validated
    together?
 6. Can the change be retried safely, and what is the rollback or reindex path?
 

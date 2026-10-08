@@ -2,7 +2,7 @@
 
 The optional hosted administrative panel's ingestion-side operator surfaces
 must never read or expose Foundry managed Conversation content, and the
-platform contract (Azure/GPT-RAG PR #637) grants this service only
+platform contract (Azure/agent-landing-zone PR #637) grants this service only
 container-scoped Cosmos **Data Reader** on the panel's owner-index/feedback
 metadata containers -- never a write, and never a corpus-curation Cosmos
 container. Curation decisions are therefore never written to Cosmos.
