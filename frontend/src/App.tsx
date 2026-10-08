@@ -39,9 +39,9 @@ function Dashboard() {
     <div className="mx-auto min-h-screen max-w-7xl px-4 py-6">
       <header className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <img src="/logo.png" alt="GPT-RAG" className="h-10 w-10" />
+          <img src="/logo.png" alt="Agent Landing Zone" className="h-10 w-10" />
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">GPT-RAG Ingestion</h1>
+            <h1 className="text-2xl font-bold tracking-tight">Agent Landing Zone Ingestion</h1>
             {version && (
               <span className="text-xs text-muted-foreground">v{version}</span>
             )}

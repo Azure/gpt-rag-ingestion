@@ -1,4 +1,4 @@
-# GPT-RAG ingestion engineering-agent contract
+# Agent Landing Zone ingestion engineering-agent contract
 
 This is the stable repository-wide contract for GitHub Copilot engineering
 agents. Detailed procedures belong in `.github/skills/`; path-specific rules
@@ -22,14 +22,14 @@ a human decision.
 
 ## What this repository is
 
-`gpt-rag-ingestion` is the Python 3.12 data plane that turns source documents
+`agent-app-ingestion` is the Python 3.12 data plane that turns source documents
 into chunks and embeddings and writes them to Azure AI Search. It supports
 Blob Storage, SharePoint, NL2SQL, multimodal content, scheduled ingestion and
 purge jobs, versioned audit events, a FastAPI operator API, and a React
 operator dashboard.
 
 The repository is one runtime component of
-[Azure/GPT-RAG](https://github.com/Azure/GPT-RAG). Shared deployment,
+[Azure/agent-landing-zone](https://github.com/Azure/agent-landing-zone). Shared deployment,
 configuration, contracts, and release pins must remain compatible with the
 umbrella repository and other consumers.
 
@@ -63,7 +63,7 @@ a dedicated chunker. Do not spread extension checks across callers or turn
 ## Data, security, and configuration
 
 - Load runtime configuration through the existing Azure App Configuration
-  provider. Preserve its `gpt-rag-ingestion`, `gpt-rag`, `agent-lz`, and
+  provider. Preserve its `agent-app-ingestion`, `gpt-rag`, `agent-lz`, and
   no-label selectors (`agent-lz` overrides `gpt-rag` during the Agent Landing
   Zone transition) and verify effective override behavior before changing their
   order.
@@ -118,7 +118,7 @@ Use the jobs-owned test seam when patching scheduling.
 Exactly 67 existing exception records are active for audit boundaries, post-write local
 refresh, indexer/purger resource cleanup, explicit per-record failure
 translations, and optional auth diagnostics under
-[explicit administrative initial-adoption approval](https://github.com/Azure/GPT-RAG/issues/681#issuecomment-5601804634).
+[explicit administrative initial-adoption approval](https://github.com/Azure/agent-landing-zone/issues/681#issuecomment-5601804634).
 This is not independent GitHub review. Exact matching and passing same-run
 evidence remain mandatory; candidate metadata cannot authorize future changes.
 This is not an active required-merge claim. Bootstrap adoption,

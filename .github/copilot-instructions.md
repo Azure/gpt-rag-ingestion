@@ -51,8 +51,8 @@ Never add `v` to `VERSION` or a release branch name. Feature work must not
 preemptively change `VERSION`.
 
 The GitHub Release title must be exactly the tag, with no product or service
-prefix: use `v2.6.0`, never `GPT-RAG Ingestion v2.6.0` or
-`gpt-rag-ingestion v2.6.0`.
+prefix: use `v2.6.0`, never `Agent Landing Zone Ingestion v2.6.0` or
+`agent-app-ingestion v2.6.0`.
 
 ## Changelog lifecycle
 
@@ -94,7 +94,7 @@ stale examples.
 
 Before publishing:
 
-- validate the exact ingestion commit or image with the compatible GPT-RAG
+- validate the exact ingestion commit or image with the compatible Agent Landing Zone
   umbrella/component versions;
 - capture test, build, and deployment evidence appropriate to the change;
 - verify rollback or roll-forward steps;
@@ -110,7 +110,7 @@ Documentation must describe current shipped behavior.
 - The repository `README.md` owns concise ingestion-specific service and audit
   behavior that must stay synchronized with code and contracts.
 - Cross-component user and operator documentation lives on the `docs` branch
-  of `Azure/GPT-RAG` and is published at
+  of `Azure/agent-landing-zone` and is published at
   https://azure.github.io/AI-Landing-Zones/agent-landing-zone/.
 - Update relevant documentation in the same coordinated change when a format,
   configuration key, default, index field, deployment step, operator flow,

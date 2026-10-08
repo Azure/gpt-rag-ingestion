@@ -626,7 +626,7 @@ def test_history_stub_returns_501_for_admin(monkeypatch):
     client = _build_client(monkeypatch, tenant_id="tenant-1", claims=_ADMIN_CLAIMS)
     r = client.get("/api/panel/conversations/conv-a/history")
     assert r.status_code == 501
-    assert "Azure/GPT-RAG#592" in r.json()["detail"]
+    assert "Azure/agent-landing-zone#592" in r.json()["detail"]
 
 
 def test_history_stub_still_requires_admin_role(monkeypatch):
