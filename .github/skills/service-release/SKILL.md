@@ -1,6 +1,6 @@
 ---
 name: service-release
-description: Prepares and validates gpt-rag-ingestion releases. Use for release branches, VERSION, changelog entries, compatible GPT-RAG pins, tags, images, and GitHub Release notes.
+description: Prepares and validates agent-app-ingestion releases. Use for release branches, VERSION, changelog entries, compatible Agent Landing Zone pins, tags, images, and GitHub Release notes.
 ---
 
 # Ingestion service release
@@ -16,7 +16,7 @@ artifact.
    release branch.
 4. Verify branch, `VERSION`, changelog, Git tag, and GitHub Release title are
    synchronized.
-5. Identify the compatible Azure/GPT-RAG umbrella and component versions and
+5. Identify the compatible Azure/agent-landing-zone umbrella and component versions and
    validate the exact ingestion commit or image in that context.
 6. Record Python, frontend, container, and controlled Azure evidence required
    by the changed behavior.

@@ -1,4 +1,4 @@
-"""Bounded, best-effort emission of GPT-RAG ingestion audit events over OpenTelemetry.
+"""Bounded, best-effort emission of Agent Landing Zone ingestion audit events over OpenTelemetry.
 
 Reuses the existing OpenTelemetry logging pipeline configured in
 ``telemetry.telemetry.Telemetry.configure_monitoring`` (Azure Monitor /

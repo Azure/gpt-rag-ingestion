@@ -1,10 +1,10 @@
 """Versioned contract and governance configuration for ingestion audit events.
 
 This module mirrors the shared, versioned audit event contract owned by
-``Azure/GPT-RAG`` and pinned in ``contracts/audit-event-v2.schema.json`` /
+``Azure/agent-landing-zone`` and pinned in ``contracts/audit-event-v2.schema.json`` /
 ``contracts/audit-event-v2.application-insights.schema.json``
 (``audit-event-v1`` files are kept in ``contracts/`` as history only). The
-orchestrator (``Azure/gpt-rag-orchestrator``) emits ``request.*``,
+orchestrator (``Azure/agent-app-orchestrator``) emits ``request.*``,
 ``route.*``, ``tool.*`` and ``outcome.*`` event types; this service emits
 only the seven ``ingestion.*`` event types the shared schema reserves for it.
 The two schema files and their SHA-256 pins in ``contracts/`` must stay

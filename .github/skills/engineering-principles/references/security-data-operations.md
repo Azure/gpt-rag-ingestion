@@ -5,7 +5,7 @@
 - Store secrets in Key Vault and expose them through references. Never place
   secrets in source, App Configuration plaintext, logs, prompts, fixtures, or
   release notes.
-- Preserve the App Configuration selectors for `gpt-rag-ingestion`,
+- Preserve the App Configuration selectors for `agent-app-ingestion`,
   `gpt-rag`, and no-label settings. Verify the provider's effective override
   behavior before changing selector order.
 - Preserve document ACL fields and elevated-read behavior. Reserved security

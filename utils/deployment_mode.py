@@ -1,4 +1,4 @@
-"""Hosted/panel deployment-mode resolution (Azure/GPT-RAG ADR-0001).
+"""Hosted/panel deployment-mode resolution (Azure/agent-landing-zone ADR-0001).
 
 `gpt-rag-ingestion` supports three deployment modes, resolved once at startup
 from App Configuration (label ``agent-lz``) and never re-read per request —
@@ -25,7 +25,7 @@ restart, matching the frozen ADR-0001 contract:
 
 Chat itself is never routed through this Container App in any mode — that
 stays owned by Foundry-managed Conversations (see ADR-0001 and
-Azure/GPT-RAG#592).
+Azure/agent-landing-zone#592).
 """
 
 from __future__ import annotations
@@ -90,7 +90,7 @@ def resolve_deployment_mode(config: Any) -> DeploymentMode:
     """Resolve the deployment mode from App Configuration.
 
     Both flags default to ``false`` (classic) when unset, matching
-    Azure/GPT-RAG ADR-0001 and issue #592. Read once at startup — do not call
+    Azure/agent-landing-zone ADR-0001 and issue #592. Read once at startup — do not call
     this per-request.
     """
     hosted = _flag_enabled(config, _HOSTED_FLAG)

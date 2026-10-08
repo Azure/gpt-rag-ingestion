@@ -5,7 +5,7 @@ applyTo: "contracts/**,telemetry/audit*.py,tests/test_audit*.py,tests/golden/**"
 # Shared audit contracts and telemetry
 
 - Treat schema files and their SHA-256 pins as versioned cross-repository
-  compatibility boundaries shared with Azure/GPT-RAG and the orchestrator.
+  compatibility boundaries shared with Azure/agent-landing-zone and the orchestrator.
 - Keep logical schema, Application Insights wire schema, constants, golden
   fixtures, and integrity tests aligned with the exact committed bytes.
 - Preserve the seven ingestion event types, run correlation, root-parent

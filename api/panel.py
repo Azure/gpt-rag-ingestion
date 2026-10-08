@@ -1,4 +1,4 @@
-"""ADR-0001 hosted/panel administrative API (Azure/GPT-RAG#592).
+"""ADR-0001 hosted/panel administrative API (Azure/agent-landing-zone#592).
 
 Mounted **only** when the resolved deployment mode is
 ``DeploymentMode.HOSTED_PANEL`` (see `utils/deployment_mode.py` and the
@@ -15,7 +15,7 @@ Scope, per ADR-0001's decision matrix ("Administrative panel boundary" /
   (jobs/files, via `api.admin`) plus feedback counts.
 * Full Foundry-managed **Conversation history** retrieval is explicitly
   **not implemented here** — ADR-0001's decision matrix names
-  ``gpt-rag-orchestrator`` / ``gpt-rag-ui`` / ``Azure/GPT-RAG`` (not
+  ``agent-app-orchestrator`` / ``agent-app-ui`` / ``Azure/agent-landing-zone`` (not
   ``gpt-rag-ingestion``) as owners of that contract, and today conversation
   history persistence is still coupled to the orchestrator's chat flow.
   Retrieving it here would require a cross-repo API decision (which SDK/REST
@@ -57,9 +57,9 @@ _HISTORY_BLOCKED_DETAIL = (
     "gpt-rag-ingestion. Per ADR-0001's decision matrix, the hosted/panel "
     "conversation-history contract (the SDK/REST call to fetch Foundry "
     "Conversation messages, the conversation-id mapping, and the auth model "
-    "to use) is owned by gpt-rag-orchestrator / gpt-rag-ui / Azure/GPT-RAG, "
+    "to use) is owned by agent-app-orchestrator / agent-app-ui / Azure/agent-landing-zone, "
     "not gpt-rag-ingestion, and requires a cross-repo API decision that has "
-    "not yet been made. Tracking: Azure/GPT-RAG#592."
+    "not yet been made. Tracking: Azure/agent-landing-zone#592."
 )
 
 
@@ -337,7 +337,7 @@ class PanelOverview(BaseModel):
     historyAvailable: bool = Field(
         default=False,
         description="Always false until the cross-repo Foundry Conversation "
-        "history contract lands (Azure/GPT-RAG#592).",
+        "history contract lands (Azure/agent-landing-zone#592).",
     )
 
 
@@ -405,7 +405,7 @@ async def get_panel_overview() -> PanelOverview:
     "/conversations/{conversation_id}/history",
     dependencies=[Depends(require_panel_admin)],
     responses={
-        501: {"description": "Not implemented pending cross-repo contract (Azure/GPT-RAG#592)."}
+        501: {"description": "Not implemented pending cross-repo contract (Azure/agent-landing-zone#592)."}
     },
 )
 async def get_conversation_history(conversation_id: str) -> None:

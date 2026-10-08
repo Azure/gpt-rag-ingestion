@@ -757,7 +757,7 @@ async def unblock_file(blobName: str = Query(..., min_length=1)):
 # Configuration tab — read-only listing + admin-gated mutation.
 #
 # Exposes a curated allowlist of App Configuration keys that operators can
-# tweak from the dashboard (see GPT-RAG#512). Nothing outside `SETTINGS` is
+# tweak from the dashboard (see Azure/agent-landing-zone#512). Nothing outside `SETTINGS` is
 # ever returned or written, and a defense-in-depth denylist regex rejects any
 # key that looks like a secret/endpoint even if it sneaks into the allowlist.
 # ---------------------------------------------------------------------------
