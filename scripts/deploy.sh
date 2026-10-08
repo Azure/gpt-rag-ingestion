@@ -14,7 +14,7 @@ NC='\033[0m'
 
 label="${APP_CONFIG_LABEL:-agent-lz}"
 config_labels=("$label")
-for _l in agent-lz gpt-rag; do if [[ "$_l" != "$label" ]]; then config_labels+=("$_l"); fi; done
+for _l in agent-lz; do if [[ "$_l" != "$label" ]]; then config_labels+=("$_l"); fi; done
 imageRepository="data-ingestion"
 appConfigKey="DATA_INGEST_APP_NAME"
 identitySuffix="dataingest"

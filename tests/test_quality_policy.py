@@ -601,7 +601,7 @@ def test_aggregate_cli_requires_actual_consistent_current_receipts(tmp_path, mut
     jobs = {name: {"result": "success"} for name in quality.REQUIRED_CHECKS}
     jobs["frontend-checks"] = {"result": "success"}
     for name in quality.REQUIRED_CHECKS[:-1]:
-        data = dict(report(name), repository="Azure/gpt-rag-ingestion", source_sha="a" * 64,
+        data = dict(report(name), repository="Azure/agent-app-ingestion", source_sha="a" * 64,
                     run_id="123", run_attempt="1")
         if name == "lint":
             changes = {

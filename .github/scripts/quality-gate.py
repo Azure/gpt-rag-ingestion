@@ -31,7 +31,7 @@ def main() -> int:
             record = q.read_record(path)
             integrity = record.pop("artifact_integrity", None)
             if (integrity != q.digest(record)
-                    or record.get("repository") != "Azure/gpt-rag-ingestion"
+                    or record.get("repository") != "Azure/agent-app-ingestion"
                     or record.get("run_id") != os.environ.get("GITHUB_RUN_ID", "local")
                     or record.get("run_attempt") != os.environ.get("GITHUB_RUN_ATTEMPT", "local")):
                 raise q.QualityError(f"Corrupt or stale {name} report")

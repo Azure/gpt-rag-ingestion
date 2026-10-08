@@ -1,6 +1,6 @@
 """Hosted/panel deployment-mode resolution (Azure/agent-landing-zone ADR-0001).
 
-`gpt-rag-ingestion` supports three deployment modes, resolved once at startup
+`agent-app-ingestion` supports three deployment modes, resolved once at startup
 from App Configuration (label ``agent-lz``) and never re-read per request —
 structural surface changes (which routers are mounted) require a container
 restart, matching the frozen ADR-0001 contract:
