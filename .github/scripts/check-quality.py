@@ -508,7 +508,7 @@ def main() -> int:
     root = args.repository.resolve()
     started = time.monotonic()
     report = {
-        "schema_version": 1, "repository": "Azure/agent-app-ingestion", "check_name": args.check,
+        "schema_version": 1, "repository": "Azure/gpt-rag-ingestion", "check_name": args.check,
         "base_sha": "", "head_sha": "", "policy_sha": "", "status": "error",
         "toolchain": {}, "findings": [], "coverage": {}, "exception_ids_used": [],
         "run_id": os.environ.get("GITHUB_RUN_ID", "local"),
